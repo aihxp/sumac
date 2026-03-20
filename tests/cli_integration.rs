@@ -348,3 +348,43 @@ fn test_http_lists_hybrid_skill_tools() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[test]
+fn test_http_lists_hybrid_skill_tools_with_required_header() {
+    let port = pick_unused_port();
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "serve",
+            "--transport",
+            "http",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+            "--require-header",
+            "Authorization: Bearer integration-token",
+            "--paths",
+            "tests/fixtures",
+        ])
+        .spawn()
+        .unwrap();
+
+    std::thread::sleep(Duration::from_millis(750));
+
+    sxmc()
+        .args([
+            "http",
+            &format!("http://127.0.0.1:{port}/mcp"),
+            "--auth-header",
+            "Authorization: Bearer integration-token",
+            "--list",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("get_available_skills"))
+        .stdout(predicate::str::contains("get_skill_details"))
+        .stdout(predicate::str::contains("skill_with_scripts__hello"));
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

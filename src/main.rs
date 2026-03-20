@@ -39,6 +39,10 @@ enum Commands {
         /// Host for HTTP transport
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
+
+        /// Require HTTP header(s) for remote MCP access (Key:Value)
+        #[arg(long = "require-header", value_name = "K:V")]
+        require_headers: Vec<String>,
     },
 
     /// Manage skills
@@ -395,11 +399,15 @@ async fn main() -> anyhow::Result<()> {
             transport,
             port,
             host,
+            require_headers,
         } => {
             let search_paths = resolve_paths(paths);
+            let required_headers = parse_headers(&require_headers)?;
             match transport.as_str() {
                 "stdio" => server::serve_stdio(&search_paths).await?,
-                "http" | "sse" => server::serve_http(&search_paths, &host, port).await?,
+                "http" | "sse" => {
+                    server::serve_http(&search_paths, &host, port, &required_headers).await?
+                }
                 other => {
                     eprintln!("[sxmc] Unknown transport: {}", other);
                     std::process::exit(1);

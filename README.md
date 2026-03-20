@@ -40,6 +40,10 @@ sxmc serve
 
 # Streamable HTTP MCP endpoint at http://127.0.0.1:8000/mcp
 sxmc serve --transport http --host 127.0.0.1 --port 8000
+
+# Require auth headers for remote MCP access
+sxmc serve --transport http --host 0.0.0.0 --port 8000 \
+  --require-header "Authorization: env:SXMC_MCP_TOKEN"
 ```
 
 Add to any MCP client config:
@@ -89,6 +93,9 @@ sxmc stdio "sxmc serve --paths tests/fixtures" get_skill_related_file \
   skill_name=skill-with-references \
   relative_path=references/style-guide.md
 ```
+
+For hosted `/mcp` endpoints, prefer `--require-header` so remote access is not
+left open by default.
 
 ### Any API as CLI
 
@@ -223,6 +230,7 @@ remote streamable HTTP MCP endpoint at `/mcp`.
 
 - Supported now: Codex, Cursor, Gemini CLI, Claude Code-style local MCP clients
 - Supported now for remote MCP consumers too: streamable HTTP MCP at `/mcp`
+- Recommended for hosted remote MCP: `--require-header "Authorization: env:..."`
 
 See [`docs/CLIENTS.md`](docs/CLIENTS.md) for setup examples.
 
@@ -232,7 +240,7 @@ See [`docs/CLIENTS.md`](docs/CLIENTS.md) for setup examples.
 sxmc [subcommand] [options]
 
 SERVER:
-  serve [--paths ...] [--transport stdio|http|sse] [--host 127.0.0.1] [--port 8000]
+  serve [--paths ...] [--transport stdio|http|sse] [--host 127.0.0.1] [--port 8000] [--require-header K:V]
 
 SKILLS:
   skills list [--paths ...] [--json]

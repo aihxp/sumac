@@ -27,6 +27,8 @@ Codex can also connect to a remote HTTP MCP server:
 codex mcp add sxmc-remote --url http://127.0.0.1:8000/mcp
 ```
 
+If the remote server is protected, register the matching auth header too.
+
 To confirm it is registered:
 
 ```bash
@@ -64,6 +66,8 @@ retrieval tools should appear in the MCP tools UI.
 
 If you host `sxmc` remotely, use Cursor's HTTP MCP configuration and point it at
 `http://HOST:PORT/mcp`.
+If you protect the endpoint with `--require-header`, configure the same header
+in Cursor's MCP server definition.
 
 ## Gemini CLI
 
@@ -93,6 +97,7 @@ Gemini CLI can also package `sxmc` as part of a local extension if you want to
 bundle a skills directory and a `GEMINI.md` context file together.
 
 For a remote server, configure the MCP server URL as `http://HOST:PORT/mcp`.
+If you use `--require-header`, include the same header in the remote MCP config.
 
 ## Claude Code and Similar Local MCP Clients
 
@@ -113,6 +118,14 @@ and use:
 
 ```text
 http://YOUR_HOST:8000/mcp
+```
+
+For anything beyond localhost, prefer:
+
+```bash
+sxmc serve --transport http --host 0.0.0.0 --port 8000 \
+  --require-header "Authorization: env:SXMC_MCP_TOKEN" \
+  --paths /absolute/path/to/skills
 ```
 
 Because `sxmc` exposes a hybrid surface, these clients can use:
