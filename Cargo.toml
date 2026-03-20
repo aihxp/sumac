@@ -1,5 +1,5 @@
 [package]
-name = "skillsxmcpxcli"
+name = "sxmc"
 version = "0.1.0"
 edition = "2021"
 description = "AI-agnostic Skills × MCP × CLI pipeline"
@@ -11,7 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 # MCP protocol
-rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-sse"] }
+rmcp = { version = "1.2", features = ["server", "client", "macros", "transport-io", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest"] }
+schemars = "1"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -25,7 +26,7 @@ serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 
 # HTTP
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", features = ["json", "rustls", "query"] }
 
 # Error handling
 thiserror = "2"
