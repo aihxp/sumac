@@ -10,7 +10,7 @@ One Rust binary. Skills become MCP servers. MCP servers become CLI commands. Any
 
 **sxmc** solves this. One Rust binary that:
 - Turns skill directories into MCP servers (stdio or remote HTTP)
-- Makes MCP tool surfaces usable from the command line
+- Makes MCP tools, prompts, and resources usable from the command line
 - Auto-generates CLI commands from OpenAPI and GraphQL specs
 - Scans skills and MCP servers for security threats
 
@@ -146,17 +146,21 @@ consume HTTP MCP endpoints.
 # stdio server
 sxmc stdio "npx @mcp/github" --list
 sxmc stdio "npx @mcp/github" search-repos query=rust
+sxmc stdio "npx @mcp/github" --prompt triage-template
+sxmc stdio "npx @mcp/github" --resource "repo://octocat/hello-world/README.md"
 
 # HTTP server
 sxmc http https://mcp.example.com/mcp --list
 sxmc http https://mcp.example.com/mcp my-tool key=value
+sxmc http https://mcp.example.com/mcp --prompt triage-template
+sxmc http https://mcp.example.com/mcp --resource "repo://octocat/hello-world/README.md"
 ```
 
-`sxmc stdio` and `sxmc http` are **tool-first MCP bridges**:
-- they can list **tools**, **prompts**, and **resources**
-- they can invoke **tools**
-- they do **not** yet expose prompts/resources as first-class CLI invocations in
-  the same way tools are invoked
+`sxmc stdio` and `sxmc http` are MCP bridges that can:
+- list **tools**, **prompts**, and **resources**
+- invoke **tools**
+- fetch **prompts** with `--prompt`
+- read **resources** with `--resource`
 
 This makes them especially useful for shell automation, CI, debugging, and
 inspecting an MCP server outside an IDE or agent UI.
@@ -168,6 +172,9 @@ That means skills can flow through both stages in one go:
 sxmc stdio "sxmc serve --paths tests/fixtures" --list
 sxmc stdio "sxmc serve --paths tests/fixtures" get_available_skills --pretty
 sxmc stdio "sxmc serve --paths tests/fixtures" get_skill_details name=simple-skill --pretty
+sxmc stdio "sxmc serve --paths tests/fixtures" --prompt simple-skill arguments=friend
+sxmc stdio "sxmc serve --paths tests/fixtures" --resource \
+  "skill://skill-with-references/references/style-guide.md"
 sxmc stdio "sxmc serve --paths tests/fixtures" get_skill_related_file \
   skill_name=skill-with-references \
   relative_path=references/style-guide.md
@@ -179,15 +186,19 @@ Hosted MCP servers work the same way over HTTP:
 sxmc http http://127.0.0.1:8000/mcp \
   --auth-header "Authorization: Bearer $SXMC_MCP_TOKEN" \
   --list
+sxmc http http://127.0.0.1:8000/mcp \
+  --auth-header "Authorization: Bearer $SXMC_MCP_TOKEN" \
+  --prompt simple-skill arguments=friend
 ```
 
 For hosted `/mcp` endpoints, prefer `--require-header` so remote access is not
 left open by default. For single-token hosted deployments, `--bearer-token` is
 usually the friendlier option.
 
-One caveat for `sxmc stdio`: the spawned command is currently split from a
-single string, so simple command shapes work best. For complex quoting or shell
-features, prefer a wrapper script.
+For `sxmc stdio`, you can now pass either shell-style quoting or a JSON-array
+command spec such as `["sxmc","serve","--paths","tests/fixtures"]`. For nested
+or project-local servers, `--cwd` gives you an explicit working directory when
+you do not want to rely on the caller’s current directory.
 
 ### Any API as CLI
 
@@ -357,8 +368,8 @@ SKILLS:
   skills create <api-url> [--output-dir DIR] [--auth-header K:V]
 
 CLIENT:
-  stdio <command> [tool] [args...] [--list] [--search] [--pretty] [--env K=V]
-  http <url> [tool] [args...] [--list] [--search] [--pretty] [--auth-header K:V]
+  stdio <command> [tool] [args...] [--prompt NAME] [--resource URI] [--list] [--search] [--pretty] [--env K=V] [--cwd DIR]
+  http <url> [tool] [args...] [--prompt NAME] [--resource URI] [--list] [--search] [--pretty] [--auth-header K:V]
   api <source> [operation] [args...] [--list] [--auth-header K:V]
   spec <source> [operation] [args...] [--list] [--auth-header K:V]
   graphql <url> [operation] [args...] [--list] [--auth-header K:V]

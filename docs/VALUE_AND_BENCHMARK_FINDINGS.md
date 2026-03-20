@@ -13,12 +13,12 @@ This note collects **why sxmc is useful**, **how to measure it**, and **represen
 | **Distribution** | One Rust binary (plus optional wrappers) instead of several stacks |
 
 **Even a single, narrow MCP server** often benefits from **`sxmc stdio …` /
-`sxmc http …`**: scriptability, `--list` / `--pretty` inspection, CI, and
-debugging outside a full agent.
+`sxmc http …`**: scriptability, `--list` / `--pretty` inspection, CI,
+debugging outside a full agent, and on-demand prompt/resource retrieval.
 
-In practice, the bridge is most valuable for **tool surfaces**. `sxmc` also
-lists prompts/resources so you can inspect the full MCP surface, but the
-day-to-day shell automation story is primarily about invoking tools.
+In practice, the bridge is still most valuable for **tool surfaces**, but the
+same CLI now reaches prompts/resources directly with `--prompt` and
+`--resource`, which helps when the useful context is descriptive rather than executable.
 
 ## Representative wall-clock results (CLI)
 

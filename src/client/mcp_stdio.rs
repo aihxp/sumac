@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rmcp::model::*;
 use rmcp::service::RunningService;
 use rmcp::transport::TokioChildProcess;
@@ -13,18 +15,25 @@ pub struct StdioClient {
 
 impl StdioClient {
     /// Connect to an MCP server by spawning a subprocess.
-    pub async fn connect(command: &str, env_vars: &[(String, String)]) -> Result<Self> {
-        let parts: Vec<&str> = command.split_whitespace().collect();
+    pub async fn connect(
+        command: &str,
+        env_vars: &[(String, String)],
+        cwd: Option<&Path>,
+    ) -> Result<Self> {
+        let parts = parse_command_spec(command)?;
         if parts.is_empty() {
-            return Err(SxmcError::Other("Empty command".into()));
+            return Err(SxmcError::Other("Empty command spec".into()));
         }
 
-        let mut cmd = Command::new(parts[0]);
+        let mut cmd = Command::new(&parts[0]);
         if parts.len() > 1 {
             cmd.args(&parts[1..]);
         }
         for (key, value) in env_vars {
             cmd.env(key, value);
+        }
+        if let Some(cwd) = cwd {
+            cmd.current_dir(cwd);
         }
 
         let transport = TokioChildProcess::new(cmd)
@@ -123,4 +132,27 @@ impl StdioClient {
             .map_err(|e| SxmcError::McpError(format!("Failed to close: {}", e)))?;
         Ok(())
     }
+}
+
+fn parse_command_spec(command: &str) -> Result<Vec<String>> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if trimmed.starts_with('[') {
+        return serde_json::from_str::<Vec<String>>(trimmed).map_err(|e| {
+            SxmcError::Other(format!(
+                "Invalid stdio command JSON array. Expected [\"cmd\", \"arg1\", ...]: {}",
+                e
+            ))
+        });
+    }
+
+    shlex::split(trimmed).ok_or_else(|| {
+        SxmcError::Other(
+            "Invalid stdio command string. Use shell-style quoting or a JSON array command spec."
+                .into(),
+        )
+    })
 }

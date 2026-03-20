@@ -276,6 +276,24 @@ fn test_stdio_lists_hybrid_skill_tools() {
 }
 
 #[test]
+fn test_stdio_accepts_json_array_command_spec() {
+    let inner = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "serve".to_string(),
+        "--paths".to_string(),
+        "tests/fixtures".to_string(),
+    ])
+    .unwrap();
+
+    sxmc()
+        .args(["stdio", &inner, "--list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("get_available_skills"))
+        .stdout(predicate::str::contains("skill_with_scripts__hello"));
+}
+
+#[test]
 fn test_stdio_hybrid_get_skill_details() {
     let inner = format!("{} serve --paths tests/fixtures", sxmc_bin_string());
 
@@ -300,6 +318,23 @@ fn test_stdio_hybrid_get_skill_details() {
 }
 
 #[test]
+fn test_stdio_reads_prompt() {
+    let inner = format!("{} serve --paths tests/fixtures", sxmc_bin_string());
+
+    sxmc()
+        .args([
+            "stdio",
+            &inner,
+            "--prompt",
+            "simple-skill",
+            "arguments=friend",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hello friend, welcome to sxmc!"));
+}
+
+#[test]
 fn test_stdio_hybrid_get_skill_related_file() {
     let inner = format!("{} serve --paths tests/fixtures", sxmc_bin_string());
 
@@ -311,6 +346,23 @@ fn test_stdio_hybrid_get_skill_related_file() {
             "skill_name=skill-with-references",
             "relative_path=references/style-guide.md",
             "return_type=content",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# Style Guide"))
+        .stdout(predicate::str::contains("Use clear, concise language"));
+}
+
+#[test]
+fn test_stdio_reads_resource() {
+    let inner = format!("{} serve --paths tests/fixtures", sxmc_bin_string());
+
+    sxmc()
+        .args([
+            "stdio",
+            &inner,
+            "--resource",
+            "skill://skill-with-references/references/style-guide.md",
         ])
         .assert()
         .success()
@@ -411,6 +463,78 @@ fn test_http_lists_hybrid_skill_tools() {
         .stdout(predicate::str::contains("get_available_skills"))
         .stdout(predicate::str::contains("get_skill_details"))
         .stdout(predicate::str::contains("skill_with_scripts__hello"));
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn test_http_reads_prompt() {
+    let port = pick_unused_port();
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "serve",
+            "--transport",
+            "http",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+            "--paths",
+            "tests/fixtures",
+        ])
+        .spawn()
+        .unwrap();
+
+    std::thread::sleep(Duration::from_millis(750));
+
+    sxmc()
+        .args([
+            "http",
+            &format!("http://127.0.0.1:{port}/mcp"),
+            "--prompt",
+            "simple-skill",
+            "arguments=friend",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hello friend, welcome to sxmc!"));
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn test_http_reads_resource() {
+    let port = pick_unused_port();
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "serve",
+            "--transport",
+            "http",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+            "--paths",
+            "tests/fixtures",
+        ])
+        .spawn()
+        .unwrap();
+
+    std::thread::sleep(Duration::from_millis(750));
+
+    sxmc()
+        .args([
+            "http",
+            &format!("http://127.0.0.1:{port}/mcp"),
+            "--resource",
+            "skill://skill-with-references/references/style-guide.md",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# Style Guide"))
+        .stdout(predicate::str::contains("Use clear, concise language"));
 
     let _ = child.kill();
     let _ = child.wait();
@@ -530,6 +654,9 @@ async fn test_http_health_endpoint_reports_auth_mode() {
     assert_eq!(response["transport"], "streamable-http");
     assert_eq!(response["auth"]["enabled"], true);
     assert_eq!(response["auth"]["schemes"], serde_json::json!(["bearer"]));
+    assert_eq!(response["inventory"]["skills"], 4);
+    assert_eq!(response["inventory"]["tools"], 1);
+    assert_eq!(response["inventory"]["resources"], 1);
 
     let _ = child.kill();
     let _ = child.wait();

@@ -1,4 +1,7 @@
-use rmcp::model::CallToolResult;
+use rmcp::model::{
+    CallToolResult, GetPromptResult, PromptMessageContent, PromptMessageRole, ReadResourceResult,
+    ResourceContents,
+};
 
 /// Format a CallToolResult for display.
 pub fn format_tool_result(result: &CallToolResult, pretty: bool) -> String {
@@ -20,6 +23,61 @@ pub fn format_tool_result(result: &CallToolResult, pretty: bool) -> String {
     }
 
     output
+}
+
+/// Format a GetPromptResult for display.
+pub fn format_prompt_result(result: &GetPromptResult, pretty: bool) -> String {
+    if pretty {
+        return serde_json::to_string_pretty(result)
+            .unwrap_or_else(|_| serde_json::to_string(result).unwrap_or_default());
+    }
+
+    if result.messages.len() == 1 {
+        if let Some(message) = result.messages.first() {
+            if let PromptMessageContent::Text { text } = &message.content {
+                return text.clone();
+            }
+        }
+    }
+
+    let messages: Vec<String> = result
+        .messages
+        .iter()
+        .map(|message| {
+            let role = match message.role {
+                PromptMessageRole::User => "user",
+                PromptMessageRole::Assistant => "assistant",
+            };
+            let content = match &message.content {
+                PromptMessageContent::Text { text } => text.clone(),
+                _ => serde_json::to_string_pretty(&message.content).unwrap_or_else(|_| {
+                    serde_json::to_string(&message.content).unwrap_or_default()
+                }),
+            };
+            format!("[{}]\n{}", role, content)
+        })
+        .collect();
+
+    messages.join("\n\n")
+}
+
+/// Format a ReadResourceResult for display.
+pub fn format_resource_result(result: &ReadResourceResult, pretty: bool) -> String {
+    if pretty {
+        return serde_json::to_string_pretty(result)
+            .unwrap_or_else(|_| serde_json::to_string(result).unwrap_or_default());
+    }
+
+    let contents: Vec<String> = result
+        .contents
+        .iter()
+        .map(|content| match content {
+            ResourceContents::TextResourceContents { text, .. } => text.clone(),
+            ResourceContents::BlobResourceContents { blob, .. } => blob.clone(),
+        })
+        .collect();
+
+    contents.join("\n\n")
 }
 
 /// Format MCP tools as a list for display.
