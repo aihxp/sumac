@@ -56,6 +56,39 @@ A separate run using **`sxmc stdio "sxmc serve"`** (skills from **`~/.claude/ski
 
 Differences in **A** reflect **different skills/scripts**, not necessarily a regression or speedup.
 
+## Comparison vs v0.1.2 — did the benchmark show a speedup?
+
+**No conclusive product speedup** can be claimed from these numbers:
+
+- **Petstore (B):** Medians move by **hundreds of ms** between runs and versions. That is mostly **WAN + Petstore**, not sxmc CPU. Treat ±200–300 ms as **noise** unless you use a **local mock** (see Micro row) or many more runs.
+- **Scenario A:** The **0.1.2** maintainer note used **`system_info__sysinfo`** (~**18 ms**). This doc’s **repo script** uses **`skill_with_scripts__hello`** (~**11 ms**). A **0.1.3** re-run with the same user skill reported ~**22 ms**. Those three are **different workloads** — **do not** rank versions from them alone.
+- **C / D / Micro:** Stay in **~10–15 ms** — same story as **0.1.2** (local path; no meaningful change to report).
+
+**v0.1.3 value** in the release is primarily **features** (see [CHANGELOG.md](../CHANGELOG.md)): e.g. **`--prompt` / `--resource`** on `sxmc stdio` and `sxmc http`, safer stdio spawning, **`--format toon`**, **`/healthz`** inventory — **this harness does not exercise those flags**. Add targeted checks if you want regression coverage for them.
+
+## Operational notes (benchmark maintenance)
+
+Issues hit while **producing** this benchmark (all **resolved** for the published run):
+
+| Issue | Resolution |
+|-------|------------|
+| Shell scripts with **CRLF** line endings | Normalize to **LF** so `#!/usr/bin/env bash` runs on Linux |
+| **`sxmc scan` exits non-zero** when findings exist | Timing helpers must **not** treat that as a failed timing sample |
+| **`git push` HTTP 403** with a restricted PAT | Use **`gh auth setup-git`** (or a token with **repo** scope) |
+
+The **benchmark script** and **`cargo test`** completed with **exit code 0**; **94/94** tests passed.
+
+## Does it work as intended (scope of this doc)?
+
+**Yes**, for everything the script runs:
+
+- **stdio MCP → CLI** (nested `serve`, `--list`, fixture script tool)
+- **`sxmc api`** against Petstore (list + one operation)
+- **`sxmc scan`** on `malicious-skill`
+- **Micro:** local OpenAPI + ephemeral HTTP + `sxmc api`
+
+That matches the **intended** use of those subcommands for smoke / timing. It does **not** replace full manual checks for **auth**, **remote HTTP MCP**, or **new 0.1.3-only** CLI options.
+
 ## Related
 
 - [VALUE_AND_BENCHMARK_FINDINGS.md](VALUE_AND_BENCHMARK_FINDINGS.md) — methodology & token guidance
