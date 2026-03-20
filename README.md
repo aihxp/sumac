@@ -34,8 +34,9 @@ cargo build --release
 Additional setup and client-specific configuration examples are in
 [`docs/CLIENTS.md`](docs/CLIENTS.md). Release and publishing steps are in
 [`docs/RELEASING.md`](docs/RELEASING.md). Distribution-channel notes are in
-[`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md), and smoke checks are in
-[`docs/SMOKE_TESTS.md`](docs/SMOKE_TESTS.md).
+[`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md), smoke checks are in
+[`docs/SMOKE_TESTS.md`](docs/SMOKE_TESTS.md), and launch copy is in
+[`docs/LAUNCH.md`](docs/LAUNCH.md).
 
 ## Quick Start
 
