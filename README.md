@@ -363,7 +363,8 @@ remote streamable HTTP MCP endpoint at `/mcp`.
 - Recommended for hosted remote MCP: `--bearer-token env:SXMC_MCP_TOKEN`
 - Health endpoint for hosted deployments: `/healthz`
 
-See [`docs/CLIENTS.md`](docs/CLIENTS.md) for setup examples.
+See [`docs/CLIENTS.md`](docs/CLIENTS.md) for client-specific setup examples,
+the current compatibility matrix, and repeatable smoke-check commands.
 
 ## CLI Reference
 
