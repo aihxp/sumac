@@ -12,7 +12,13 @@ This note collects **why sxmc is useful**, **how to measure it**, and **represen
 | **Security** (`scan`) | LLM-only “please audit this skill” passes (slow, variable) |
 | **Distribution** | One Rust binary (plus optional wrappers) instead of several stacks |
 
-**Even a single, narrow MCP server** often benefits from **`sxmc stdio …` / `sxmc http …`**: scriptability, `--list` / `--pretty` inspection, CI, and debugging outside a full agent.
+**Even a single, narrow MCP server** often benefits from **`sxmc stdio …` /
+`sxmc http …`**: scriptability, `--list` / `--pretty` inspection, CI, and
+debugging outside a full agent.
+
+In practice, the bridge is most valuable for **tool surfaces**. `sxmc` also
+lists prompts/resources so you can inspect the full MCP surface, but the
+day-to-day shell automation story is primarily about invoking tools.
 
 ## Representative wall-clock results (CLI)
 

@@ -10,13 +10,13 @@ One Rust binary. Skills become MCP servers. MCP servers become CLI commands. Any
 
 **sxmc** solves this. One Rust binary that:
 - Turns skill directories into MCP servers (stdio or remote HTTP)
-- Makes any MCP server usable from the command line
+- Makes MCP tool surfaces usable from the command line
 - Auto-generates CLI commands from OpenAPI and GraphQL specs
 - Scans skills and MCP servers for security threats
 
 ```
-Skills  -->  MCP Server    (serve skills to any MCP client)
-MCP Server  -->  CLI       (turn any MCP server into CLI commands)
+Skills  -->  MCP Server     (serve skills to any MCP client)
+MCP Server  -->  CLI        (list MCP surfaces, invoke MCP tools)
 Any API  -->  CLI           (OpenAPI & GraphQL auto-detection)
 ```
 
@@ -152,6 +152,15 @@ sxmc http https://mcp.example.com/mcp --list
 sxmc http https://mcp.example.com/mcp my-tool key=value
 ```
 
+`sxmc stdio` and `sxmc http` are **tool-first MCP bridges**:
+- they can list **tools**, **prompts**, and **resources**
+- they can invoke **tools**
+- they do **not** yet expose prompts/resources as first-class CLI invocations in
+  the same way tools are invoked
+
+This makes them especially useful for shell automation, CI, debugging, and
+inspecting an MCP server outside an IDE or agent UI.
+
 That means skills can flow through both stages in one go:
 
 ```bash
@@ -164,9 +173,21 @@ sxmc stdio "sxmc serve --paths tests/fixtures" get_skill_related_file \
   relative_path=references/style-guide.md
 ```
 
+Hosted MCP servers work the same way over HTTP:
+
+```bash
+sxmc http http://127.0.0.1:8000/mcp \
+  --auth-header "Authorization: Bearer $SXMC_MCP_TOKEN" \
+  --list
+```
+
 For hosted `/mcp` endpoints, prefer `--require-header` so remote access is not
 left open by default. For single-token hosted deployments, `--bearer-token` is
 usually the friendlier option.
+
+One caveat for `sxmc stdio`: the spawned command is currently split from a
+single string, so simple command shapes work best. For complex quoting or shell
+features, prefer a wrapper script.
 
 ### Any API as CLI
 
