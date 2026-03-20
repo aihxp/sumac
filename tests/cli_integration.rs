@@ -1,0 +1,176 @@
+use assert_cmd::Command;
+use predicates::prelude::*;
+
+fn sxmc() -> Command {
+    Command::cargo_bin("sxmc").unwrap()
+}
+
+#[test]
+fn test_version() {
+    sxmc()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sxmc"));
+}
+
+#[test]
+fn test_help() {
+    sxmc()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Skills × MCP × CLI"))
+        .stdout(predicate::str::contains("serve"))
+        .stdout(predicate::str::contains("skills"))
+        .stdout(predicate::str::contains("stdio"))
+        .stdout(predicate::str::contains("http"))
+        .stdout(predicate::str::contains("api"))
+        .stdout(predicate::str::contains("scan"))
+        .stdout(predicate::str::contains("bake"));
+}
+
+#[test]
+fn test_skills_list() {
+    sxmc()
+        .args(["skills", "list", "--paths", "tests/fixtures"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("simple-skill"))
+        .stdout(predicate::str::contains("skill-with-scripts"))
+        .stdout(predicate::str::contains("skill-with-references"));
+}
+
+#[test]
+fn test_skills_list_json() {
+    sxmc()
+        .args(["skills", "list", "--paths", "tests/fixtures", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\""))
+        .stdout(predicate::str::contains("simple-skill"));
+}
+
+#[test]
+fn test_skills_info() {
+    sxmc()
+        .args(["skills", "info", "simple-skill", "--paths", "tests/fixtures"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Name: simple-skill"))
+        .stdout(predicate::str::contains("Description:"));
+}
+
+#[test]
+fn test_skills_info_not_found() {
+    sxmc()
+        .args(["skills", "info", "nonexistent-skill", "--paths", "tests/fixtures"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_skills_run() {
+    sxmc()
+        .args(["skills", "run", "simple-skill", "--paths", "tests/fixtures"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_scan_clean_skills() {
+    sxmc()
+        .args(["scan", "--paths", "tests/fixtures", "--skill", "simple-skill"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("PASS"));
+}
+
+#[test]
+fn test_scan_malicious_skill() {
+    sxmc()
+        .args(["scan", "--paths", "tests/fixtures", "--skill", "malicious-skill"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("CRITICAL"))
+        .stdout(predicate::str::contains("SL-INJ-001"));
+}
+
+#[test]
+fn test_scan_json_output() {
+    sxmc()
+        .args(["scan", "--paths", "tests/fixtures", "--skill", "malicious-skill", "--json"])
+        .assert()
+        .stdout(predicate::str::contains("\"findings\""))
+        .stdout(predicate::str::contains("\"severity\""))
+        .stdout(predicate::str::contains("\"critical\": 2"));
+}
+
+#[test]
+fn test_scan_severity_filter() {
+    sxmc()
+        .args(["scan", "--paths", "tests/fixtures", "--skill", "malicious-skill", "--severity", "critical"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("CRITICAL"));
+}
+
+#[test]
+fn test_scan_all_fixtures() {
+    sxmc()
+        .args(["scan", "--paths", "tests/fixtures"])
+        .assert()
+        // Should find issues in malicious-skill
+        .stdout(predicate::str::contains("PASS").or(predicate::str::contains("SCAN")));
+}
+
+#[test]
+fn test_bake_lifecycle() {
+    // Create
+    sxmc()
+        .args([
+            "bake", "create", "test-bake",
+            "--type", "stdio",
+            "--source", "echo hello",
+            "--description", "Test bake config",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created bake: test-bake"));
+
+    // List
+    sxmc()
+        .args(["bake", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("test-bake"));
+
+    // Show
+    sxmc()
+        .args(["bake", "show", "test-bake"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Name: test-bake"))
+        .stdout(predicate::str::contains("Source: echo hello"));
+
+    // Remove
+    sxmc()
+        .args(["bake", "remove", "test-bake"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed bake: test-bake"));
+
+    // Verify removed
+    sxmc()
+        .args(["bake", "show", "test-bake"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_no_subcommand_shows_help() {
+    sxmc()
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Usage"));
+}

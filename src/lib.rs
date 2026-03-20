@@ -1,4 +1,10 @@
+pub mod auth;
+pub mod bake;
+pub mod cache;
+pub mod client;
 pub mod error;
 pub mod executor;
+pub mod output;
+pub mod security;
 pub mod server;
 pub mod skills;
