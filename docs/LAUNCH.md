@@ -49,12 +49,11 @@ sxmc http http://127.0.0.1:8000/mcp \
 - OpenAPI and GraphQL API-to-CLI support
 - built-in security scanning
 
-### Patch Release Notes (`0.1.5`)
+### Patch Release Notes (`0.1.6`)
 
-- adds capability-aware MCP discovery with `--describe` and `--describe-tool`
-- adds explicit `--list-tools`, `--list-prompts`, and `--list-resources` modes
-- keeps `--list` successful on prompt-less MCP servers by skipping unsupported surfaces
-- hardens HTTP bridge tests with readiness waits so the full suite stays stable
+- adds startup sanity checks plus a cross-platform startup benchmark helper
+- runs `--version` and `--help` on every CI platform before the full suite
+- separates benchmark timing claims from compatibility and smoke validation docs
 
 ### Install
 
