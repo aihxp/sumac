@@ -99,10 +99,12 @@ fn scan_references(skill_dir: &Path, skill_name: &str) -> Result<Vec<SkillRefere
         let path = entry.path();
         if path.is_file() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                let name = name.to_string();
+                let uri = format!("skill://{}/references/{}", skill_name, name);
                 refs.push(SkillReference {
-                    name: name.to_string(),
+                    name,
                     path,
-                    uri: format!("skill://{}/references/{}", skill_name, name),
+                    uri,
                 });
             }
         }

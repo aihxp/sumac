@@ -11,7 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 # MCP protocol
-rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-sse"] }
+rmcp = { version = "1.2", features = ["server", "client", "macros", "transport-io", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest"] }
+schemars = "1"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
