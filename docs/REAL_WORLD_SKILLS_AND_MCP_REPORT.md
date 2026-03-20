@@ -1,16 +1,11 @@
 # Real-world skills & MCP servers — integration report
 
 **Date:** 2026-03-20  
-**sxmc:** `0.1.3` (`cargo` / `sxmc --version`)  
+**sxmc:** `0.1.5` (`cargo` / `sxmc --version`)  
 **Host:** Linux x86_64  
 **Node:** v22.x (`npx` available for official MCP npm packages)
 
 This document records **manual integration tests**: five **real** skill directories taken from this machine (user skills, Cursor built-ins, OpenClaw npm bundle) and five **public** MCP servers invoked via **`npx`**. It is **not** a performance benchmark; it focuses on **whether sxmc behaves usefully** and **where friction appears**.
-
-Maintainer note: the original finding about prompt-less servers making
-`sxmc stdio ... --list` exit non-zero has since been addressed on `master`.
-Current behavior is capability-aware: unsupported prompt/resource surfaces are
-skipped during `--list` instead of failing the whole command.
 
 ---
 
@@ -33,8 +28,8 @@ All five were symlinked under a single search root so one `sxmc` process could l
   system-info   -> ~/.claude/skills/system-info
   create-skill  -> ~/.cursor/skills-cursor/create-skill
   shell-skill   -> ~/.cursor/skills-cursor/shell
-  github        -> ~/.npm-global/.../openclaw/skills/github
-  summarize     -> ~/.npm-global/.../openclaw/skills/summarize
+  github        -> ~/.npm-global/lib/node_modules/openclaw/skills/github
+  summarize     -> ~/.npm-global/lib/node_modules/openclaw/skills/summarize
 ```
 
 *(Folder name `shell-skill` vs frontmatter name `shell` is intentional: discovery uses directory names for on-disk layout; frontmatter `name` is what sxmc reports.)*
@@ -99,35 +94,36 @@ sxmc stdio "npx -y <package> [args…]" --list
 **Timeout:** 120s per server (first `npx` install can be slow).  
 **Network:** required for npm.
 
-### 2.2 Results summary
+### 2.2 Results summary (**sxmc 0.1.5**)
 
-| # | Package / command | Tools listed? | Prompts listed? | Exit | Notes |
-|---|-------------------|---------------|-----------------|------|--------|
-| 1 | `@modelcontextprotocol/server-everything` | Yes (**13**) | Yes (**4**) | **0** | Reference implementation; **full success**. |
-| 2 | `@modelcontextprotocol/server-memory` | Yes (**9**) | **Failed** | **1** | After tools: `list_prompts` → **JSON-RPC `-32601` Method not found**. |
-| 3 | `@modelcontextprotocol/server-filesystem /tmp` | Yes (**14**) | **Failed** | **1** | Same **`list_prompts`** / **`-32601`** pattern. |
-| 4 | `@modelcontextprotocol/server-sequential-thinking` | Yes (**1**) | **Failed** | **1** | Same pattern. |
-| 5 | `@modelcontextprotocol/server-github` | Yes (many) | **Failed** | **1** | Same pattern; **no `GITHUB_TOKEN` required** for `--list` of tool metadata. |
+| # | Package / command | Tools listed? | Prompts / resources | Exit | Notes |
+|---|-------------------|---------------|---------------------|------|--------|
+| 1 | `@modelcontextprotocol/server-everything` | Yes (**13**) | Prompts **4**, resources listed | **0** | Reference implementation; **full success**. |
+| 2 | `@modelcontextprotocol/server-memory` | Yes (**9**) | **Skipped** (not advertised) | **0** | stderr: *Skipping prompt/resource listing…*; **no** `-32601` failure. |
+| 3 | `@modelcontextprotocol/server-filesystem /tmp` | Yes (**14**) | **Skipped** (not advertised) | **0** | Same pattern as memory. |
+| 4 | `@modelcontextprotocol/server-sequential-thinking` | Yes (**1**) | **Skipped** (not advertised) | **0** | Same pattern. |
+| 5 | `@modelcontextprotocol/server-github` | Yes (many) | **Skipped** (not advertised) | **0** | Same pattern; **no `GITHUB_TOKEN` required** for `--list` of tool metadata. |
 | *(alt)* | `@modelcontextprotocol/server-fetch` | — | — | **1** | **npm 404** — package **does not exist** under that name (as of test date). |
 
 ### 2.3 Interpretation (important)
 
-Many official MCP servers implement **tools** (and sometimes **resources**) but **do not** implement the **`prompts/list`** capability. At test time, **sxmc**’s `stdio`/`http` **`--list` path called `list_prompts` unconditionally** after listing tools. When the server returned **`-32601`**, the **overall CLI exited non-zero** even though **tool discovery already succeeded**.
+**As of v0.1.5**, `sxmc stdio` / `http` **`--list`** uses **capability-aware** listing:
 
-**Practical impact:**
+- If the server **does not advertise** prompts or resources during initialization, sxmc **skips** those listings (with a short stderr notice) and still exits **0** after tools.
+- If a listing is attempted and the server returns **`-32601` Method not found** (or similar), sxmc treats that as **“optional surface not available”**, prints a skip notice, and continues — **exit 0**.
 
-- At test time, **`sxmc stdio "…" --list`** looked **failed** for many real servers.
-- **Tool invocation** may still work: e.g. **`server-everything`**:
+**Compared to v0.1.3 and earlier:** those versions could **exit 1** after successful tool discovery when `prompts/list` failed. **That regression for common npm servers is resolved in 0.1.5.**
+
+**Practical impact today:**
+
+- **`sxmc stdio "…" --list`** is **reliable** for discovering **tools** on typical `@modelcontextprotocol/*` servers.
+- **Tool invocation** still works as before; e.g. **`server-everything`**:
 
   ```bash
   sxmc stdio "npx -y @modelcontextprotocol/server-everything" get-sum a=2 b=3 --pretty
   ```
 
   returned: `The sum of 2 and 3 is 5.` (**success**).
-
-So: **MCP → CLI works**, and the recorded brittleness around prompt-less servers
-was a good trigger for making `--list` treat unsupported prompts/resources as
-**non-fatal**.
 
 ### 2.4 Follow-up test (`server-memory`)
 
@@ -142,15 +138,15 @@ Calling `read_graph` with guessed CLI args produced **`-32602` input validation*
 | **Load diverse real skills** | **Works** — symlinked multi-root bundle is OK. |
 | **`skills list` / `info` / `run` / `scan`** | **Works** for all five; `run` is **prompt dump**, not automation. |
 | **Serve 5 skills as MCP** | **Works** — prompts + hybrid tools + resources as designed. |
-| **Bridge official MCP servers** | **Useful** — **tool listing** works, and current `master` treats unsupported prompts/resources as non-fatal during `--list`. |
+| **Bridge official MCP servers** | **Works** for **`--list`** on the five tested servers — **exit 0** with tools listed (**v0.1.5**). |
 | **Wrong npm package name** | **User error surface** — `server-fetch` 404; verify package names on npm. |
 
 ---
 
 ## 4. Recommendations (product / docs)
 
-1. **MCP client `list`:** Landed on `master` — if prompts/resources are not supported, `--list` now skips those surfaces instead of exiting non-zero.
-2. **Docs:** Call out that **`@modelcontextprotocol/server-everything`** is the easiest **known-good** server for **`sxmc stdio … --list`** demos.
+1. ~~**MCP client `list`:** If `list_prompts` returns **`-32601`**, treat as **“no prompts”** and exit **0**~~ — **Done in v0.1.5** (optional-surface handling + advertised-capability skip).
+2. **Docs:** Call out that **`@modelcontextprotocol/server-everything`** is the easiest **known-good** server for full **tools + prompts + resources** demos.
 3. **Docs:** Link to npm scope **`@modelcontextprotocol/`** package list; **`server-fetch`** name may be wrong or unpublished.
 
 ---
@@ -166,10 +162,10 @@ sxmc skills list --paths /tmp/sxmc-realworld-skills
 sxmc scan --paths /tmp/sxmc-realworld-skills
 sxmc stdio "sxmc serve --paths /tmp/sxmc-realworld-skills" --list
 
-# MCP (requires Node + network)
+# MCP (requires Node + network; sxmc >= 0.1.5 for non-fatal optional surfaces)
 sxmc stdio "npx -y @modelcontextprotocol/server-everything" --list
 sxmc stdio "npx -y @modelcontextprotocol/server-everything" get-sum a=2 b=3 --pretty
-sxmc stdio "npx -y @modelcontextprotocol/server-memory" --list   # current master should succeed and skip prompts
+sxmc stdio "npx -y @modelcontextprotocol/server-memory" --list   # expect exit 0 (tools + skip notices)
 ```
 
 ---
@@ -178,4 +174,5 @@ sxmc stdio "npx -y @modelcontextprotocol/server-memory" --list   # current maste
 
 - [MCP_TO_CLI_VERIFICATION.md](MCP_TO_CLI_VERIFICATION.md)
 - [VALUE_AND_BENCHMARK_FINDINGS.md](VALUE_AND_BENCHMARK_FINDINGS.md)
+- [BENCHMARK_RUN_v0.1.5.md](BENCHMARK_RUN_v0.1.5.md)
 - [CLIENTS.md](CLIENTS.md)
