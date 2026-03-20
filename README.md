@@ -424,6 +424,7 @@ sxmc was inspired by and builds upon ideas from:
 
 - [mcp2cli](https://github.com/knowsuchagency/mcp2cli) — the Python MCP-to-CLI bridge that sxmc reimplements in Rust with skills as a first-class concept
 - [skill-to-mcp](https://github.com/biocontext-ai/skill-to-mcp) — an early skills-to-MCP adapter that helped validate the value of exposing skill collections through MCP
+- [toon-format/toon](https://github.com/toon-format/toon) — format and benchmark work that informed sxmc's TOON-style structured API output
 - [claude-skill-antivirus](https://github.com/claude-world/claude-skill-antivirus) — skill security scanning patterns
 - [skillfile](https://github.com/eljulians/skillfile) — declarative skill manifest concepts
 - [Mcpwn](https://github.com/Teycir/Mcpwn) — MCP server security analysis techniques
