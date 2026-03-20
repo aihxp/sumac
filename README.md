@@ -96,6 +96,9 @@ sxmc serve
 # Streamable HTTP MCP endpoint at http://127.0.0.1:8000/mcp
 sxmc serve --transport http --host 127.0.0.1 --port 8000
 
+# Development mode: reload skills when SKILL.md, scripts/, or references/ change
+sxmc serve --watch
+
 # Require auth headers for remote MCP access
 sxmc serve --transport http --host 0.0.0.0 --port 8000 \
   --require-header "Authorization: env:SXMC_MCP_TOKEN"
@@ -206,6 +209,8 @@ For `sxmc stdio`, you can now pass either shell-style quoting or a JSON-array
 command spec such as `["sxmc","serve","--paths","tests/fixtures"]`. For nested
 or project-local servers, `--cwd` gives you an explicit working directory when
 you do not want to rely on the caller’s current directory.
+For local skill development, `sxmc serve --watch` polls skill files once per
+second and reloads the in-memory server when it detects a change.
 
 ### Any API as CLI
 
@@ -362,6 +367,7 @@ remote streamable HTTP MCP endpoint at `/mcp`.
 - Supported now for remote MCP consumers too: streamable HTTP MCP at `/mcp`
 - Recommended for hosted remote MCP: `--bearer-token env:SXMC_MCP_TOKEN`
 - Health endpoint for hosted deployments: `/healthz`
+- Local development convenience: `sxmc serve --watch`
 
 See [`docs/CLIENTS.md`](docs/CLIENTS.md) for client-specific setup examples,
 the current compatibility matrix, and repeatable smoke-check commands.
@@ -372,7 +378,7 @@ the current compatibility matrix, and repeatable smoke-check commands.
 sxmc [subcommand] [options]
 
 SERVER:
-  serve [--paths ...] [--transport stdio|http|sse] [--host 127.0.0.1] [--port 8000] [--require-header K:V] [--bearer-token TOKEN]
+  serve [--paths ...] [--watch] [--transport stdio|http|sse] [--host 127.0.0.1] [--port 8000] [--require-header K:V] [--bearer-token TOKEN]
 
 SKILLS:
   skills list [--paths ...] [--json]
