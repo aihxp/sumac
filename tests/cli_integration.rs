@@ -112,7 +112,9 @@ fn test_scan_severity_filter() {
         .args(["scan", "--paths", "tests/fixtures", "--skill", "malicious-skill", "--severity", "critical"])
         .assert()
         .failure()
-        .stdout(predicate::str::contains("CRITICAL"));
+        .stdout(predicate::str::contains("CRITICAL"))
+        .stdout(predicate::str::contains("ERROR").not())
+        .stdout(predicate::str::contains("WARN").not());
 }
 
 #[test]
@@ -152,6 +154,24 @@ fn test_bake_lifecycle() {
         .success()
         .stdout(predicate::str::contains("Name: test-bake"))
         .stdout(predicate::str::contains("Source: echo hello"));
+
+    // Update
+    sxmc()
+        .args([
+            "bake", "update", "test-bake",
+            "--source", "echo updated",
+            "--description", "Updated bake config",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated bake: test-bake"));
+
+    sxmc()
+        .args(["bake", "show", "test-bake"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Source: echo updated"))
+        .stdout(predicate::str::contains("Description: Updated bake config"));
 
     // Remove
     sxmc()

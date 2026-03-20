@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use std::collections::HashMap;
 
+use sxmc::auth::secrets::resolve_header;
 use sxmc::bake::{BakeConfig, BakeStore};
 use sxmc::bake::config::SourceType;
 use sxmc::client::{api, graphql, mcp_http, mcp_stdio, openapi};
@@ -258,6 +259,31 @@ enum BakeAction {
     Show {
         name: String,
     },
+    /// Update an existing baked config
+    Update {
+        /// Config name
+        name: String,
+
+        /// Source type: stdio, http, api, spec, graphql
+        #[arg(long = "type")]
+        source_type: Option<String>,
+
+        /// Source URL, command, or path
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Auth headers (Key:Value)
+        #[arg(long = "auth-header", value_name = "K:V")]
+        auth_headers: Vec<String>,
+
+        /// Env vars for stdio (KEY=VALUE)
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        env_vars: Vec<String>,
+    },
     /// Remove a baked config
     Remove {
         name: String,
@@ -335,11 +361,25 @@ fn parse_string_kv_args(args: &[String]) -> HashMap<String, String> {
     map
 }
 
-fn parse_headers(headers: &[String]) -> Vec<(String, String)> {
-    headers
-        .iter()
-        .filter_map(|h| h.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
-        .collect()
+fn parse_headers(headers: &[String]) -> Result<Vec<(String, String)>> {
+    headers.iter().map(|h| resolve_header(h)).collect()
+}
+
+fn parse_source_type(source_type: &str) -> SourceType {
+    match source_type {
+        "stdio" => SourceType::Stdio,
+        "http" => SourceType::Http,
+        "api" => SourceType::Api,
+        "spec" => SourceType::Spec,
+        "graphql" => SourceType::Graphql,
+        other => {
+            eprintln!(
+                "Unknown source type: {}. Use: stdio, http, api, spec, graphql",
+                other
+            );
+            std::process::exit(1);
+        }
+    }
 }
 
 #[tokio::main]
@@ -377,7 +417,7 @@ async fn main() -> anyhow::Result<()> {
                 cmd_skills_run(&resolve_paths(paths), &name, &arguments).await?;
             }
             SkillsAction::Create { source, output_dir, auth_headers } => {
-                let headers = parse_headers(&auth_headers);
+                let headers = parse_headers(&auth_headers)?;
                 let skill_dir = generator::generate_from_openapi(&source, &output_dir, &headers).await?;
                 println!("Generated skill at: {}", skill_dir.display());
             }
@@ -431,7 +471,7 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             auth_headers,
         } => {
-            let headers = parse_headers(&auth_headers);
+            let headers = parse_headers(&auth_headers)?;
             let client = mcp_http::HttpClient::connect(&url, &headers).await?;
 
             if list || search.is_some() {
@@ -470,7 +510,7 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             auth_headers,
         } => {
-            let headers = parse_headers(&auth_headers);
+            let headers = parse_headers(&auth_headers)?;
             let client = api::ApiClient::connect(&source, &headers).await?;
             eprintln!("[sxmc] Detected {} API", client.api_type());
             cmd_api(&client, operation, &args, list, search.as_deref(), pretty).await?;
@@ -485,7 +525,7 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             auth_headers,
         } => {
-            let headers = parse_headers(&auth_headers);
+            let headers = parse_headers(&auth_headers)?;
             let spec = openapi::OpenApiSpec::load(&source, &headers).await?;
             eprintln!("[sxmc] Loaded OpenAPI spec: {}", spec.title);
             let client = api::ApiClient::OpenApi(spec);
@@ -501,7 +541,7 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             auth_headers,
         } => {
-            let headers = parse_headers(&auth_headers);
+            let headers = parse_headers(&auth_headers)?;
             let gql = graphql::GraphQLClient::connect(&url, &headers).await?;
             let client = api::ApiClient::GraphQL(gql);
             cmd_api(&client, operation, &args, list, search.as_deref(), pretty).await?;
@@ -562,14 +602,17 @@ async fn main() -> anyhow::Result<()> {
             // Output results
             let mut exit_code = 0;
             for report in &reports {
-                let filtered: Vec<_> = report.findings_at_severity(min_severity);
+                let filtered_report = report.filtered(min_severity);
                 if json {
-                    println!("{}", serde_json::to_string_pretty(&report.format_json())?);
-                } else if filtered.is_empty() {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&filtered_report.format_json())?
+                    );
+                } else if filtered_report.is_clean() {
                     println!("[PASS] {} — no issues at severity >= {}", report.target, severity);
                 } else {
-                    println!("{}", report.format_text());
-                    if report.has_errors() {
+                    println!("{}", filtered_report.format_text());
+                    if filtered_report.has_errors() {
                         exit_code = 1;
                     }
                 }
@@ -597,17 +640,7 @@ async fn main() -> anyhow::Result<()> {
                 auth_headers,
                 env_vars,
             } => {
-                let st = match source_type.as_str() {
-                    "stdio" => SourceType::Stdio,
-                    "http" => SourceType::Http,
-                    "api" => SourceType::Api,
-                    "spec" => SourceType::Spec,
-                    "graphql" => SourceType::Graphql,
-                    other => {
-                        eprintln!("Unknown source type: {}. Use: stdio, http, api, spec, graphql", other);
-                        std::process::exit(1);
-                    }
-                };
+                let st = parse_source_type(&source_type);
                 let mut store = BakeStore::load()?;
                 store.create(BakeConfig {
                     name: name.clone(),
@@ -649,6 +682,46 @@ async fn main() -> anyhow::Result<()> {
                     eprintln!("Bake '{}' not found", name);
                     std::process::exit(1);
                 }
+            }
+            BakeAction::Update {
+                name,
+                source_type,
+                source,
+                description,
+                auth_headers,
+                env_vars,
+            } => {
+                let mut store = BakeStore::load()?;
+                let existing = match store.show(&name) {
+                    Some(config) => config.clone(),
+                    None => {
+                        eprintln!("Bake '{}' not found", name);
+                        std::process::exit(1);
+                    }
+                };
+
+                let updated = BakeConfig {
+                    name: name.clone(),
+                    source_type: source_type
+                        .as_deref()
+                        .map(parse_source_type)
+                        .unwrap_or(existing.source_type),
+                    source: source.unwrap_or(existing.source),
+                    auth_headers: if auth_headers.is_empty() {
+                        existing.auth_headers
+                    } else {
+                        auth_headers
+                    },
+                    env_vars: if env_vars.is_empty() {
+                        existing.env_vars
+                    } else {
+                        env_vars
+                    },
+                    description: description.or(existing.description),
+                };
+
+                store.update(updated)?;
+                println!("Updated bake: {}", name);
             }
             BakeAction::Remove { name } => {
                 let mut store = BakeStore::load()?;

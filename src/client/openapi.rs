@@ -49,7 +49,7 @@ impl OpenApiSpec {
         auth_headers: &[(String, String)],
     ) -> Result<Self> {
         let raw = if source.starts_with("http://") || source.starts_with("https://") {
-            fetch_spec(source).await?
+            fetch_spec(source, auth_headers).await?
         } else {
             let path = Path::new(source);
             let content = std::fs::read_to_string(path)
@@ -259,8 +259,25 @@ impl OpenApiParam {
 }
 
 /// Fetch a spec from a URL.
-async fn fetch_spec(url: &str) -> Result<String> {
-    let resp = reqwest::get(url)
+async fn fetch_spec(url: &str, auth_headers: &[(String, String)]) -> Result<String> {
+    let mut header_map = reqwest::header::HeaderMap::new();
+    for (key, value) in auth_headers {
+        if let (Ok(name), Ok(val)) = (
+            key.parse::<reqwest::header::HeaderName>(),
+            value.parse::<reqwest::header::HeaderValue>(),
+        ) {
+            header_map.insert(name, val);
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .default_headers(header_map)
+        .build()
+        .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))?;
+
+    let resp = client
+        .get(url)
+        .send()
         .await
         .map_err(|e| SxmcError::Other(format!("Failed to fetch spec: {}", e)))?;
     resp.text()

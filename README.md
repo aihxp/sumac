@@ -31,8 +31,7 @@ cargo build --release
 # stdio (for MCP client configs)
 sxmc serve
 
-# HTTP/SSE for remote access
-sxmc serve --transport sse --port 8000
+# SSE transport is planned but not yet implemented
 ```
 
 Add to any MCP client config:
@@ -71,6 +70,9 @@ sxmc api https://petstore.swagger.io/v3/openapi.json listPets limit=10
 sxmc spec ./openapi.yaml listPets limit=10
 sxmc graphql https://api.example.com/graphql users limit=5
 ```
+
+Protected endpoints can use `--auth-header`, and header values support
+`env:VAR_NAME` and `file:/path/to/secret` forms for secret resolution.
 
 ### Security scanning
 
@@ -135,7 +137,7 @@ Skills are discovered from (in priority order):
 
 ## Security Scanning
 
-sxmc includes a native Rust security scanner that analyzes skills and MCP servers for threats. Scans run automatically when serving skills or connecting to servers.
+sxmc includes a native Rust security scanner that analyzes skills and MCP servers for threats. Scans are available through the `scan` command for skills and MCP servers.
 
 ### What it detects
 
@@ -169,10 +171,12 @@ sxmc
 ├── Security Layer
 │   ├── Skill Scanner — prompt injection, secrets, hidden chars
 │   └── MCP Scanner  — tool shadowing, response injection
+├── Scan Command
+│   └── Explicit security analysis for skills and MCP servers
 ├── Server Side
-│   └── Discovery → Parser → Security Scan → MCP Server (rmcp)
+│   └── Discovery → Parser → MCP Server (rmcp)
 └── Client Side
-    ├── MCP Client — stdio & HTTP/SSE transports
+    ├── MCP Client — stdio & HTTP transports
     ├── OpenAPI    — spec parsing + HTTP execution
     ├── GraphQL    — introspection + query building
     ├── Bake       — saved connection configs
@@ -187,13 +191,13 @@ Built on [rmcp](https://github.com/nicepkg/rmcp) (official Rust MCP SDK).
 sxmc [subcommand] [options]
 
 SERVER:
-  serve [--paths ...] [--transport stdio|sse] [--port 8000]
+  serve [--paths ...] [--transport stdio] [--port 8000]
 
 SKILLS:
   skills list [--paths ...] [--json]
   skills info <name> [--paths ...]
   skills run <name> [args...] [--paths ...]
-  skills create <api-url> [--output DIR] [--auth-header K:V]
+  skills create <api-url> [--output-dir DIR] [--auth-header K:V]
 
 CLIENT:
   stdio <command> [tool] [args...] [--list] [--search] [--pretty] [--env K=V]
@@ -206,17 +210,17 @@ SECURITY:
   scan [--paths ...] [--skill <name>] [--severity warn|error|critical] [--json]
 
 BAKE:
-  bake create <name> --type <stdio|http|spec|graphql> --source <src> [--description ...]
+  bake create <name> --type <stdio|http|api|spec|graphql> --source <src> [--description ...]
   bake list
   bake show <name>
-  bake update <name> [--source ...] [--description ...]
+  bake update <name> [--type ...] [--source ...] [--description ...]
   bake remove <name>
 ```
 
 ## Development
 
 ```bash
-# Run tests (66 total: 52 unit + 14 integration)
+# Run tests (69 total: 55 unit + 14 integration)
 cargo test
 
 # Build

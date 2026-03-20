@@ -109,15 +109,21 @@ fn scan_references(skill_dir: &Path, skill_name: &str) -> Result<Vec<SkillRefere
 }
 
 /// Parse argument-hint into structured arguments.
-/// `[arg1] [optional-arg]` → Vec of SkillArgument
+/// Supports both `<required>` and `[optional]` forms, while preserving
+/// the older convention where bracketed non-flag values are treated as required.
 pub fn parse_argument_hint(hint: &str) -> Vec<SkillArgument> {
     let mut args = Vec::new();
 
-    for cap in regex::Regex::new(r"\[([^\]]+)\]")
+    for cap in regex::Regex::new(r"<([^>]+)>|\[([^\]]+)\]")
         .unwrap()
         .captures_iter(hint)
     {
-        let token = cap[1].trim();
+        let (token, required) = if let Some(required) = cap.get(1) {
+            (required.as_str().trim(), true)
+        } else {
+            let optional = cap.get(2).unwrap().as_str().trim();
+            (optional, !optional.starts_with('-'))
+        };
         let is_flag = token.starts_with('-');
         let name = token
             .trim_start_matches('-')
@@ -126,7 +132,7 @@ pub fn parse_argument_hint(hint: &str) -> Vec<SkillArgument> {
 
         args.push(SkillArgument {
             name,
-            required: !is_flag,
+            required: required && !is_flag,
             description: token.to_string(),
         });
     }
@@ -206,5 +212,15 @@ mod tests {
         assert_eq!(args.len(), 1);
         assert_eq!(args[0].name, "arguments");
         assert!(!args[0].required);
+    }
+
+    #[test]
+    fn test_parse_argument_hint_angle_brackets() {
+        let args = parse_argument_hint("<repo> [--dry-run]");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].name, "repo");
+        assert!(args[0].required);
+        assert_eq!(args[1].name, "dry_run");
+        assert!(!args[1].required);
     }
 }

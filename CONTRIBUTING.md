@@ -66,4 +66,4 @@ The client module uses a `CommandDef` abstraction shared across all API types. T
 - Keep PRs focused on a single change
 - Include tests for new functionality
 - Run `cargo test` and `cargo clippy` before submitting
-- Update the README if adding user-facing features
+- Update the README and CLI examples if changing user-facing behavior or flags

@@ -12,6 +12,7 @@ pub struct GraphQLOperation {
     pub description: String,
     pub kind: GraphQLOpKind,
     pub args: Vec<GraphQLArg>,
+    pub returns_composite: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -182,6 +183,11 @@ async fn introspect(client: &reqwest::Client, url: &str) -> Result<Vec<GraphQLOp
                 fields {
                     name
                     description
+                    type {
+                        name
+                        kind
+                        ofType { name kind ofType { name kind ofType { name kind } } }
+                    }
                     args {
                         name
                         description
@@ -272,6 +278,10 @@ async fn introspect(client: &reqwest::Client, url: &str) -> Result<Vec<GraphQLOp
                     description,
                     kind: kind.clone(),
                     args,
+                    returns_composite: field
+                        .get("type")
+                        .map(is_composite_output_type)
+                        .unwrap_or(false),
                 });
             }
         }
@@ -331,6 +341,19 @@ fn resolve_graphql_type(type_val: &Value) -> (String, bool) {
     (name, false)
 }
 
+fn is_composite_output_type(type_val: &Value) -> bool {
+    let kind = type_val.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+
+    match kind {
+        "NON_NULL" | "LIST" => type_val
+            .get("ofType")
+            .map(is_composite_output_type)
+            .unwrap_or(false),
+        "OBJECT" | "INTERFACE" | "UNION" => true,
+        _ => false,
+    }
+}
+
 /// Map GraphQL type names to ParamType.
 fn graphql_type_to_param(type_name: &str) -> ParamType {
     let clean = type_name.trim_start_matches('[').trim_end_matches(']');
@@ -349,8 +372,14 @@ fn build_query(op: &GraphQLOperation) -> String {
         GraphQLOpKind::Mutation => "mutation",
     };
 
+    let selection = if op.returns_composite {
+        " { __typename }"
+    } else {
+        ""
+    };
+
     if op.args.is_empty() {
-        return format!("{} {{ {} }}", prefix, op.name);
+        return format!("{} {{ {}{} }}", prefix, op.name, selection);
     }
 
     // Build variable declarations
@@ -375,11 +404,12 @@ fn build_query(op: &GraphQLOperation) -> String {
         .collect();
 
     format!(
-        "{} Op({}) {{ {}({}) }}",
+        "{} Op({}) {{ {}({}){} }}",
         prefix,
         var_decls.join(", "),
         op.name,
-        arg_pass.join(", ")
+        arg_pass.join(", "),
+        selection
     )
 }
 
@@ -454,6 +484,7 @@ mod tests {
             description: "".to_string(),
             kind: GraphQLOpKind::Query,
             args: vec![],
+            returns_composite: false,
         };
         assert_eq!(build_query(&op), "query { users }");
     }
@@ -470,10 +501,31 @@ mod tests {
                 type_name: "ID".to_string(),
                 required: true,
             }],
+            returns_composite: false,
         };
         assert_eq!(
             build_query(&op),
             "query Op($id: ID!) { user(id: $id) }"
+        );
+    }
+
+    #[test]
+    fn test_build_query_with_composite_return_type() {
+        let op = GraphQLOperation {
+            name: "user".to_string(),
+            description: "".to_string(),
+            kind: GraphQLOpKind::Query,
+            args: vec![GraphQLArg {
+                name: "id".to_string(),
+                description: "".to_string(),
+                type_name: "ID".to_string(),
+                required: true,
+            }],
+            returns_composite: true,
+        };
+        assert_eq!(
+            build_query(&op),
+            "query Op($id: ID!) { user(id: $id) { __typename } }"
         );
     }
 }

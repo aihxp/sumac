@@ -23,7 +23,7 @@ pub enum ApiClient {
 impl ApiClient {
     /// Auto-detect API type from source and connect.
     pub async fn connect(source: &str, auth_headers: &[(String, String)]) -> Result<Self> {
-        let api_type = detect_api_type(source).await?;
+        let api_type = detect_api_type(source, auth_headers).await?;
 
         match api_type {
             ApiType::OpenApi => {
@@ -81,7 +81,7 @@ impl ApiClient {
 }
 
 /// Detect the API type from a source URL or file path.
-async fn detect_api_type(source: &str) -> Result<ApiType> {
+async fn detect_api_type(source: &str, auth_headers: &[(String, String)]) -> Result<ApiType> {
     let lower = source.to_lowercase();
 
     // File extension hints
@@ -100,7 +100,7 @@ async fn detect_api_type(source: &str) -> Result<ApiType> {
 
     // If it's a URL, try to fetch and detect from content
     if source.starts_with("http://") || source.starts_with("https://") {
-        return detect_from_url(source).await;
+        return detect_from_url(source, auth_headers).await;
     }
 
     // If it's a file, try to detect from content
@@ -115,8 +115,11 @@ async fn detect_api_type(source: &str) -> Result<ApiType> {
 }
 
 /// Detect API type by fetching content from a URL.
-async fn detect_from_url(url: &str) -> Result<ApiType> {
-    let resp = reqwest::get(url)
+async fn detect_from_url(url: &str, auth_headers: &[(String, String)]) -> Result<ApiType> {
+    let client = build_client(auth_headers)?;
+    let resp = client
+        .get(url)
+        .send()
         .await
         .map_err(|e| SxmcError::Other(format!("Failed to fetch: {}", e)))?;
 
@@ -163,4 +166,21 @@ fn detect_from_content(content: &str) -> Result<ApiType> {
         "Cannot determine API type from content. Use --spec or --graphql to specify explicitly."
             .to_string(),
     ))
+}
+
+fn build_client(auth_headers: &[(String, String)]) -> Result<reqwest::Client> {
+    let mut header_map = reqwest::header::HeaderMap::new();
+    for (key, value) in auth_headers {
+        if let (Ok(name), Ok(val)) = (
+            key.parse::<reqwest::header::HeaderName>(),
+            value.parse::<reqwest::header::HeaderValue>(),
+        ) {
+            header_map.insert(name, val);
+        }
+    }
+
+    reqwest::Client::builder()
+        .default_headers(header_map)
+        .build()
+        .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))
 }

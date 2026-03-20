@@ -67,6 +67,18 @@ impl ScanReport {
         self.findings.push(finding);
     }
 
+    pub fn filtered(&self, min: Severity) -> Self {
+        Self {
+            target: self.target.clone(),
+            findings: self
+                .findings
+                .iter()
+                .filter(|f| f.severity >= min)
+                .cloned()
+                .collect(),
+        }
+    }
+
     /// Get findings filtered by minimum severity.
     pub fn findings_at_severity(&self, min: Severity) -> Vec<&Finding> {
         self.findings.iter().filter(|f| f.severity >= min).collect()
