@@ -11,6 +11,29 @@ they validate the transport patterns those clients rely on:
 For the release-by-release validation ledger, pair this file with
 [`COMPATIBILITY_MATRIX.md`](COMPATIBILITY_MATRIX.md).
 
+These checks are intentionally separate from the Linux timing harness in
+[`VALUE_AND_BENCHMARK_FINDINGS.md`](VALUE_AND_BENCHMARK_FINDINGS.md). Smoke
+tests answer "does it start and work," while benchmarks answer "how long did
+this machine take."
+
+## Startup Sanity
+
+Before running the broader client smoke checks, confirm the binary starts
+cleanly:
+
+```bash
+bash scripts/startup_smoke.sh target/debug/sxmc
+```
+
+For startup timing rather than pass/fail sanity, use:
+
+```bash
+python3 scripts/benchmark_startup.py /tmp/sxmc-startup-benchmark.md
+```
+
+CI runs `--version` and `--help` on every OS before the full test suite so
+startup failures are surfaced earlier than transport-level failures.
+
 ## Automated Smoke Script
 
 Run from the repo root:
@@ -72,7 +95,8 @@ sxmc serve --transport http --host 0.0.0.0 --port 8000 \
 
 After each release:
 
-1. Run the automated smoke script.
-2. Re-check the client config examples under [`../examples/clients`](../examples/clients).
-3. Update [`COMPATIBILITY_MATRIX.md`](COMPATIBILITY_MATRIX.md) with the release
+1. Run the startup sanity check.
+2. Run the automated smoke script.
+3. Re-check the client config examples under [`../examples/clients`](../examples/clients).
+4. Update [`COMPATIBILITY_MATRIX.md`](COMPATIBILITY_MATRIX.md) with the release
    version and validation date.

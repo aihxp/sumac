@@ -4,6 +4,8 @@ This file is the maintained compatibility ledger for `sxmc`.
 
 Use it to record what was verified, against which release, and on what date.
 It complements the transport-level smoke script in [`SMOKE_TESTS.md`](SMOKE_TESTS.md).
+It is not a performance benchmark; keep timing interpretation in
+[`VALUE_AND_BENCHMARK_FINDINGS.md`](VALUE_AND_BENCHMARK_FINDINGS.md).
 
 ## Current Validation Snapshot
 
@@ -26,6 +28,7 @@ For a client row to remain marked as validated:
 
 ```bash
 cargo build
+bash scripts/startup_smoke.sh target/debug/sxmc
 bash scripts/smoke_test_clients.sh target/debug/sxmc tests/fixtures
 ```
 
@@ -69,3 +72,5 @@ cargo install sxmc --force
   shape that remote-capable clients consume.
 - When a client changes its MCP config format, update the example file and this
   matrix together.
+- Startup timings and performance claims belong in the benchmark docs, not in
+  this compatibility ledger.

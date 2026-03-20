@@ -81,7 +81,9 @@ examples are in [`docs/CONNECTION_EXAMPLES.md`](docs/CONNECTION_EXAMPLES.md).
 Release and publishing steps are in
 [`docs/RELEASING.md`](docs/RELEASING.md). Distribution-channel notes are in
 [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md), smoke checks are in
-[`docs/SMOKE_TESTS.md`](docs/SMOKE_TESTS.md), and launch copy is in
+[`docs/SMOKE_TESTS.md`](docs/SMOKE_TESTS.md), performance and token notes are in
+[`docs/VALUE_AND_BENCHMARK_FINDINGS.md`](docs/VALUE_AND_BENCHMARK_FINDINGS.md),
+and launch copy is in
 [`docs/LAUNCH.md`](docs/LAUNCH.md).
 
 Package-specific notes:

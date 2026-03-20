@@ -43,6 +43,20 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Build debug binary
+        run: cargo build --locked
+
+      - name: Startup sanity check (Unix)
+        if: runner.os != 'Windows'
+        run: bash scripts/startup_smoke.sh target/debug/sxmc
+
+      - name: Startup sanity check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          target\debug\sxmc.exe --version | Out-Null
+          target\debug\sxmc.exe --help | Out-Null
+
       - name: Run tests
         run: cargo test --locked --all-targets
 

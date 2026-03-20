@@ -2,6 +2,27 @@
 
 This note collects **why sxmc is useful**, **how to measure it**, and **representative timing** from automated CLI benchmarks. Token figures are **estimates** unless you instrument your own LLM client.
 
+## What These Benchmarks Are And Are Not
+
+The benchmark harnesses in this repository are meant to answer:
+
+- how much local overhead `sxmc` adds on a normal machine
+- whether common one-shot CLI paths regress noticeably
+- whether process startup stays cheap enough to be negligible vs agent latency
+
+They are not meant to prove:
+
+- cross-client compatibility
+- hosted deployment correctness
+- Windows/macOS parity from a single Linux timing table
+- product value from raw Petstore latency changes alone
+
+Keep those concerns separate:
+
+- compatibility and client coverage: [`COMPATIBILITY_MATRIX.md`](COMPATIBILITY_MATRIX.md)
+- transport and startup pass/fail smoke checks: [`SMOKE_TESTS.md`](SMOKE_TESTS.md)
+- manual real-world integration behavior: [`REAL_WORLD_SKILLS_AND_MCP_REPORT.md`](REAL_WORLD_SKILLS_AND_MCP_REPORT.md)
+
 ## Added value (summary)
 
 | Capability | What it avoids / replaces |
@@ -49,6 +70,15 @@ Environment: **Linux x86_64**. Petstore steps are **network-dominated**.
 
 **Takeaway:** sxmc adds **small** local overhead on top of I/O. The **big win** is usually **fewer agent turns and smaller prompts**, not microseconds saved on disk.
 
+For startup-only timing, use the cross-platform helper:
+
+```bash
+python3 scripts/benchmark_startup.py /tmp/sxmc-startup-benchmark.md
+```
+
+That benchmark isolates `sxmc --version` and `sxmc --help`, which is useful for
+platform-specific regressions that do not show up in longer transport timings.
+
 ## Token impact (order-of-magnitude estimates)
 
 Not measured in-repo; use your provider dashboard.
@@ -70,6 +100,8 @@ See [E2E_VALIDATION_REPORT.md](E2E_VALIDATION_REPORT.md) for release validation.
 3. Uses a **local OpenAPI + tiny HTTP server** slice to separate client logic from WAN variance.
 
 Use **`scripts/benchmark_cli.sh`** in this repository to regenerate timings.
+Use **`scripts/benchmark_startup.py`** when you want a startup-only benchmark
+that can run the same way on Linux, macOS, and Windows.
 
 ## Related docs
 

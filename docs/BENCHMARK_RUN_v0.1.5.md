@@ -14,6 +14,11 @@ scripts/benchmark_cli.sh /tmp/benchmark-results.md
 
 The script uses only **`tests/fixtures`** (no dependency on `~/.claude/skills`).
 
+This captured run is a Linux wall-clock snapshot for `scripts/benchmark_cli.sh`.
+Startup-only regressions are now tracked separately with
+`scripts/benchmark_startup.py`, and CI runs `sxmc --version` / `sxmc --help`
+before the full test suite on every OS.
+
 ## Automated test suite (`cargo test`)
 
 At **v0.1.5** tag / `master` at benchmark time:
