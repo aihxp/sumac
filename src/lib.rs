@@ -75,6 +75,12 @@
 //!
 //! The CLI exposes these through `sxmc scan`, and the underlying types are in
 //! [`security`].
+//!
+//! # Acknowledgements
+//!
+//! `sxmc` was informed in part by prior work such as
+//! [`skill-to-mcp`](https://github.com/biocontext-ai/skill-to-mcp), which
+//! helped demonstrate the value of exposing skill collections through MCP.
 
 /// Secret resolution helpers used by CLI and client configuration flows.
 pub mod auth;
