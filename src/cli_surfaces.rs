@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::{Result, SxmcError};
 
 pub const PROFILE_SCHEMA: &str = "sxmc_cli_surface_profile_v1";
+pub const CLI_AI_HOSTS_LAST_VERIFIED: &str = "2026-03-21";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliSurfaceProfile {
@@ -191,6 +192,135 @@ pub enum ApplyStrategy {
     DirectWrite,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ConfigShape {
+    JsonMcpServers,
+    JsonMcp,
+    TomlMcpServers,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HostProfileSpec {
+    pub client: AiClientProfile,
+    pub label: &'static str,
+    pub sidecar_scope: &'static str,
+    pub native_doc_target: Option<&'static str>,
+    pub native_config_target: Option<&'static str>,
+    pub config_shape: Option<ConfigShape>,
+    pub official_reference_url: &'static str,
+}
+
+pub const AI_HOST_SPECS: &[HostProfileSpec] = &[
+    HostProfileSpec {
+        client: AiClientProfile::ClaudeCode,
+        label: "Claude Code",
+        sidecar_scope: "claude-code",
+        native_doc_target: Some("CLAUDE.md"),
+        native_config_target: Some(".sxmc/ai/claude-code-mcp.json"),
+        config_shape: Some(ConfigShape::JsonMcpServers),
+        official_reference_url: "https://docs.anthropic.com/en/docs/claude-code/memory",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::Cursor,
+        label: "Cursor",
+        sidecar_scope: "cursor",
+        native_doc_target: Some(".cursor/rules/sxmc-cli-ai.md"),
+        native_config_target: Some(".cursor/mcp.json"),
+        config_shape: Some(ConfigShape::JsonMcpServers),
+        official_reference_url: "https://docs.cursor.com/context/rules-for-ai",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::GeminiCli,
+        label: "Gemini CLI",
+        sidecar_scope: "gemini-cli",
+        native_doc_target: Some("GEMINI.md"),
+        native_config_target: Some(".gemini/settings.json"),
+        config_shape: Some(ConfigShape::JsonMcpServers),
+        official_reference_url: "https://geminicli.com/docs/cli/gemini-md/",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::GithubCopilot,
+        label: "GitHub Copilot",
+        sidecar_scope: "github-copilot",
+        native_doc_target: Some(".github/copilot-instructions.md"),
+        native_config_target: None,
+        config_shape: None,
+        official_reference_url: "https://docs.github.com/en/copilot/tutorials/customization-library/custom-instructions/your-first-custom-instructions",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::ContinueDev,
+        label: "Continue",
+        sidecar_scope: "continue",
+        native_doc_target: Some(".continue/rules/sxmc-cli-ai.md"),
+        native_config_target: None,
+        config_shape: None,
+        official_reference_url: "https://docs.continue.dev/customize/rules",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::OpenCode,
+        label: "OpenCode",
+        sidecar_scope: "opencode",
+        native_doc_target: Some("AGENTS.md"),
+        native_config_target: Some("opencode.json"),
+        config_shape: Some(ConfigShape::JsonMcp),
+        official_reference_url: "https://opencode.ai/docs/rules",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::JetbrainsAiAssistant,
+        label: "JetBrains AI Assistant",
+        sidecar_scope: "jetbrains-ai-assistant",
+        native_doc_target: Some(".aiassistant/rules/sxmc-cli-ai.md"),
+        native_config_target: None,
+        config_shape: None,
+        official_reference_url: "https://www.jetbrains.com/help/ai-assistant/configure-project-rules.html",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::Junie,
+        label: "Junie",
+        sidecar_scope: "junie",
+        native_doc_target: Some(".junie/guidelines.md"),
+        native_config_target: None,
+        config_shape: None,
+        official_reference_url: "https://www.jetbrains.com/help/junie/customize-guidelines.html",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::Windsurf,
+        label: "Windsurf",
+        sidecar_scope: "windsurf",
+        native_doc_target: Some(".windsurf/rules/sxmc-cli-ai.md"),
+        native_config_target: None,
+        config_shape: None,
+        official_reference_url: "https://docs.windsurf.com/windsurf/cascade/memories",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::OpenaiCodex,
+        label: "OpenAI/Codex",
+        sidecar_scope: "openai-codex",
+        native_doc_target: Some("AGENTS.md"),
+        native_config_target: Some(".codex/mcp.toml"),
+        config_shape: Some(ConfigShape::TomlMcpServers),
+        official_reference_url: "https://developers.openai.com/codex/cli/",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::GenericStdioMcp,
+        label: "Generic stdio MCP",
+        sidecar_scope: "generic-stdio-mcp",
+        native_doc_target: Some("AGENTS.md"),
+        native_config_target: Some(".sxmc/ai/generic-stdio-mcp.json"),
+        config_shape: Some(ConfigShape::JsonMcpServers),
+        official_reference_url: "https://modelcontextprotocol.io/docs/learn/architecture",
+    },
+    HostProfileSpec {
+        client: AiClientProfile::GenericHttpMcp,
+        label: "Generic HTTP MCP",
+        sidecar_scope: "generic-http-mcp",
+        native_doc_target: Some("AGENTS.md"),
+        native_config_target: Some(".sxmc/ai/generic-http-mcp.json"),
+        config_shape: Some(ConfigShape::JsonMcpServers),
+        official_reference_url: "https://modelcontextprotocol.io/docs/learn/architecture",
+    },
+];
+
 #[derive(Debug, Clone)]
 pub struct WriteOutcome {
     pub label: String,
@@ -288,6 +418,13 @@ pub fn profile_value(profile: &CliSurfaceProfile) -> Value {
     serde_json::to_value(profile).unwrap_or_else(|_| json!({}))
 }
 
+pub fn host_profile_spec(client: AiClientProfile) -> &'static HostProfileSpec {
+    AI_HOST_SPECS
+        .iter()
+        .find(|spec| spec.client == client)
+        .expect("missing host profile spec")
+}
+
 pub fn generate_profile_artifact(
     profile: &CliSurfaceProfile,
     root: &Path,
@@ -314,15 +451,16 @@ pub fn generate_agent_doc_artifact(
     client: AiClientProfile,
     root: &Path,
 ) -> GeneratedArtifact {
-    let target_path = root.join(agent_doc_target(client));
+    let spec = host_profile_spec(client);
+    let target_path = root.join(spec.native_doc_target.unwrap_or("AGENTS.md"));
     let content = render_agent_doc(profile, client);
     GeneratedArtifact {
-        label: format!("{} agent doc", client_label(client)),
+        label: format!("{} agent doc", spec.label),
         target_path,
         content,
         apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
         audience: ArtifactAudience::Client(client),
-        sidecar_scope: slugify(client_label(client)),
+        sidecar_scope: spec.sidecar_scope.into(),
     }
 }
 
@@ -344,72 +482,26 @@ pub fn generate_host_native_agent_doc_artifacts(
     profile: &CliSurfaceProfile,
     root: &Path,
 ) -> Vec<GeneratedArtifact> {
-    vec![
-        GeneratedArtifact {
-            label: "Claude Code agent doc".into(),
-            target_path: root.join("CLAUDE.md"),
-            content: render_agent_doc(profile, AiClientProfile::ClaudeCode),
+    AI_HOST_SPECS
+        .iter()
+        .filter(|spec| {
+            spec.native_doc_target.is_some()
+                && !matches!(
+                    spec.client,
+                    AiClientProfile::OpenaiCodex
+                        | AiClientProfile::GenericStdioMcp
+                        | AiClientProfile::GenericHttpMcp
+                )
+        })
+        .map(|spec| GeneratedArtifact {
+            label: format!("{} agent doc", spec.label),
+            target_path: root.join(spec.native_doc_target.expect("checked above")),
+            content: render_agent_doc(profile, spec.client),
             apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::ClaudeCode),
-            sidecar_scope: slugify(client_label(AiClientProfile::ClaudeCode)),
-        },
-        GeneratedArtifact {
-            label: "Cursor rules doc".into(),
-            target_path: root.join(".cursor/rules/sxmc-cli-ai.md"),
-            content: render_agent_doc(profile, AiClientProfile::Cursor),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::Cursor),
-            sidecar_scope: slugify(client_label(AiClientProfile::Cursor)),
-        },
-        GeneratedArtifact {
-            label: "Gemini CLI agent doc".into(),
-            target_path: root.join("GEMINI.md"),
-            content: render_agent_doc(profile, AiClientProfile::GeminiCli),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::GeminiCli),
-            sidecar_scope: slugify(client_label(AiClientProfile::GeminiCli)),
-        },
-        GeneratedArtifact {
-            label: "GitHub Copilot instructions".into(),
-            target_path: root.join(".github/copilot-instructions.md"),
-            content: render_agent_doc(profile, AiClientProfile::GithubCopilot),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::GithubCopilot),
-            sidecar_scope: slugify(client_label(AiClientProfile::GithubCopilot)),
-        },
-        GeneratedArtifact {
-            label: "Continue rules doc".into(),
-            target_path: root.join(".continue/rules/sxmc-cli-ai.md"),
-            content: render_agent_doc(profile, AiClientProfile::ContinueDev),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::ContinueDev),
-            sidecar_scope: slugify(client_label(AiClientProfile::ContinueDev)),
-        },
-        GeneratedArtifact {
-            label: "JetBrains AI Assistant rules doc".into(),
-            target_path: root.join(".aiassistant/rules/sxmc-cli-ai.md"),
-            content: render_agent_doc(profile, AiClientProfile::JetbrainsAiAssistant),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::JetbrainsAiAssistant),
-            sidecar_scope: slugify(client_label(AiClientProfile::JetbrainsAiAssistant)),
-        },
-        GeneratedArtifact {
-            label: "Junie guidelines".into(),
-            target_path: root.join(".junie/guidelines.md"),
-            content: render_agent_doc(profile, AiClientProfile::Junie),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::Junie),
-            sidecar_scope: slugify(client_label(AiClientProfile::Junie)),
-        },
-        GeneratedArtifact {
-            label: "Windsurf rules doc".into(),
-            target_path: root.join(".windsurf/rules/sxmc-cli-ai.md"),
-            content: render_agent_doc(profile, AiClientProfile::Windsurf),
-            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
-            audience: ArtifactAudience::Client(AiClientProfile::Windsurf),
-            sidecar_scope: slugify(client_label(AiClientProfile::Windsurf)),
-        },
-    ]
+            audience: ArtifactAudience::Client(spec.client),
+            sidecar_scope: spec.sidecar_scope.into(),
+        })
+        .collect()
 }
 
 pub fn generate_full_coverage_init_artifacts(
@@ -421,21 +513,9 @@ pub fn generate_full_coverage_init_artifacts(
     artifacts.push(generate_portable_agent_doc_artifact(profile, root));
     artifacts.extend(generate_host_native_agent_doc_artifacts(profile, root));
 
-    for client in [
-        AiClientProfile::ClaudeCode,
-        AiClientProfile::Cursor,
-        AiClientProfile::GeminiCli,
-        AiClientProfile::GithubCopilot,
-        AiClientProfile::ContinueDev,
-        AiClientProfile::OpenCode,
-        AiClientProfile::JetbrainsAiAssistant,
-        AiClientProfile::Junie,
-        AiClientProfile::Windsurf,
-        AiClientProfile::OpenaiCodex,
-        AiClientProfile::GenericStdioMcp,
-        AiClientProfile::GenericHttpMcp,
-    ] {
-        if let Some(artifact) = generate_client_config_artifact(profile, client, root, skills_path)
+    for spec in AI_HOST_SPECS {
+        if let Some(artifact) =
+            generate_client_config_artifact(profile, spec.client, root, skills_path)
         {
             artifacts.push(artifact);
         }
@@ -450,7 +530,8 @@ pub fn generate_client_config_artifact(
     root: &Path,
     skills_path: &Path,
 ) -> Option<GeneratedArtifact> {
-    let target_path = root.join(client_config_target(client)?);
+    let spec = host_profile_spec(client);
+    let target_path = root.join(spec.native_config_target?);
     let absolute_skills_path = if skills_path.is_absolute() {
         skills_path.to_path_buf()
     } else {
@@ -458,21 +539,21 @@ pub fn generate_client_config_artifact(
     };
     let server_name = format!("sxmc-cli-ai-{}", slugify(&profile.command));
     let content = render_client_config(client, &server_name, &absolute_skills_path);
-    let apply_strategy = match client {
-        AiClientProfile::Cursor | AiClientProfile::GeminiCli | AiClientProfile::OpenCode => {
+    let apply_strategy = match spec.config_shape {
+        Some(ConfigShape::JsonMcpServers) | Some(ConfigShape::JsonMcp) => {
             ApplyStrategy::JsonMcpConfig
         }
-        AiClientProfile::OpenaiCodex => ApplyStrategy::TomlManagedBlock,
-        _ => ApplyStrategy::SidecarOnly,
+        Some(ConfigShape::TomlMcpServers) => ApplyStrategy::TomlManagedBlock,
+        None => ApplyStrategy::SidecarOnly,
     };
 
     Some(GeneratedArtifact {
-        label: format!("{} client config", client_label(client)),
+        label: format!("{} client config", spec.label),
         target_path,
         content,
         apply_strategy,
         audience: ArtifactAudience::Client(client),
-        sidecar_scope: slugify(client_label(client)),
+        sidecar_scope: spec.sidecar_scope.into(),
     })
 }
 
@@ -1069,61 +1150,14 @@ fn slugify(input: &str) -> String {
     slug.trim_matches('-').to_string()
 }
 
-fn client_label(client: AiClientProfile) -> &'static str {
-    match client {
-        AiClientProfile::ClaudeCode => "Claude Code",
-        AiClientProfile::Cursor => "Cursor",
-        AiClientProfile::GeminiCli => "Gemini CLI",
-        AiClientProfile::GithubCopilot => "GitHub Copilot",
-        AiClientProfile::ContinueDev => "Continue",
-        AiClientProfile::OpenCode => "OpenCode",
-        AiClientProfile::JetbrainsAiAssistant => "JetBrains AI Assistant",
-        AiClientProfile::Junie => "Junie",
-        AiClientProfile::Windsurf => "Windsurf",
-        AiClientProfile::OpenaiCodex => "OpenAI/Codex",
-        AiClientProfile::GenericStdioMcp => "Generic stdio MCP",
-        AiClientProfile::GenericHttpMcp => "Generic HTTP MCP",
-    }
-}
-
-fn agent_doc_target(client: AiClientProfile) -> &'static str {
-    match client {
-        AiClientProfile::ClaudeCode => "CLAUDE.md",
-        AiClientProfile::GeminiCli => "GEMINI.md",
-        AiClientProfile::GithubCopilot => ".github/copilot-instructions.md",
-        AiClientProfile::ContinueDev => ".continue/rules/sxmc-cli-ai.md",
-        AiClientProfile::JetbrainsAiAssistant => ".aiassistant/rules/sxmc-cli-ai.md",
-        AiClientProfile::Junie => ".junie/guidelines.md",
-        AiClientProfile::Windsurf => ".windsurf/rules/sxmc-cli-ai.md",
-        _ => "AGENTS.md",
-    }
-}
-
-fn client_config_target(client: AiClientProfile) -> Option<&'static str> {
-    match client {
-        AiClientProfile::ClaudeCode => Some(".sxmc/ai/claude-code-mcp.json"),
-        AiClientProfile::Cursor => Some(".cursor/mcp.json"),
-        AiClientProfile::GeminiCli => Some(".gemini/settings.json"),
-        AiClientProfile::GithubCopilot => None,
-        AiClientProfile::ContinueDev => None,
-        AiClientProfile::OpenCode => Some("opencode.json"),
-        AiClientProfile::JetbrainsAiAssistant => None,
-        AiClientProfile::Junie => None,
-        AiClientProfile::Windsurf => None,
-        AiClientProfile::OpenaiCodex => Some(".codex/mcp.toml"),
-        AiClientProfile::GenericStdioMcp => Some(".sxmc/ai/generic-stdio-mcp.json"),
-        AiClientProfile::GenericHttpMcp => Some(".sxmc/ai/generic-http-mcp.json"),
-    }
-}
-
 fn render_agent_doc(profile: &CliSurfaceProfile, client: AiClientProfile) -> String {
+    let spec = host_profile_spec(client);
     let mut lines = vec![
         format!("## sxmc CLI Surface: `{}`", profile.command),
         String::new(),
         format!(
             "Use `{}` as a first-class terminal workflow in this repo for {}.",
-            profile.command,
-            client_label(client)
+            profile.command, spec.label
         ),
         String::new(),
         format!("Summary: {}", profile.summary),
@@ -1180,6 +1214,11 @@ fn render_agent_doc(profile: &CliSurfaceProfile, client: AiClientProfile) -> Str
     lines.push("- Keep bulky output in files or pipes when possible.".into());
     lines.push("- Prefer machine-friendly flags like `--json` when the CLI supports them.".into());
     lines.push("- Re-check `--help` before using low-confidence flows.".into());
+    lines.push(format!(
+        "- Startup file convention last verified against official docs on {}.",
+        CLI_AI_HOSTS_LAST_VERIFIED
+    ));
+    lines.push(format!("- Reference: {}", spec.official_reference_url));
 
     lines.join("\n")
 }
@@ -1212,6 +1251,10 @@ fn render_portable_agent_doc(profile: &CliSurfaceProfile) -> String {
         "- Keep bulky output in files or pipes instead of pasting it into chat context.".into(),
     );
     lines.push("- Re-check auth or environment requirements before write actions.".into());
+    lines.push(format!(
+        "- Host profile conventions in this repo were last verified on {}.",
+        CLI_AI_HOSTS_LAST_VERIFIED
+    ));
 
     if !profile.examples.is_empty() {
         lines.push(String::new());
@@ -1272,6 +1315,10 @@ fn render_llms_txt(profile: &CliSurfaceProfile) -> String {
     lines.push("## Notes".into());
     lines.push("- Generated by `sxmc scaffold llms-txt` from a CLI surface profile.".into());
     lines.push("- Review before publishing as project-facing LLM guidance.".into());
+    lines.push(format!(
+        "- Host profile conventions referenced by this repo were last verified on {}.",
+        CLI_AI_HOSTS_LAST_VERIFIED
+    ));
 
     lines.join("\n")
 }
@@ -1732,25 +1779,21 @@ mod tests {
         let root = tempdir().unwrap();
         let skills_path = root.path().join(".claude/skills");
 
-        for client in [
-            AiClientProfile::ClaudeCode,
-            AiClientProfile::Cursor,
-            AiClientProfile::GeminiCli,
-            AiClientProfile::GithubCopilot,
-            AiClientProfile::ContinueDev,
-            AiClientProfile::OpenCode,
-            AiClientProfile::JetbrainsAiAssistant,
-            AiClientProfile::Junie,
-            AiClientProfile::Windsurf,
-            AiClientProfile::OpenaiCodex,
-            AiClientProfile::GenericStdioMcp,
-            AiClientProfile::GenericHttpMcp,
-        ] {
+        for spec in AI_HOST_SPECS {
             if let Some(artifact) =
-                generate_client_config_artifact(&profile, client, root.path(), &skills_path)
+                generate_client_config_artifact(&profile, spec.client, root.path(), &skills_path)
             {
                 assert!(!artifact.content.is_empty());
             }
+        }
+    }
+
+    #[test]
+    fn host_specs_have_labels_scopes_and_references() {
+        for spec in AI_HOST_SPECS {
+            assert!(!spec.label.is_empty());
+            assert!(!spec.sidecar_scope.is_empty());
+            assert!(spec.official_reference_url.starts_with("https://"));
         }
     }
 

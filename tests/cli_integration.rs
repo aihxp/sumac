@@ -417,7 +417,7 @@ fn test_scaffold_agent_doc_apply_preserves_existing_content() {
             "--from-profile",
             "examples/profiles/from_cli.json",
             "--client",
-            "cursor",
+            "openai-codex",
             "--root",
             temp.path().to_str().unwrap(),
             "--mode",
