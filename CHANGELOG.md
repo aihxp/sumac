@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-03-21
+
+### Added
+
+- `sxmc completions <shell>` for shell completion generation
+- HTTP serving guardrails for max concurrency and request body size
+- `docs/ARCHITECTURE.md` for contributors and maintainers
+- `docs/DEMO.md` plus `scripts/demo.sh` for short repeatable demos
+
+### Changed
+
+- bake persistence is now atomic instead of rewriting `bakes.json` in place
+- `http`, `api`, `spec`, and `graphql` now support `--timeout-seconds`
+- baked HTTP/API/spec/graphql configs can persist timeout settings
+- watch mode now prefers filesystem events and falls back to polling if needed
+- lock poisoning now emits warnings instead of recovering silently
+- `main.rs` was split by moving clap definitions into `src/cli_args.rs` and shared handlers into `src/command_handlers.rs`
+- `cli_surfaces.rs` was split into model, inspect, render, and materialize modules
+- `README.md` was trimmed to focus on install, quick start, and the core value proposition
+- operations docs now include release cadence and hosted HTTP guardrail guidance
+
 ## [0.2.1] - 2026-03-21
 
 ### Added
@@ -218,5 +239,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 [0.1.8]: https://github.com/aihxp/sxmc/compare/v0.1.7...v0.1.8
 [0.1.9]: https://github.com/aihxp/sxmc/compare/v0.1.8...v0.1.9
 [0.2.0]: https://github.com/aihxp/sxmc/compare/v0.1.9...v0.2.0
+[0.2.2]: https://github.com/aihxp/sxmc/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/aihxp/sxmc/compare/v0.2.0...v0.2.1
 [0.1.0]: https://github.com/aihxp/sxmc/releases/tag/v0.1.0
