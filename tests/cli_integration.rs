@@ -452,13 +452,7 @@ fn test_mcp_info_call_prompt_and_read_via_bake() {
 
     sxmc_with_config_home(temp.path())
         .args([
-            "bake",
-            "create",
-            bake_name,
-            "--type",
-            "stdio",
-            "--source",
-            &inner,
+            "bake", "create", bake_name, "--type", "stdio", "--source", &inner,
         ])
         .assert()
         .success();
