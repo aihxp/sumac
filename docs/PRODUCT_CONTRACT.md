@@ -29,11 +29,12 @@ These are the core product paths we should treat as stable:
 - `sxmc stdio` can discover and invoke tools, prompts, and resources from a stdio MCP server
 - `sxmc http` can discover and invoke tools, prompts, and resources from a streamable HTTP MCP server
 - `sxmc mcp` can discover and invoke tools, prompts, and resources from baked stdio/http MCP connections
+- `sxmc mcp session <server>` supports stateful multi-step workflows against a single baked MCP connection
 - `--list`, `--list-tools`, `--list-prompts`, `--list-resources`, `--describe`, and `--describe-tool` are supported CLI surfaces
 - one-shot tool execution is supported
 - one-shot prompt fetches with `--prompt` are supported
 - one-shot resource reads with `--resource` are supported
-- baked `server/tool` workflows are supported through `mcp servers|grep|tools|info|call|prompt|read`
+- baked `server/tool` workflows are supported through `mcp servers|grep|tools|info|call|prompt|read|session`
 
 ### 3. API -> CLI
 
@@ -62,8 +63,8 @@ These scenarios should not crash the product or produce misleading results:
 
 These are not promised as current product behavior:
 
-- persistent multi-turn MCP sessions through repeated `sxmc stdio ...` invocations
-- stateful "dialog" continuity across separate CLI invocations
+- persistent multi-turn MCP sessions through repeated fresh `sxmc stdio ...` invocations
+- stateful "dialog" continuity across separate CLI invocations without an explicit `sxmc mcp session`
 - automated CI launch of proprietary clients like Cursor, Codex, or Claude Code
 - universal compatibility with every third-party MCP server without caveats
 - benchmark numbers as proof of broad client compatibility

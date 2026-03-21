@@ -84,12 +84,24 @@ sxmc mcp prompt fixture-mcp/simple-skill arguments=friend
 sxmc mcp read fixture-mcp/skill://skill-with-references/references/style-guide.md
 ```
 
+Stateful MCP workflow:
+
+```bash
+sxmc mcp session fixture-mcp <<'EOF'
+tools --limit 5
+info get_skill_details --format toon
+call get_skill_details '{"name":"simple-skill","return_type":"content"}' --pretty
+exit
+EOF
+```
+
 Recommended low-token MCP workflow:
 
 1. `sxmc mcp servers`
 2. `sxmc mcp grep <pattern>` or `sxmc mcp tools <server> --limit 10`
 3. `sxmc mcp info <server/tool> --format toon`
 4. `sxmc mcp call <server/tool> '<json-object>'`
+5. use `sxmc mcp session <server>` when the MCP server expects stateful multi-step calls
 
 ## Use APIs As CLIs
 

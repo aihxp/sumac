@@ -252,6 +252,18 @@ sxmc mcp prompt fixture-mcp/simple-skill arguments=friend
 sxmc mcp read fixture-mcp/skill://skill-with-references/references/style-guide.md
 ```
 
+For stateful MCP tools, keep one baked connection open with `sxmc mcp session`
+instead of re-spawning a fresh one-shot process each time:
+
+```bash
+sxmc mcp session fixture-mcp <<'EOF'
+tools --limit 5
+info get_skill_details --format toon
+call get_skill_details '{"name":"simple-skill","return_type":"content"}' --pretty
+exit
+EOF
+```
+
 Agent workflow guidance and hosted deployment notes are in
 [`docs/USAGE.md`](docs/USAGE.md) and [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 

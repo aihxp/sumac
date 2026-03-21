@@ -28,6 +28,25 @@ fn sxmc_bin_string() -> String {
         .into_owned()
 }
 
+fn stateful_mcp_command_spec() -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("stateful_mcp_server.py");
+
+    #[cfg(windows)]
+    let parts = vec![
+        "py".to_string(),
+        "-3".to_string(),
+        script.to_string_lossy().into_owned(),
+    ];
+
+    #[cfg(not(windows))]
+    let parts = vec!["python3".to_string(), script.to_string_lossy().into_owned()];
+
+    serde_json::to_string(&parts).unwrap()
+}
+
 fn wait_for_http_server(port: u16) {
     let addr = format!("127.0.0.1:{port}")
         .parse()
@@ -503,6 +522,32 @@ fn test_mcp_info_call_prompt_and_read_via_bake() {
         .success()
         .stdout(predicate::str::contains("# Style Guide"))
         .stdout(predicate::str::contains("Use clear, concise language"));
+}
+
+#[test]
+fn test_mcp_session_preserves_stateful_tool_memory() {
+    let temp = tempfile::tempdir().unwrap();
+    let bake_name = "stateful-mcp";
+    let source = stateful_mcp_command_spec();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake", "create", bake_name, "--type", "stdio", "--source", &source,
+        ])
+        .assert()
+        .success();
+
+    sxmc_with_config_home(temp.path())
+        .args(["mcp", "session", bake_name, "--quiet"])
+        .write_stdin(
+            "call remember_state '{\"key\":\"topic\",\"value\":\"alpha\"}' --pretty\n\
+             call read_state '{\"key\":\"topic\"}' --pretty\n\
+             exit\n",
+        )
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"stored\": true"))
+        .stdout(predicate::str::contains("\"value\": \"alpha\""));
 }
 
 #[test]

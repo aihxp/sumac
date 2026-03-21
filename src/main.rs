@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use rmcp::model::{Prompt, Resource, ServerInfo, Tool};
 use serde_json::{json, Value};
+use std::io::BufRead;
 use std::path::PathBuf;
 
 use std::collections::HashMap;
@@ -512,6 +513,111 @@ enum McpAction {
         args: Vec<String>,
 
         /// Pretty-print structured output
+        #[arg(long)]
+        pretty: bool,
+    },
+    /// Keep a baked MCP connection open for multi-step stateful workflows
+    Session {
+        /// Baked MCP server name
+        server: String,
+
+        /// Read session commands from a file instead of stdin
+        #[arg(long, value_name = "FILE")]
+        script: Option<PathBuf>,
+
+        /// Suppress session banner/help text
+        #[arg(long)]
+        quiet: bool,
+    },
+}
+
+#[derive(Parser)]
+struct McpSessionCli {
+    #[command(subcommand)]
+    action: McpSessionAction,
+}
+
+#[derive(Subcommand, Debug)]
+enum McpSessionAction {
+    /// List tools on the connected MCP server
+    Tools {
+        /// Search/filter tools by name or description
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Maximum items to show
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// List prompts on the connected MCP server
+    Prompts {
+        /// Maximum items to show
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// List resources on the connected MCP server
+    Resources {
+        /// Maximum items to show
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Describe the connected MCP server surface
+    Describe {
+        /// Pretty-print structured output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+
+        /// Maximum items to show per surface
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Show detailed schema/help for one tool
+    Info {
+        /// Tool name
+        tool: String,
+
+        /// Pretty-print structured output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    /// Call one tool with optional JSON object input
+    Call {
+        /// Tool name
+        tool: String,
+
+        /// JSON object payload, or '-' to read JSON from stdin
+        payload: Option<String>,
+
+        /// Pretty-print tool output
+        #[arg(long)]
+        pretty: bool,
+    },
+    /// Read one resource
+    Read {
+        /// Resource URI
+        resource: String,
+
+        /// Pretty-print output
+        #[arg(long)]
+        pretty: bool,
+    },
+    /// Fetch one prompt with optional key=value arguments
+    Prompt {
+        /// Prompt name
+        prompt: String,
+
+        /// Prompt arguments as key=value pairs
+        args: Vec<String>,
+
+        /// Pretty-print output
         #[arg(long)]
         pretty: bool,
     },
@@ -1161,6 +1267,235 @@ async fn run_mcp_bridge_command(
     Ok(())
 }
 
+fn mcp_session_help() -> &'static str {
+    r#"Stateful MCP session commands:
+  tools [--search PATTERN] [--limit N]
+  prompts [--limit N]
+  resources [--limit N]
+  describe [--pretty] [--format json|json-pretty|toon] [--limit N]
+  info TOOL [--pretty] [--format json|json-pretty|toon]
+  call TOOL [JSON_OBJECT|-] [--pretty]
+  prompt NAME [key=value ...] [--pretty]
+  read RESOURCE_URI [--pretty]
+  help
+  exit
+
+Examples:
+  info sequentialthinking --format toon
+  call sequentialthinking '{"thought":"Step A","thoughtNumber":1,"totalThoughts":2,"nextThoughtNeeded":true}' --pretty
+  call sequentialthinking '{"thought":"Step B","thoughtNumber":2,"totalThoughts":2,"nextThoughtNeeded":false}' --pretty
+"#
+}
+
+enum ParsedMcpSessionInput {
+    Action(McpSessionAction),
+    Help,
+    Exit,
+}
+
+fn parse_mcp_session_input(line: &str) -> Result<Option<ParsedMcpSessionInput>> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return Ok(None);
+    }
+
+    match trimmed {
+        "help" => return Ok(Some(ParsedMcpSessionInput::Help)),
+        "exit" | "quit" => return Ok(Some(ParsedMcpSessionInput::Exit)),
+        _ => {}
+    }
+
+    let args = shlex::split(trimmed).ok_or_else(|| {
+        sxmc::error::SxmcError::Other("Failed to parse session command line.".into())
+    })?;
+
+    let mut argv = vec!["sxmc-session".to_string()];
+    argv.extend(args);
+    let parsed = McpSessionCli::try_parse_from(argv)
+        .map_err(|e| sxmc::error::SxmcError::Other(format!("Invalid session command:\n{}", e)))?;
+
+    Ok(Some(ParsedMcpSessionInput::Action(parsed.action)))
+}
+
+async fn print_mcp_tools(
+    client: &ConnectedMcpClient,
+    search: Option<&str>,
+    limit: Option<usize>,
+) -> Result<()> {
+    let tools = client.list_tools().await?;
+    println!("{}", output::format_tool_list(&tools, search, limit));
+    Ok(())
+}
+
+async fn print_mcp_prompts(client: &ConnectedMcpClient, limit: Option<usize>) -> Result<()> {
+    let prompts = list_optional_surface(McpSurface::Prompts, None, client.list_prompts()).await?;
+    if prompts.is_empty() {
+        print_empty_surface_notice(McpSurface::Prompts, None);
+    } else {
+        println!("{}", output::format_prompt_list(&prompts, limit));
+    }
+    Ok(())
+}
+
+async fn print_mcp_resources(client: &ConnectedMcpClient, limit: Option<usize>) -> Result<()> {
+    let resources =
+        list_optional_surface(McpSurface::Resources, None, client.list_resources()).await?;
+    if resources.is_empty() {
+        print_empty_surface_notice(McpSurface::Resources, None);
+    } else {
+        println!("{}", output::format_resource_list(&resources, limit));
+    }
+    Ok(())
+}
+
+async fn print_mcp_tool_info(
+    client: &ConnectedMcpClient,
+    tool_name: &str,
+    pretty: bool,
+    format: Option<output::StructuredOutputFormat>,
+) -> Result<()> {
+    let tools = client.list_tools().await?;
+    let tool = tools
+        .iter()
+        .find(|tool| tool.name.as_ref() == tool_name)
+        .ok_or_else(|| sxmc::error::SxmcError::Other(format!("Tool not found: {}", tool_name)))?;
+    println!("{}", output::format_tool_detail(tool, pretty, format));
+    Ok(())
+}
+
+async fn call_mcp_tool(
+    client: &ConnectedMcpClient,
+    tool_name: &str,
+    payload: Option<String>,
+    pretty: bool,
+) -> Result<()> {
+    let arguments = parse_json_object_arg(payload)?;
+    let result = client.call_tool(tool_name, arguments).await?;
+    println!("{}", output::format_tool_result(&result, pretty));
+    Ok(())
+}
+
+async fn read_mcp_resource(
+    client: &ConnectedMcpClient,
+    resource_uri: &str,
+    pretty: bool,
+) -> Result<()> {
+    let result = client.read_resource(resource_uri).await?;
+    println!("{}", output::format_resource_result(&result, pretty));
+    Ok(())
+}
+
+async fn fetch_mcp_prompt(
+    client: &ConnectedMcpClient,
+    prompt_name: &str,
+    args: &[String],
+    pretty: bool,
+) -> Result<()> {
+    let result = client
+        .get_prompt(prompt_name, parse_optional_kv_args(args))
+        .await?;
+    println!("{}", output::format_prompt_result(&result, pretty));
+    Ok(())
+}
+
+async fn describe_mcp_server(
+    client: &ConnectedMcpClient,
+    pretty: bool,
+    format: Option<output::StructuredOutputFormat>,
+    limit: Option<usize>,
+) -> Result<()> {
+    let server_info = client.server_info();
+    let capabilities = McpCapabilities::from_server_info(server_info.as_ref());
+    let tools = list_optional_surface(
+        McpSurface::Tools,
+        capabilities.supports(McpSurface::Tools),
+        client.list_tools(),
+    )
+    .await?;
+    let prompts = list_optional_surface(
+        McpSurface::Prompts,
+        capabilities.supports(McpSurface::Prompts),
+        client.list_prompts(),
+    )
+    .await?;
+    let resources = list_optional_surface(
+        McpSurface::Resources,
+        capabilities.supports(McpSurface::Resources),
+        client.list_resources(),
+    )
+    .await?;
+    let description =
+        build_mcp_description(server_info.as_ref(), &tools, &prompts, &resources, limit);
+    let format = output::resolve_structured_format(format, pretty);
+    println!("{}", output::format_structured_value(&description, format));
+    Ok(())
+}
+
+async fn execute_mcp_session_action(
+    client: &ConnectedMcpClient,
+    action: McpSessionAction,
+) -> Result<()> {
+    match action {
+        McpSessionAction::Tools { search, limit } => {
+            print_mcp_tools(client, search.as_deref(), limit).await
+        }
+        McpSessionAction::Prompts { limit } => print_mcp_prompts(client, limit).await,
+        McpSessionAction::Resources { limit } => print_mcp_resources(client, limit).await,
+        McpSessionAction::Describe {
+            pretty,
+            format,
+            limit,
+        } => describe_mcp_server(client, pretty, format, limit).await,
+        McpSessionAction::Info {
+            tool,
+            pretty,
+            format,
+        } => print_mcp_tool_info(client, &tool, pretty, format).await,
+        McpSessionAction::Call {
+            tool,
+            payload,
+            pretty,
+        } => call_mcp_tool(client, &tool, payload, pretty).await,
+        McpSessionAction::Read { resource, pretty } => {
+            read_mcp_resource(client, &resource, pretty).await
+        }
+        McpSessionAction::Prompt {
+            prompt,
+            args,
+            pretty,
+        } => fetch_mcp_prompt(client, &prompt, &args, pretty).await,
+    }
+}
+
+async fn run_mcp_session<R: BufRead>(
+    client: &ConnectedMcpClient,
+    reader: R,
+    quiet: bool,
+) -> Result<()> {
+    if !quiet {
+        eprintln!("{}", mcp_session_help().trim_end());
+    }
+
+    for line_result in reader.lines() {
+        let line = line_result.map_err(|e| {
+            sxmc::error::SxmcError::Other(format!("Failed to read session input: {}", e))
+        })?;
+
+        match parse_mcp_session_input(&line)? {
+            None => {}
+            Some(ParsedMcpSessionInput::Help) => {
+                println!("{}", mcp_session_help().trim_end());
+            }
+            Some(ParsedMcpSessionInput::Exit) => break,
+            Some(ParsedMcpSessionInput::Action(action)) => {
+                execute_mcp_session_action(client, action).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn parse_source_type(source_type: &str) -> SourceType {
     match source_type {
         "stdio" => SourceType::Stdio,
@@ -1377,15 +1712,7 @@ async fn main() -> anyhow::Result<()> {
                 limit,
             } => {
                 let client = connect_named_baked_mcp_client(&server).await?;
-                let result = async {
-                    let tools = client.list_tools().await?;
-                    println!(
-                        "{}",
-                        output::format_tool_list(&tools, search.as_deref(), limit)
-                    );
-                    Ok(())
-                }
-                .await;
+                let result = print_mcp_tools(&client, search.as_deref(), limit).await;
                 finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Grep {
@@ -1427,34 +1754,12 @@ async fn main() -> anyhow::Result<()> {
             }
             McpAction::Prompts { server, limit } => {
                 let client = connect_named_baked_mcp_client(&server).await?;
-                let result = async {
-                    let prompts =
-                        list_optional_surface(McpSurface::Prompts, None, client.list_prompts())
-                            .await?;
-                    if prompts.is_empty() {
-                        print_empty_surface_notice(McpSurface::Prompts, None);
-                    } else {
-                        println!("{}", output::format_prompt_list(&prompts, limit));
-                    }
-                    Ok(())
-                }
-                .await;
+                let result = print_mcp_prompts(&client, limit).await;
                 finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Resources { server, limit } => {
                 let client = connect_named_baked_mcp_client(&server).await?;
-                let result = async {
-                    let resources =
-                        list_optional_surface(McpSurface::Resources, None, client.list_resources())
-                            .await?;
-                    if resources.is_empty() {
-                        print_empty_surface_notice(McpSurface::Resources, None);
-                    } else {
-                        println!("{}", output::format_resource_list(&resources, limit));
-                    }
-                    Ok(())
-                }
-                .await;
+                let result = print_mcp_resources(&client, limit).await;
                 finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Info {
@@ -1464,21 +1769,7 @@ async fn main() -> anyhow::Result<()> {
             } => {
                 let (server, tool_name) = split_server_target(&target)?;
                 let client = connect_named_baked_mcp_client(server).await?;
-                let result = async {
-                    let tools = client.list_tools().await?;
-                    let tool = tools
-                        .iter()
-                        .find(|tool| tool.name.as_ref() == tool_name)
-                        .ok_or_else(|| {
-                            sxmc::error::SxmcError::Other(format!(
-                                "Tool '{}' not found on server '{}'",
-                                tool_name, server
-                            ))
-                        })?;
-                    println!("{}", output::format_tool_detail(tool, pretty, format));
-                    Ok(())
-                }
-                .await;
+                let result = print_mcp_tool_info(&client, tool_name, pretty, format).await;
                 finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Call {
@@ -1487,25 +1778,14 @@ async fn main() -> anyhow::Result<()> {
                 pretty,
             } => {
                 let (server, tool_name) = split_server_target(&target)?;
-                let arguments = parse_json_object_arg(payload)?;
                 let client = connect_named_baked_mcp_client(server).await?;
-                let result = async {
-                    let result = client.call_tool(tool_name, arguments).await?;
-                    println!("{}", output::format_tool_result(&result, pretty));
-                    Ok(())
-                }
-                .await;
+                let result = call_mcp_tool(&client, tool_name, payload, pretty).await;
                 finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Read { target, pretty } => {
                 let (server, resource_uri) = split_server_target(&target)?;
                 let client = connect_named_baked_mcp_client(server).await?;
-                let result = async {
-                    let result = client.read_resource(resource_uri).await?;
-                    println!("{}", output::format_resource_result(&result, pretty));
-                    Ok(())
-                }
-                .await;
+                let result = read_mcp_resource(&client, resource_uri, pretty).await;
                 finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Prompt {
@@ -1514,14 +1794,31 @@ async fn main() -> anyhow::Result<()> {
                 pretty,
             } => {
                 let (server, prompt_name) = split_server_target(&target)?;
-                let arguments = parse_optional_kv_args(&args);
                 let client = connect_named_baked_mcp_client(server).await?;
-                let result = async {
-                    let result = client.get_prompt(prompt_name, arguments).await?;
-                    println!("{}", output::format_prompt_result(&result, pretty));
-                    Ok(())
-                }
-                .await;
+                let result = fetch_mcp_prompt(&client, prompt_name, &args, pretty).await;
+                finish_connected_mcp_client(client, result).await?;
+            }
+            McpAction::Session {
+                server,
+                script,
+                quiet,
+            } => {
+                let client = connect_named_baked_mcp_client(&server).await?;
+                let result = if let Some(script) = script {
+                    let file = std::fs::File::open(&script).map_err(|e| {
+                        sxmc::error::SxmcError::Other(format!(
+                            "Failed to open session script '{}': {}",
+                            script.display(),
+                            e
+                        ))
+                    })?;
+                    let reader = std::io::BufReader::new(file);
+                    run_mcp_session(&client, reader, quiet).await
+                } else {
+                    let stdin = std::io::stdin();
+                    let reader = stdin.lock();
+                    run_mcp_session(&client, reader, quiet).await
+                };
                 finish_connected_mcp_client(client, result).await?;
             }
         },
