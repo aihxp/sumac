@@ -153,12 +153,27 @@ pub enum ArtifactMode {
     Apply,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
+pub enum AiCoverage {
+    Single,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ArtifactAudience {
+    Shared,
+    Portable,
+    Client(AiClientProfile),
+}
+
 #[derive(Debug, Clone)]
 pub struct GeneratedArtifact {
     pub label: String,
     pub target_path: PathBuf,
     pub content: String,
     pub apply_strategy: ApplyStrategy,
+    pub audience: ArtifactAudience,
+    pub sidecar_scope: String,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -283,6 +298,8 @@ pub fn generate_profile_artifact(
         target_path,
         content,
         apply_strategy: ApplyStrategy::SidecarOnly,
+        audience: ArtifactAudience::Shared,
+        sidecar_scope: "profiles".into(),
     })
 }
 
@@ -298,7 +315,83 @@ pub fn generate_agent_doc_artifact(
         target_path,
         content,
         apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+        audience: ArtifactAudience::Client(client),
+        sidecar_scope: slugify(client_label(client)),
     }
+}
+
+pub fn generate_portable_agent_doc_artifact(
+    profile: &CliSurfaceProfile,
+    root: &Path,
+) -> GeneratedArtifact {
+    GeneratedArtifact {
+        label: "Portable agent doc".into(),
+        target_path: root.join("AGENTS.md"),
+        content: render_portable_agent_doc(profile),
+        apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+        audience: ArtifactAudience::Portable,
+        sidecar_scope: "portable".into(),
+    }
+}
+
+pub fn generate_host_native_agent_doc_artifacts(
+    profile: &CliSurfaceProfile,
+    root: &Path,
+) -> Vec<GeneratedArtifact> {
+    vec![
+        GeneratedArtifact {
+            label: "Claude Code agent doc".into(),
+            target_path: root.join("CLAUDE.md"),
+            content: render_agent_doc(profile, AiClientProfile::ClaudeCode),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Client(AiClientProfile::ClaudeCode),
+            sidecar_scope: slugify(client_label(AiClientProfile::ClaudeCode)),
+        },
+        GeneratedArtifact {
+            label: "Cursor rules doc".into(),
+            target_path: root.join(".cursor/rules/sxmc-cli-ai.md"),
+            content: render_agent_doc(profile, AiClientProfile::Cursor),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Client(AiClientProfile::Cursor),
+            sidecar_scope: slugify(client_label(AiClientProfile::Cursor)),
+        },
+        GeneratedArtifact {
+            label: "Gemini CLI agent doc".into(),
+            target_path: root.join("GEMINI.md"),
+            content: render_agent_doc(profile, AiClientProfile::GeminiCli),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Client(AiClientProfile::GeminiCli),
+            sidecar_scope: slugify(client_label(AiClientProfile::GeminiCli)),
+        },
+    ]
+}
+
+pub fn generate_full_coverage_init_artifacts(
+    profile: &CliSurfaceProfile,
+    root: &Path,
+    skills_path: &Path,
+) -> Result<Vec<GeneratedArtifact>> {
+    let mut artifacts = vec![generate_profile_artifact(profile, root)?];
+    artifacts.push(generate_portable_agent_doc_artifact(profile, root));
+    artifacts.extend(generate_host_native_agent_doc_artifacts(profile, root));
+
+    for client in [
+        AiClientProfile::ClaudeCode,
+        AiClientProfile::Cursor,
+        AiClientProfile::GeminiCli,
+        AiClientProfile::OpenaiCodex,
+        AiClientProfile::GenericStdioMcp,
+        AiClientProfile::GenericHttpMcp,
+    ] {
+        artifacts.push(generate_client_config_artifact(
+            profile,
+            client,
+            root,
+            skills_path,
+        ));
+    }
+
+    Ok(artifacts)
 }
 
 pub fn generate_client_config_artifact(
@@ -326,6 +419,8 @@ pub fn generate_client_config_artifact(
         target_path,
         content,
         apply_strategy,
+        audience: ArtifactAudience::Client(client),
+        sidecar_scope: slugify(client_label(client)),
     }
 }
 
@@ -346,6 +441,8 @@ pub fn generate_skill_artifacts(
         target_path: skill_dir.join("SKILL.md"),
         content: render_skill_markdown(profile),
         apply_strategy: ApplyStrategy::DirectWrite,
+        audience: ArtifactAudience::Shared,
+        sidecar_scope: "skills".into(),
     }]
 }
 
@@ -386,19 +483,22 @@ pub fn generate_mcp_wrapper_artifacts(
             target_path: wrapper_dir.join("README.md"),
             content: render_mcp_wrapper_readme(profile),
             apply_strategy: ApplyStrategy::DirectWrite,
+            audience: ArtifactAudience::Shared,
+            sidecar_scope: "mcp-wrapper".into(),
         },
         GeneratedArtifact {
             label: "MCP wrapper manifest".into(),
             target_path: wrapper_dir.join("manifest.json"),
             content: serde_json::to_string_pretty(&manifest)?,
             apply_strategy: ApplyStrategy::DirectWrite,
+            audience: ArtifactAudience::Shared,
+            sidecar_scope: "mcp-wrapper".into(),
         },
     ])
 }
 
 pub fn materialize_artifacts(
     artifacts: &[GeneratedArtifact],
-    client: AiClientProfile,
     mode: ArtifactMode,
     root: &Path,
 ) -> Result<Vec<WriteOutcome>> {
@@ -419,7 +519,7 @@ pub fn materialize_artifacts(
                 });
             }
             ArtifactMode::WriteSidecar => {
-                let path = sidecar_path(client, root, &artifact.target_path);
+                let path = sidecar_path(&artifact.sidecar_scope, root, &artifact.target_path);
                 write_file(&path, &artifact.content)?;
                 outcomes.push(WriteOutcome {
                     label: artifact.label.clone(),
@@ -436,7 +536,7 @@ pub fn materialize_artifacts(
                 });
             }
             ArtifactMode::Apply => {
-                let path = apply_artifact(artifact, client, root)?;
+                let path = apply_artifact(artifact, root)?;
                 outcomes.push(WriteOutcome {
                     label: artifact.label.clone(),
                     path,
@@ -444,6 +544,45 @@ pub fn materialize_artifacts(
                 });
             }
         }
+    }
+    Ok(outcomes)
+}
+
+pub fn materialize_artifacts_with_apply_selection(
+    artifacts: &[GeneratedArtifact],
+    mode: ArtifactMode,
+    root: &Path,
+    selected_clients: &[AiClientProfile],
+) -> Result<Vec<WriteOutcome>> {
+    let mut outcomes = Vec::new();
+    for artifact in artifacts {
+        let effective_mode = if mode == ArtifactMode::Apply {
+            match artifact.audience {
+                ArtifactAudience::Shared => ArtifactMode::Apply,
+                ArtifactAudience::Portable => {
+                    if selected_clients.is_empty() {
+                        ArtifactMode::WriteSidecar
+                    } else {
+                        ArtifactMode::Apply
+                    }
+                }
+                ArtifactAudience::Client(client) => {
+                    if selected_clients.contains(&client) {
+                        ArtifactMode::Apply
+                    } else {
+                        ArtifactMode::WriteSidecar
+                    }
+                }
+            }
+        } else {
+            mode
+        };
+
+        outcomes.extend(materialize_artifacts(
+            std::slice::from_ref(artifact),
+            effective_mode,
+            root,
+        )?);
     }
     Ok(outcomes)
 }
@@ -964,6 +1103,54 @@ fn render_agent_doc(profile: &CliSurfaceProfile, client: AiClientProfile) -> Str
     lines.join("\n")
 }
 
+fn render_portable_agent_doc(profile: &CliSurfaceProfile) -> String {
+    let mut lines = vec![
+        format!("## sxmc CLI Surface: `{}`", profile.command),
+        String::new(),
+        format!(
+            "Use `{}` as a portable terminal workflow across AI tools in this repo.",
+            profile.command
+        ),
+        String::new(),
+        format!("Summary: {}", profile.summary),
+    ];
+
+    if let Some(description) = &profile.description {
+        lines.push(String::new());
+        lines.push(description.clone());
+    }
+
+    lines.push(String::new());
+    lines.push("Recommended startup guidance:".into());
+    lines.push(format!(
+        "- Start with `{}` `--help` when the exact command shape is unclear.",
+        profile.command
+    ));
+    lines.push("- Prefer machine-friendly flags like `--json` when available.".into());
+    lines.push(
+        "- Keep bulky output in files or pipes instead of pasting it into chat context.".into(),
+    );
+    lines.push("- Re-check auth or environment requirements before write actions.".into());
+
+    if !profile.examples.is_empty() {
+        lines.push(String::new());
+        lines.push("Preferred commands:".into());
+        for example in profile.examples.iter().take(4) {
+            lines.push(format!("- `{}`", example.command));
+        }
+    }
+
+    if !profile.subcommands.is_empty() {
+        lines.push(String::new());
+        lines.push("High-confidence subcommands:".into());
+        for subcommand in profile.subcommands.iter().take(5) {
+            lines.push(format!("- `{}`: {}", subcommand.name, subcommand.summary));
+        }
+    }
+
+    lines.join("\n")
+}
+
 fn render_client_config(client: AiClientProfile, server_name: &str, skills_path: &Path) -> String {
     let skills_display = skills_path.display().to_string();
     match client {
@@ -1129,7 +1316,7 @@ fn render_mcp_wrapper_readme(profile: &CliSurfaceProfile) -> String {
     lines.join("\n")
 }
 
-fn sidecar_path(client: AiClientProfile, root: &Path, original_target: &Path) -> PathBuf {
+fn sidecar_path(scope: &str, root: &Path, original_target: &Path) -> PathBuf {
     let file_name = original_target
         .file_name()
         .and_then(|name| name.to_str())
@@ -1137,7 +1324,7 @@ fn sidecar_path(client: AiClientProfile, root: &Path, original_target: &Path) ->
     let sidecar_name = format!("{}.sxmc.snippet", file_name);
     root.join(".sxmc")
         .join("ai")
-        .join(slugify(client_label(client)))
+        .join(slugify(scope))
         .join(sidecar_name)
 }
 
@@ -1192,7 +1379,7 @@ fn proposed_applied_content(artifact: &GeneratedArtifact, root: &Path) -> Result
         }
         ApplyStrategy::DirectWrite => Ok(artifact.content.clone()),
         ApplyStrategy::SidecarOnly => {
-            let target = sidecar_path(AiClientProfile::ClaudeCode, root, &artifact.target_path);
+            let target = sidecar_path(&artifact.sidecar_scope, root, &artifact.target_path);
             let _ = target;
             Ok(artifact.content.clone())
         }
@@ -1216,14 +1403,10 @@ fn render_patch_body(existing: &str, proposed: &str) -> String {
     body
 }
 
-fn apply_artifact(
-    artifact: &GeneratedArtifact,
-    client: AiClientProfile,
-    root: &Path,
-) -> Result<PathBuf> {
+fn apply_artifact(artifact: &GeneratedArtifact, root: &Path) -> Result<PathBuf> {
     match artifact.apply_strategy {
         ApplyStrategy::SidecarOnly => {
-            let path = sidecar_path(client, root, &artifact.target_path);
+            let path = sidecar_path(&artifact.sidecar_scope, root, &artifact.target_path);
             write_file(&path, &artifact.content)?;
             Ok(path)
         }
@@ -1417,15 +1600,12 @@ mod tests {
             target_path: target.clone(),
             content: "## Generated".into(),
             apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Portable,
+            sidecar_scope: "portable".into(),
         };
 
-        let outcomes = materialize_artifacts(
-            &[artifact],
-            AiClientProfile::Cursor,
-            ArtifactMode::WriteSidecar,
-            root.path(),
-        )
-        .unwrap();
+        let outcomes =
+            materialize_artifacts(&[artifact], ArtifactMode::WriteSidecar, root.path()).unwrap();
         assert_eq!(fs::read_to_string(&target).unwrap(), "Existing");
         assert_eq!(outcomes.len(), 1);
         assert!(outcomes[0].path.to_string_lossy().contains(".sxmc"));

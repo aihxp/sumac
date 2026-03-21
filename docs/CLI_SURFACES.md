@@ -8,6 +8,8 @@ Current shipped path:
 ```bash
 sxmc inspect cli gh --format toon
 sxmc init ai --from-cli gh --client claude-code --mode preview
+sxmc init ai --from-cli gh --coverage full --mode preview
+sxmc init ai --from-cli gh --coverage full --host claude-code,cursor --mode apply
 sxmc inspect profile examples/profiles/from_cli.json --format toon
 sxmc inspect profile examples/profiles/from_generated_cli.json --pretty
 ```
@@ -34,6 +36,14 @@ Supported target surface types:
   - a scaffold for turning the CLI into an MCP-facing wrapper
 - `client_config_snippet`
   - a small example block for a client or agent setup file
+
+Current full-coverage host outputs:
+
+- portable `AGENTS.md`
+- `CLAUDE.md`
+- `.cursor/rules/sxmc-cli-ai.md`
+- `GEMINI.md`
+- host config scaffolds for Claude Code, Cursor, Gemini CLI, OpenAI/Codex, and generic stdio/http MCP
 
 Out of scope by default:
 
@@ -110,6 +120,12 @@ Preferred order of operations:
 2. sidecar output file
 3. patch preview
 4. explicit write/apply
+
+Full-coverage rule:
+
+- use `--coverage full` for preview or sidecar generation across multiple tools
+- use `--coverage full --host ... --mode apply` only for the host-native files you actually want to update
+- non-selected hosts should stay as sidecars during `apply`
 
 Recommended default behavior:
 

@@ -53,6 +53,7 @@ These are the core product paths we should treat as stable:
 
 - `sxmc inspect cli <command>` is supported for deterministic help-based inspection
 - `sxmc init ai --from-cli <command> --client <profile>` is supported for generating startup-facing artifacts
+- `sxmc init ai --from-cli <command> --coverage full` is supported for generating multi-host startup coverage
 - `sxmc scaffold agent-doc --from-profile ...` is supported
 - `sxmc scaffold client-config --from-profile ...` is supported
 - `sxmc scaffold skill --from-profile ...` is supported
@@ -66,6 +67,7 @@ These are the core product paths we should treat as stable:
   - `generic-http-mcp`
 - preview, sidecar, patch, and apply modes are supported
 - apply mode updates managed markdown blocks or mergeable config files only
+- full-coverage apply updates only the explicitly selected `--host` targets and sidecars the rest
 
 ## Should Fail Gracefully
 

@@ -286,6 +286,93 @@ fn test_init_ai_preview_for_claude() {
 }
 
 #[test]
+fn test_init_ai_full_preview_lists_multi_host_targets() {
+    sxmc()
+        .args([
+            "init",
+            "ai",
+            "--from-cli",
+            &sxmc_bin_string(),
+            "--coverage",
+            "full",
+            "--mode",
+            "preview",
+            "--allow-self",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("AGENTS.md"))
+        .stdout(predicate::str::contains("CLAUDE.md"))
+        .stdout(predicate::str::contains(".cursor/rules/sxmc-cli-ai.md"))
+        .stdout(predicate::str::contains("GEMINI.md"))
+        .stdout(predicate::str::contains(".cursor/mcp.json"))
+        .stdout(predicate::str::contains(".gemini/settings.json"))
+        .stdout(predicate::str::contains(".codex/mcp.toml"));
+}
+
+#[test]
+fn test_init_ai_full_apply_requires_hosts() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc()
+        .args([
+            "init",
+            "ai",
+            "--from-cli",
+            &sxmc_bin_string(),
+            "--coverage",
+            "full",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+            "--allow-self",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Full-coverage apply requires at least one --host",
+        ));
+}
+
+#[test]
+fn test_init_ai_full_apply_updates_selected_hosts_and_sidecars_rest() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc()
+        .args([
+            "init",
+            "ai",
+            "--from-cli",
+            &sxmc_bin_string(),
+            "--coverage",
+            "full",
+            "--host",
+            "claude-code,cursor",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+            "--allow-self",
+        ])
+        .assert()
+        .success();
+
+    assert!(temp.path().join("AGENTS.md").exists());
+    assert!(temp.path().join("CLAUDE.md").exists());
+    assert!(temp.path().join(".cursor/rules/sxmc-cli-ai.md").exists());
+    assert!(temp.path().join(".cursor/mcp.json").exists());
+    assert!(temp
+        .path()
+        .join(".sxmc/ai/gemini-cli/GEMINI.md.sxmc.snippet")
+        .exists());
+    assert!(temp
+        .path()
+        .join(".sxmc/ai/openai-codex/mcp.toml.sxmc.snippet")
+        .exists());
+}
+
+#[test]
 fn test_scaffold_agent_doc_apply_preserves_existing_content() {
     let temp = tempfile::tempdir().unwrap();
     let agents = temp.path().join("AGENTS.md");

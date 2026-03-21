@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use sxmc::auth::secrets::{resolve_header, resolve_secret};
 use sxmc::bake::config::SourceType;
 use sxmc::bake::{BakeConfig, BakeStore};
-use sxmc::cli_surfaces::{self, AiClientProfile, ArtifactMode};
+use sxmc::cli_surfaces::{self, AiClientProfile, AiCoverage, ArtifactMode};
 use sxmc::client::{api, graphql, mcp_http, mcp_stdio, openapi};
 use sxmc::error::Result;
 use sxmc::output;
@@ -455,9 +455,17 @@ enum InitAction {
         #[arg(long = "from-cli")]
         from_cli: String,
 
-        /// Target host/client profile
+        /// Generation coverage
+        #[arg(long, value_enum, default_value = "single")]
+        coverage: AiCoverage,
+
+        /// Target host/client profile for single-host generation
         #[arg(long, value_enum)]
-        client: AiClientProfile,
+        client: Option<AiClientProfile>,
+
+        /// Host/client profiles to apply when using --coverage full with --mode apply
+        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
 
         /// Skills path to embed in generated host configs
         #[arg(long, default_value = ".claude/skills")]
@@ -506,7 +514,15 @@ enum ScaffoldAction {
 
         /// Target host/client profile
         #[arg(long, value_enum)]
-        client: AiClientProfile,
+        client: Option<AiClientProfile>,
+
+        /// Generation coverage
+        #[arg(long, value_enum, default_value = "single")]
+        coverage: AiCoverage,
+
+        /// Host/client profiles to apply when using --coverage full with --mode apply
+        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
 
         /// Root directory for generated or applied artifacts
         #[arg(long)]
@@ -525,7 +541,15 @@ enum ScaffoldAction {
 
         /// Target host/client profile
         #[arg(long, value_enum)]
-        client: AiClientProfile,
+        client: Option<AiClientProfile>,
+
+        /// Generation coverage
+        #[arg(long, value_enum, default_value = "single")]
+        coverage: AiCoverage,
+
+        /// Host/client profiles to apply when using --coverage full with --mode apply
+        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
 
         /// Skills path to embed in generated host configs
         #[arg(long, default_value = ".claude/skills")]
@@ -1685,6 +1709,138 @@ fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     }
 }
 
+fn require_cli_ai_client(
+    coverage: AiCoverage,
+    client: Option<AiClientProfile>,
+) -> Result<AiClientProfile> {
+    match (coverage, client) {
+        (AiCoverage::Single, Some(client)) => Ok(client),
+        (AiCoverage::Single, None) => Err(sxmc::error::SxmcError::Other(
+            "Single-host CLI->AI generation requires --client".into(),
+        )),
+        (AiCoverage::Full, Some(client)) => Ok(client),
+        (AiCoverage::Full, None) => Ok(AiClientProfile::OpenaiCodex),
+    }
+}
+
+fn validate_full_apply_hosts(
+    mode: ArtifactMode,
+    coverage: AiCoverage,
+    hosts: &[AiClientProfile],
+) -> Result<()> {
+    if coverage == AiCoverage::Full && mode == ArtifactMode::Apply && hosts.is_empty() {
+        return Err(sxmc::error::SxmcError::Other(
+            "Full-coverage apply requires at least one --host so sxmc knows which native files to update".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_cli_ai_init_artifacts(
+    profile: &cli_surfaces::CliSurfaceProfile,
+    coverage: AiCoverage,
+    client: Option<AiClientProfile>,
+    hosts: &[AiClientProfile],
+    root: &std::path::Path,
+    skills_path: &std::path::Path,
+    mode: ArtifactMode,
+) -> Result<(Vec<cli_surfaces::GeneratedArtifact>, Vec<AiClientProfile>)> {
+    validate_full_apply_hosts(mode, coverage, hosts)?;
+    match coverage {
+        AiCoverage::Single => {
+            let client = require_cli_ai_client(coverage, client)?;
+            let profile_artifact = cli_surfaces::generate_profile_artifact(profile, root)?;
+            let agent_doc = cli_surfaces::generate_agent_doc_artifact(profile, client, root);
+            let client_config =
+                cli_surfaces::generate_client_config_artifact(profile, client, root, skills_path);
+            Ok((
+                vec![profile_artifact, agent_doc, client_config],
+                vec![client],
+            ))
+        }
+        AiCoverage::Full => Ok((
+            cli_surfaces::generate_full_coverage_init_artifacts(profile, root, skills_path)?,
+            hosts.to_vec(),
+        )),
+    }
+}
+
+fn resolve_cli_ai_agent_doc_artifacts(
+    profile: &cli_surfaces::CliSurfaceProfile,
+    coverage: AiCoverage,
+    client: Option<AiClientProfile>,
+    hosts: &[AiClientProfile],
+    root: &std::path::Path,
+    mode: ArtifactMode,
+) -> Result<(Vec<cli_surfaces::GeneratedArtifact>, Vec<AiClientProfile>)> {
+    validate_full_apply_hosts(mode, coverage, hosts)?;
+    match coverage {
+        AiCoverage::Single => {
+            let client = require_cli_ai_client(coverage, client)?;
+            Ok((
+                vec![cli_surfaces::generate_agent_doc_artifact(
+                    profile, client, root,
+                )],
+                vec![client],
+            ))
+        }
+        AiCoverage::Full => {
+            let mut artifacts = vec![cli_surfaces::generate_portable_agent_doc_artifact(
+                profile, root,
+            )];
+            artifacts.extend(cli_surfaces::generate_host_native_agent_doc_artifacts(
+                profile, root,
+            ));
+            Ok((artifacts, hosts.to_vec()))
+        }
+    }
+}
+
+fn resolve_cli_ai_client_config_artifacts(
+    profile: &cli_surfaces::CliSurfaceProfile,
+    coverage: AiCoverage,
+    client: Option<AiClientProfile>,
+    hosts: &[AiClientProfile],
+    root: &std::path::Path,
+    skills_path: &std::path::Path,
+    mode: ArtifactMode,
+) -> Result<(Vec<cli_surfaces::GeneratedArtifact>, Vec<AiClientProfile>)> {
+    validate_full_apply_hosts(mode, coverage, hosts)?;
+    match coverage {
+        AiCoverage::Single => {
+            let client = require_cli_ai_client(coverage, client)?;
+            Ok((
+                vec![cli_surfaces::generate_client_config_artifact(
+                    profile,
+                    client,
+                    root,
+                    skills_path,
+                )],
+                vec![client],
+            ))
+        }
+        AiCoverage::Full => {
+            let mut artifacts = Vec::new();
+            for client in [
+                AiClientProfile::ClaudeCode,
+                AiClientProfile::Cursor,
+                AiClientProfile::GeminiCli,
+                AiClientProfile::OpenaiCodex,
+                AiClientProfile::GenericStdioMcp,
+                AiClientProfile::GenericHttpMcp,
+            ] {
+                artifacts.push(cli_surfaces::generate_client_config_artifact(
+                    profile,
+                    client,
+                    root,
+                    skills_path,
+                ));
+            }
+            Ok((artifacts, hosts.to_vec()))
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -2202,7 +2358,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Init { action } => match action {
             InitAction::Ai {
                 from_cli,
+                coverage,
                 client,
+                hosts,
                 skills_path,
                 root,
                 mode,
@@ -2210,17 +2368,21 @@ async fn main() -> anyhow::Result<()> {
             } => {
                 let root = resolve_generation_root(root)?;
                 let profile = cli_surfaces::inspect_cli(&from_cli, allow_self)?;
-                let profile_artifact = cli_surfaces::generate_profile_artifact(&profile, &root)?;
-                let agent_doc = cli_surfaces::generate_agent_doc_artifact(&profile, client, &root);
-                let client_config = cli_surfaces::generate_client_config_artifact(
+                let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
                     &profile,
+                    coverage,
                     client,
+                    &hosts,
                     &root,
                     &skills_path,
-                );
-                let artifacts = vec![profile_artifact, agent_doc, client_config];
-                let outcomes =
-                    cli_surfaces::materialize_artifacts(&artifacts, client, mode, &root)?;
+                    mode,
+                )?;
+                let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                    &artifacts,
+                    mode,
+                    &root,
+                    &selected_hosts,
+                )?;
                 print_write_outcomes(&outcomes);
             }
         },
@@ -2236,44 +2398,56 @@ async fn main() -> anyhow::Result<()> {
                 let profile = cli_surfaces::load_profile(&from_profile)?;
                 let artifacts =
                     cli_surfaces::generate_skill_artifacts(&profile, &root, &output_dir);
-                let outcomes = cli_surfaces::materialize_artifacts(
-                    &artifacts,
-                    AiClientProfile::GenericStdioMcp,
-                    mode,
-                    &root,
-                )?;
+                let outcomes = cli_surfaces::materialize_artifacts(&artifacts, mode, &root)?;
                 print_write_outcomes(&outcomes);
             }
             ScaffoldAction::AgentDoc {
                 from_profile,
+                coverage,
                 client,
+                hosts,
                 root,
                 mode,
             } => {
                 let root = resolve_generation_root(root)?;
                 let profile = cli_surfaces::load_profile(&from_profile)?;
-                let artifact = cli_surfaces::generate_agent_doc_artifact(&profile, client, &root);
-                let outcomes =
-                    cli_surfaces::materialize_artifacts(&[artifact], client, mode, &root)?;
+                let (artifacts, selected_hosts) = resolve_cli_ai_agent_doc_artifacts(
+                    &profile, coverage, client, &hosts, &root, mode,
+                )?;
+                let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                    &artifacts,
+                    mode,
+                    &root,
+                    &selected_hosts,
+                )?;
                 print_write_outcomes(&outcomes);
             }
             ScaffoldAction::ClientConfig {
                 from_profile,
+                coverage,
                 client,
+                hosts,
                 skills_path,
                 root,
                 mode,
             } => {
                 let root = resolve_generation_root(root)?;
                 let profile = cli_surfaces::load_profile(&from_profile)?;
-                let artifact = cli_surfaces::generate_client_config_artifact(
+                let (artifacts, selected_hosts) = resolve_cli_ai_client_config_artifacts(
                     &profile,
+                    coverage,
                     client,
+                    &hosts,
                     &root,
                     &skills_path,
-                );
-                let outcomes =
-                    cli_surfaces::materialize_artifacts(&[artifact], client, mode, &root)?;
+                    mode,
+                )?;
+                let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                    &artifacts,
+                    mode,
+                    &root,
+                    &selected_hosts,
+                )?;
                 print_write_outcomes(&outcomes);
             }
             ScaffoldAction::McpWrapper {
@@ -2286,12 +2460,7 @@ async fn main() -> anyhow::Result<()> {
                 let profile = cli_surfaces::load_profile(&from_profile)?;
                 let artifacts =
                     cli_surfaces::generate_mcp_wrapper_artifacts(&profile, &root, &output_dir)?;
-                let outcomes = cli_surfaces::materialize_artifacts(
-                    &artifacts,
-                    AiClientProfile::GenericStdioMcp,
-                    mode,
-                    &root,
-                )?;
+                let outcomes = cli_surfaces::materialize_artifacts(&artifacts, mode, &root)?;
                 print_write_outcomes(&outcomes);
             }
         },

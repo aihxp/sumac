@@ -135,6 +135,8 @@ Generate startup-facing artifacts for a host profile:
 ```bash
 sxmc init ai --from-cli gh --client claude-code --mode preview
 sxmc init ai --from-cli gh --client cursor --mode preview
+sxmc init ai --from-cli gh --coverage full --mode preview
+sxmc init ai --from-cli gh --coverage full --host claude-code,cursor --mode apply
 ```
 
 Generate from an existing saved profile:
@@ -177,6 +179,8 @@ Safety rules:
 - JSON MCP configs are merged where the host shape is known
 - `sxmc` refuses to inspect itself unless you pass `--allow-self`
 - skill and MCP-wrapper scaffolds write new files rather than mutating existing docs
+- `--coverage full` is the best way to generate broad startup coverage without committing to every host at once
+- `--coverage full --mode apply` requires one or more `--host` values and sidecars the non-selected hosts
 
 Current host profiles:
 
@@ -186,6 +190,14 @@ Current host profiles:
 - `openai-codex`
 - `generic-stdio-mcp`
 - `generic-http-mcp`
+
+Full-coverage generation produces:
+
+- a portable `AGENTS.md` block
+- `CLAUDE.md` for Claude Code
+- `.cursor/rules/sxmc-cli-ai.md` for Cursor
+- `GEMINI.md` for Gemini CLI
+- host config scaffolds for Claude, Cursor, Gemini, OpenAI/Codex, and generic stdio/http MCP
 
 ## Client Setup Notes
 
