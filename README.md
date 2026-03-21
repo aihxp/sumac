@@ -62,7 +62,6 @@ Other channels:
 - npm wrapper metadata aligned to `0.1.7`: [`packaging/npm`](packaging/npm)
   The wrapper downloads and verifies release binaries during `postinstall`.
 - Homebrew formula pinned to the current release tag: [`packaging/homebrew/sxmc.rb`](packaging/homebrew/sxmc.rb)
-  Tap guidance: [`packaging/homebrew/README.md`](packaging/homebrew/README.md)
 
 Or build from source:
 
@@ -73,24 +72,12 @@ cargo build --release
 # Binary at target/release/sxmc
 ```
 
-Additional setup and client-specific configuration examples are in
-[`docs/CLIENTS.md`](docs/CLIENTS.md). The maintained compatibility ledger is in
-[`docs/COMPATIBILITY_MATRIX.md`](docs/COMPATIBILITY_MATRIX.md), hosted deployment
-guidance is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md), and connection
-examples are in [`docs/CONNECTION_EXAMPLES.md`](docs/CONNECTION_EXAMPLES.md).
-Release and publishing steps are in
-[`docs/RELEASING.md`](docs/RELEASING.md). Distribution-channel notes are in
-[`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md), smoke checks are in
-[`docs/SMOKE_TESTS.md`](docs/SMOKE_TESTS.md), performance and token notes are in
-[`docs/VALUE_AND_BENCHMARK_FINDINGS.md`](docs/VALUE_AND_BENCHMARK_FINDINGS.md),
-the explicit support contract is in [`docs/PRODUCT_CONTRACT.md`](docs/PRODUCT_CONTRACT.md),
-and launch copy is in
-[`docs/LAUNCH.md`](docs/LAUNCH.md).
+Canonical docs:
 
-Package-specific notes:
-
-- npm wrapper docs: [`packaging/npm/README.md`](packaging/npm/README.md)
-- Homebrew tap docs: [`packaging/homebrew/README.md`](packaging/homebrew/README.md)
+- usage and client setup: [`docs/USAGE.md`](docs/USAGE.md)
+- hosting, release, and distribution: [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- testing, smoke checks, and compatibility notes: [`docs/VALIDATION.md`](docs/VALIDATION.md)
+- explicit support boundary: [`docs/PRODUCT_CONTRACT.md`](docs/PRODUCT_CONTRACT.md)
 
 ## Quick Start
 
@@ -156,8 +143,8 @@ This lets `sxmc` work well with local stdio-based MCP clients such as Codex,
 Cursor, Gemini CLI, and similar coding agents.
 It can also be hosted as a remote streamable HTTP MCP server for clients that
 consume HTTP MCP endpoints.
-The dated validation status for those clients lives in
-[`docs/COMPATIBILITY_MATRIX.md`](docs/COMPATIBILITY_MATRIX.md).
+Validation coverage and compatibility notes live in
+[`docs/VALIDATION.md`](docs/VALIDATION.md).
 
 ### Any MCP server as CLI
 
@@ -237,8 +224,7 @@ sxmc http http://127.0.0.1:8000/mcp \
   --prompt simple-skill arguments=friend
 ```
 
-For a captured end-to-end sample of this exact `skills -> MCP -> CLI` path, see
-[`docs/SKILLS_TO_MCP_TO_CLI_SAMPLES.md`](docs/SKILLS_TO_MCP_TO_CLI_SAMPLES.md).
+More end-to-end examples live in [`docs/USAGE.md`](docs/USAGE.md).
 
 For hosted `/mcp` endpoints, prefer `--require-header` so remote access is not
 left open by default. For single-token hosted deployments, `--bearer-token` is
@@ -262,10 +248,8 @@ sxmc mcp prompt fixture-mcp/simple-skill arguments=friend
 sxmc mcp read fixture-mcp/skill://skill-with-references/references/style-guide.md
 ```
 
-Agent workflow snippets for `AGENTS.md` / `CLAUDE.md` live in
-[`docs/MCP_AGENT_SNIPPETS.md`](docs/MCP_AGENT_SNIPPETS.md).
-Hosted deployment guidance, reverse-proxy notes, and operational checks are in
-[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+Agent workflow guidance and hosted deployment notes are in
+[`docs/USAGE.md`](docs/USAGE.md) and [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 For `sxmc stdio`, you can now pass either shell-style quoting or a JSON-array
 command spec such as `["sxmc","serve","--paths","tests/fixtures"]`. For nested
@@ -431,8 +415,8 @@ remote streamable HTTP MCP endpoint at `/mcp`.
 - Health endpoint for hosted deployments: `/healthz`
 - Local development convenience: `sxmc serve --watch`
 
-See [`docs/CLIENTS.md`](docs/CLIENTS.md) for client-specific setup examples,
-the current compatibility matrix, and repeatable smoke-check commands.
+See [`docs/USAGE.md`](docs/USAGE.md) for setup examples and
+[`docs/VALIDATION.md`](docs/VALIDATION.md) for compatibility and smoke checks.
 
 ## CLI Reference
 
@@ -494,18 +478,6 @@ cargo run -- skills list --paths tests/fixtures
 cargo run -- scan --paths tests/fixtures
 bash scripts/smoke_test_clients.sh target/debug/sxmc tests/fixtures
 ```
-
-## Acknowledgements
-
-sxmc was inspired by and builds upon ideas from:
-
-- [mcp2cli](https://github.com/knowsuchagency/mcp2cli) — the Python MCP-to-CLI bridge that sxmc reimplements in Rust with skills as a first-class concept
-- [skill-to-mcp](https://github.com/biocontext-ai/skill-to-mcp) — an early skills-to-MCP adapter that helped validate the value of exposing skill collections through MCP
-- [toon-format/toon](https://github.com/toon-format/toon) — format and benchmark work that informed sxmc's TOON-style structured API output
-- [claude-skill-antivirus](https://github.com/claude-world/claude-skill-antivirus) — skill security scanning patterns
-- [skillfile](https://github.com/eljulians/skillfile) — declarative skill manifest concepts
-- [Mcpwn](https://github.com/Teycir/Mcpwn) — MCP server security analysis techniques
-- [rmcp](https://github.com/nicepkg/rmcp) — the official Rust MCP SDK powering the protocol layer
 
 ## License
 

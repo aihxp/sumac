@@ -78,7 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - inventory counts in the remote `/healthz` endpoint
 - optional TOON-style structured output for `api`, `spec`, and `graphql`
 - checksum verification in the npm wrapper installer
-- Homebrew tap guidance under `packaging/homebrew/README.md`
+- Homebrew formula and distribution guidance under `docs/OPERATIONS.md`
 
 ### Changed
 

@@ -5,10 +5,9 @@ gracefully, and what is intentionally outside the contract.
 
 Use this document together with:
 
-- [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md) for named client/server validation
-- [SMOKE_TESTS.md](SMOKE_TESTS.md) for repeatable startup and transport checks
-- [E2E_SCENARIOS.md](E2E_SCENARIOS.md) for the maintained release checklist of core end-to-end paths
-- [MCP_TO_CLI_VERIFICATION.md](MCP_TO_CLI_VERIFICATION.md) for bridge-specific evidence
+- [USAGE.md](USAGE.md) for the canonical product workflows
+- [OPERATIONS.md](OPERATIONS.md) for release and hosting guidance
+- [VALIDATION.md](VALIDATION.md) for repeatable release checks and compatibility notes
 
 ## Supported And Expected To Work
 

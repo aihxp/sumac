@@ -633,6 +633,13 @@ impl ConnectedMcpClient {
         }
     }
 
+    fn server_info(&self) -> Option<ServerInfo> {
+        match self {
+            Self::Stdio(client) => client.server_info(),
+            Self::Http(client) => client.server_info(),
+        }
+    }
+
     async fn call_tool(
         &self,
         name: &str,
@@ -710,6 +717,26 @@ fn get_baked_mcp_server(store: &BakeStore, name: &str) -> Result<BakeConfig> {
     Ok(config)
 }
 
+async fn finish_connected_mcp_client<T>(
+    client: ConnectedMcpClient,
+    result: Result<T>,
+) -> Result<T> {
+    let close_result = client.close().await;
+
+    match (result, close_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(_)) => Err(error),
+    }
+}
+
+async fn connect_named_baked_mcp_client(name: &str) -> Result<ConnectedMcpClient> {
+    let store = BakeStore::load()?;
+    let config = get_baked_mcp_server(&store, name)?;
+    ConnectedMcpClient::connect(&config).await
+}
+
 fn split_server_target(target: &str) -> Result<(&str, &str)> {
     target.split_once('/').ok_or_else(|| {
         sxmc::error::SxmcError::Other(format!(
@@ -748,6 +775,15 @@ fn parse_json_object_arg(
     value.as_object().cloned().ok_or_else(|| {
         sxmc::error::SxmcError::Other("MCP tool payload must be a JSON object.".into())
     })
+}
+
+fn parse_optional_kv_args(args: &[String]) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let arguments = parse_kv_args(args);
+    if arguments.is_empty() {
+        None
+    } else {
+        Some(arguments)
+    }
 }
 
 fn format_mcp_grep_results(
@@ -942,6 +978,189 @@ fn build_mcp_description(
     description
 }
 
+#[derive(Clone, Copy)]
+struct McpBridgeRequest<'a> {
+    prompt: Option<&'a str>,
+    resource_uri: Option<&'a str>,
+    args: &'a [String],
+    list: bool,
+    list_tools: bool,
+    list_prompts: bool,
+    list_resources: bool,
+    search: Option<&'a str>,
+    describe: bool,
+    describe_tool: Option<&'a str>,
+    format: Option<output::StructuredOutputFormat>,
+    limit: Option<usize>,
+    pretty: bool,
+}
+
+impl McpBridgeRequest<'_> {
+    fn introspection_requested(self) -> bool {
+        self.list
+            || self.list_tools
+            || self.list_prompts
+            || self.list_resources
+            || self.search.is_some()
+            || self.describe
+            || self.describe_tool.is_some()
+    }
+}
+
+async fn run_mcp_bridge_command(
+    client: &ConnectedMcpClient,
+    request: McpBridgeRequest<'_>,
+) -> Result<()> {
+    let server_info = client.server_info();
+    let capabilities = McpCapabilities::from_server_info(server_info.as_ref());
+    let (tool_name, tool_args) = request
+        .args
+        .split_first()
+        .map(|(name, rest)| (Some(name.as_str()), rest))
+        .unwrap_or((None, &[]));
+
+    if request.introspection_requested() {
+        let needs_tools = request.list
+            || request.list_tools
+            || request.search.is_some()
+            || request.describe
+            || request.describe_tool.is_some();
+        let needs_prompts = request.list || request.list_prompts || request.describe;
+        let needs_resources = request.list || request.list_resources || request.describe;
+
+        let tools = if needs_tools {
+            list_optional_surface(
+                McpSurface::Tools,
+                capabilities.supports(McpSurface::Tools),
+                client.list_tools(),
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
+
+        if let Some(name) = request.describe_tool {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .ok_or_else(|| {
+                    sxmc::error::SxmcError::Other(format!("Tool not found: {}", name))
+                })?;
+            println!(
+                "{}",
+                output::format_tool_detail(tool, request.pretty, request.format)
+            );
+            return Ok(());
+        }
+
+        if request.describe {
+            let prompts = if needs_prompts {
+                list_optional_surface(
+                    McpSurface::Prompts,
+                    capabilities.supports(McpSurface::Prompts),
+                    client.list_prompts(),
+                )
+                .await?
+            } else {
+                Vec::new()
+            };
+            let resources = if needs_resources {
+                list_optional_surface(
+                    McpSurface::Resources,
+                    capabilities.supports(McpSurface::Resources),
+                    client.list_resources(),
+                )
+                .await?
+            } else {
+                Vec::new()
+            };
+            let description = build_mcp_description(
+                server_info.as_ref(),
+                &tools,
+                &prompts,
+                &resources,
+                request.limit,
+            );
+            let format = output::resolve_structured_format(request.format, request.pretty);
+            println!("{}", output::format_structured_value(&description, format));
+            return Ok(());
+        }
+
+        let mut printed_any = false;
+
+        if request.list || request.list_tools || request.search.is_some() {
+            println!(
+                "{}",
+                output::format_tool_list(&tools, request.search, request.limit)
+            );
+            printed_any = true;
+        }
+
+        if request.list || request.list_prompts {
+            let prompts = list_optional_surface(
+                McpSurface::Prompts,
+                capabilities.supports(McpSurface::Prompts),
+                client.list_prompts(),
+            )
+            .await?;
+            if printed_any {
+                println!();
+            }
+            if prompts.is_empty() {
+                print_empty_surface_notice(
+                    McpSurface::Prompts,
+                    capabilities.supports(McpSurface::Prompts),
+                );
+            } else {
+                println!("{}", output::format_prompt_list(&prompts, request.limit));
+            }
+            printed_any = true;
+        }
+
+        if request.list || request.list_resources {
+            let resources = list_optional_surface(
+                McpSurface::Resources,
+                capabilities.supports(McpSurface::Resources),
+                client.list_resources(),
+            )
+            .await?;
+            if printed_any {
+                println!();
+            }
+            if resources.is_empty() {
+                print_empty_surface_notice(
+                    McpSurface::Resources,
+                    capabilities.supports(McpSurface::Resources),
+                );
+            } else {
+                println!(
+                    "{}",
+                    output::format_resource_list(&resources, request.limit)
+                );
+            }
+        }
+    } else if let Some(name) = request.prompt {
+        let result = client
+            .get_prompt(name, parse_optional_kv_args(request.args))
+            .await?;
+        println!("{}", output::format_prompt_result(&result, request.pretty));
+    } else if let Some(uri) = request.resource_uri {
+        let result = client.read_resource(uri).await?;
+        println!(
+            "{}",
+            output::format_resource_result(&result, request.pretty)
+        );
+    } else if let Some(name) = tool_name {
+        let result = client.call_tool(name, parse_kv_args(tool_args)).await?;
+        println!("{}", output::format_tool_result(&result, request.pretty));
+    } else {
+        eprintln!("Specify a tool name, --prompt, --resource, or use --list");
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
 fn parse_source_type(source_type: &str) -> SourceType {
     match source_type {
         "stdio" => SourceType::Stdio,
@@ -1048,151 +1267,26 @@ async fn main() -> anyhow::Result<()> {
             cwd,
         } => {
             let env = parse_env_vars(&env_vars);
-            let client = mcp_stdio::StdioClient::connect(&command, &env, cwd.as_deref()).await?;
-            let server_info = client.server_info();
-            let capabilities = McpCapabilities::from_server_info(server_info.as_ref());
-            let (tool_name, tool_args) = args
-                .split_first()
-                .map(|(name, rest)| (Some(name.as_str()), rest))
-                .unwrap_or((None, &[]));
-
-            let introspection_requested = list
-                || list_tools
-                || list_prompts
-                || list_resources
-                || search.is_some()
-                || describe
-                || describe_tool.is_some();
-
-            if introspection_requested {
-                let needs_tools =
-                    list || list_tools || search.is_some() || describe || describe_tool.is_some();
-                let needs_prompts = list || list_prompts || describe;
-                let needs_resources = list || list_resources || describe;
-
-                let tools = if needs_tools {
-                    list_optional_surface(
-                        McpSurface::Tools,
-                        capabilities.supports(McpSurface::Tools),
-                        client.list_tools(),
-                    )
-                    .await?
-                } else {
-                    Vec::new()
-                };
-
-                if let Some(name) = describe_tool {
-                    let tool = tools
-                        .iter()
-                        .find(|tool| tool.name.as_ref() == name)
-                        .ok_or_else(|| {
-                            sxmc::error::SxmcError::Other(format!("Tool not found: {}", name))
-                        })?;
-                    println!("{}", output::format_tool_detail(tool, pretty, format));
-                } else if describe {
-                    let prompts = if needs_prompts {
-                        list_optional_surface(
-                            McpSurface::Prompts,
-                            capabilities.supports(McpSurface::Prompts),
-                            client.list_prompts(),
-                        )
-                        .await?
-                    } else {
-                        Vec::new()
-                    };
-                    let resources = if needs_resources {
-                        list_optional_surface(
-                            McpSurface::Resources,
-                            capabilities.supports(McpSurface::Resources),
-                            client.list_resources(),
-                        )
-                        .await?
-                    } else {
-                        Vec::new()
-                    };
-                    let description = build_mcp_description(
-                        server_info.as_ref(),
-                        &tools,
-                        &prompts,
-                        &resources,
-                        limit,
-                    );
-                    let format = output::resolve_structured_format(format, pretty);
-                    println!("{}", output::format_structured_value(&description, format));
-                } else {
-                    let mut printed_any = false;
-
-                    if list || list_tools || search.is_some() {
-                        println!(
-                            "{}",
-                            output::format_tool_list(&tools, search.as_deref(), limit)
-                        );
-                        printed_any = true;
-                    }
-
-                    if list || list_prompts {
-                        let prompts = list_optional_surface(
-                            McpSurface::Prompts,
-                            capabilities.supports(McpSurface::Prompts),
-                            client.list_prompts(),
-                        )
-                        .await?;
-                        if printed_any {
-                            println!();
-                        }
-                        if prompts.is_empty() {
-                            print_empty_surface_notice(
-                                McpSurface::Prompts,
-                                capabilities.supports(McpSurface::Prompts),
-                            );
-                        } else {
-                            println!("{}", output::format_prompt_list(&prompts, limit));
-                        }
-                        printed_any = true;
-                    }
-
-                    if list || list_resources {
-                        let resources = list_optional_surface(
-                            McpSurface::Resources,
-                            capabilities.supports(McpSurface::Resources),
-                            client.list_resources(),
-                        )
-                        .await?;
-                        if printed_any {
-                            println!();
-                        }
-                        if resources.is_empty() {
-                            print_empty_surface_notice(
-                                McpSurface::Resources,
-                                capabilities.supports(McpSurface::Resources),
-                            );
-                        } else {
-                            println!("{}", output::format_resource_list(&resources, limit));
-                        }
-                    }
-                }
-            } else if let Some(name) = prompt {
-                let arguments = parse_kv_args(&args);
-                let arguments = if arguments.is_empty() {
-                    None
-                } else {
-                    Some(arguments)
-                };
-                let result = client.get_prompt(&name, arguments).await?;
-                println!("{}", output::format_prompt_result(&result, pretty));
-            } else if let Some(uri) = resource_uri {
-                let result = client.read_resource(&uri).await?;
-                println!("{}", output::format_resource_result(&result, pretty));
-            } else if let Some(name) = tool_name {
-                let arguments = parse_kv_args(tool_args);
-                let result = client.call_tool(name, arguments).await?;
-                println!("{}", output::format_tool_result(&result, pretty));
-            } else {
-                eprintln!("Specify a tool name, --prompt, --resource, or use --list");
-                std::process::exit(1);
-            }
-
-            client.close().await?;
+            let client = ConnectedMcpClient::Stdio(
+                mcp_stdio::StdioClient::connect(&command, &env, cwd.as_deref()).await?,
+            );
+            let request = McpBridgeRequest {
+                prompt: prompt.as_deref(),
+                resource_uri: resource_uri.as_deref(),
+                args: &args,
+                list,
+                list_tools,
+                list_prompts,
+                list_resources,
+                search: search.as_deref(),
+                describe,
+                describe_tool: describe_tool.as_deref(),
+                format,
+                limit,
+                pretty,
+            };
+            let result = run_mcp_bridge_command(&client, request).await;
+            finish_connected_mcp_client(client, result).await?;
         }
 
         Commands::Http {
@@ -1213,151 +1307,25 @@ async fn main() -> anyhow::Result<()> {
             auth_headers,
         } => {
             let headers = parse_headers(&auth_headers)?;
-            let client = mcp_http::HttpClient::connect(&url, &headers).await?;
-            let server_info = client.server_info();
-            let capabilities = McpCapabilities::from_server_info(server_info.as_ref());
-            let (tool_name, tool_args) = args
-                .split_first()
-                .map(|(name, rest)| (Some(name.as_str()), rest))
-                .unwrap_or((None, &[]));
-
-            let introspection_requested = list
-                || list_tools
-                || list_prompts
-                || list_resources
-                || search.is_some()
-                || describe
-                || describe_tool.is_some();
-
-            if introspection_requested {
-                let needs_tools =
-                    list || list_tools || search.is_some() || describe || describe_tool.is_some();
-                let needs_prompts = list || list_prompts || describe;
-                let needs_resources = list || list_resources || describe;
-
-                let tools = if needs_tools {
-                    list_optional_surface(
-                        McpSurface::Tools,
-                        capabilities.supports(McpSurface::Tools),
-                        client.list_tools(),
-                    )
-                    .await?
-                } else {
-                    Vec::new()
-                };
-
-                if let Some(name) = describe_tool {
-                    let tool = tools
-                        .iter()
-                        .find(|tool| tool.name.as_ref() == name)
-                        .ok_or_else(|| {
-                            sxmc::error::SxmcError::Other(format!("Tool not found: {}", name))
-                        })?;
-                    println!("{}", output::format_tool_detail(tool, pretty, format));
-                } else if describe {
-                    let prompts = if needs_prompts {
-                        list_optional_surface(
-                            McpSurface::Prompts,
-                            capabilities.supports(McpSurface::Prompts),
-                            client.list_prompts(),
-                        )
-                        .await?
-                    } else {
-                        Vec::new()
-                    };
-                    let resources = if needs_resources {
-                        list_optional_surface(
-                            McpSurface::Resources,
-                            capabilities.supports(McpSurface::Resources),
-                            client.list_resources(),
-                        )
-                        .await?
-                    } else {
-                        Vec::new()
-                    };
-                    let description = build_mcp_description(
-                        server_info.as_ref(),
-                        &tools,
-                        &prompts,
-                        &resources,
-                        limit,
-                    );
-                    let format = output::resolve_structured_format(format, pretty);
-                    println!("{}", output::format_structured_value(&description, format));
-                } else {
-                    let mut printed_any = false;
-
-                    if list || list_tools || search.is_some() {
-                        println!(
-                            "{}",
-                            output::format_tool_list(&tools, search.as_deref(), limit)
-                        );
-                        printed_any = true;
-                    }
-
-                    if list || list_prompts {
-                        let prompts = list_optional_surface(
-                            McpSurface::Prompts,
-                            capabilities.supports(McpSurface::Prompts),
-                            client.list_prompts(),
-                        )
-                        .await?;
-                        if printed_any {
-                            println!();
-                        }
-                        if prompts.is_empty() {
-                            print_empty_surface_notice(
-                                McpSurface::Prompts,
-                                capabilities.supports(McpSurface::Prompts),
-                            );
-                        } else {
-                            println!("{}", output::format_prompt_list(&prompts, limit));
-                        }
-                        printed_any = true;
-                    }
-
-                    if list || list_resources {
-                        let resources = list_optional_surface(
-                            McpSurface::Resources,
-                            capabilities.supports(McpSurface::Resources),
-                            client.list_resources(),
-                        )
-                        .await?;
-                        if printed_any {
-                            println!();
-                        }
-                        if resources.is_empty() {
-                            print_empty_surface_notice(
-                                McpSurface::Resources,
-                                capabilities.supports(McpSurface::Resources),
-                            );
-                        } else {
-                            println!("{}", output::format_resource_list(&resources, limit));
-                        }
-                    }
-                }
-            } else if let Some(name) = prompt {
-                let arguments = parse_kv_args(&args);
-                let arguments = if arguments.is_empty() {
-                    None
-                } else {
-                    Some(arguments)
-                };
-                let result = client.get_prompt(&name, arguments).await?;
-                println!("{}", output::format_prompt_result(&result, pretty));
-            } else if let Some(uri) = resource_uri {
-                let result = client.read_resource(&uri).await?;
-                println!("{}", output::format_resource_result(&result, pretty));
-            } else if let Some(name) = tool_name {
-                let arguments = parse_kv_args(tool_args);
-                let result = client.call_tool(name, arguments).await?;
-                println!("{}", output::format_tool_result(&result, pretty));
-            } else {
-                eprintln!("Specify a tool name, --prompt, --resource, or use --list");
-                std::process::exit(1);
-            }
-
-            client.close().await?;
+            let client =
+                ConnectedMcpClient::Http(mcp_http::HttpClient::connect(&url, &headers).await?);
+            let request = McpBridgeRequest {
+                prompt: prompt.as_deref(),
+                resource_uri: resource_uri.as_deref(),
+                args: &args,
+                list,
+                list_tools,
+                list_prompts,
+                list_resources,
+                search: search.as_deref(),
+                describe,
+                describe_tool: describe_tool.as_deref(),
+                format,
+                limit,
+                pretty,
+            };
+            let result = run_mcp_bridge_command(&client, request).await;
+            finish_connected_mcp_client(client, result).await?;
         }
 
         Commands::Mcp { action } => match action {
@@ -1408,15 +1376,17 @@ async fn main() -> anyhow::Result<()> {
                 search,
                 limit,
             } => {
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, &server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
-                let tools = client.list_tools().await?;
-                println!(
-                    "{}",
-                    output::format_tool_list(&tools, search.as_deref(), limit)
-                );
-                client.close().await?;
+                let client = connect_named_baked_mcp_client(&server).await?;
+                let result = async {
+                    let tools = client.list_tools().await?;
+                    println!(
+                        "{}",
+                        output::format_tool_list(&tools, search.as_deref(), limit)
+                    );
+                    Ok(())
+                }
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Grep {
                 pattern,
@@ -1456,31 +1426,36 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", format_mcp_grep_results(&results, &pattern, limit));
             }
             McpAction::Prompts { server, limit } => {
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, &server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
-                let prompts =
-                    list_optional_surface(McpSurface::Prompts, None, client.list_prompts()).await?;
-                if prompts.is_empty() {
-                    print_empty_surface_notice(McpSurface::Prompts, None);
-                } else {
-                    println!("{}", output::format_prompt_list(&prompts, limit));
+                let client = connect_named_baked_mcp_client(&server).await?;
+                let result = async {
+                    let prompts =
+                        list_optional_surface(McpSurface::Prompts, None, client.list_prompts())
+                            .await?;
+                    if prompts.is_empty() {
+                        print_empty_surface_notice(McpSurface::Prompts, None);
+                    } else {
+                        println!("{}", output::format_prompt_list(&prompts, limit));
+                    }
+                    Ok(())
                 }
-                client.close().await?;
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Resources { server, limit } => {
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, &server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
-                let resources =
-                    list_optional_surface(McpSurface::Resources, None, client.list_resources())
-                        .await?;
-                if resources.is_empty() {
-                    print_empty_surface_notice(McpSurface::Resources, None);
-                } else {
-                    println!("{}", output::format_resource_list(&resources, limit));
+                let client = connect_named_baked_mcp_client(&server).await?;
+                let result = async {
+                    let resources =
+                        list_optional_surface(McpSurface::Resources, None, client.list_resources())
+                            .await?;
+                    if resources.is_empty() {
+                        print_empty_surface_notice(McpSurface::Resources, None);
+                    } else {
+                        println!("{}", output::format_resource_list(&resources, limit));
+                    }
+                    Ok(())
                 }
-                client.close().await?;
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Info {
                 target,
@@ -1488,21 +1463,23 @@ async fn main() -> anyhow::Result<()> {
                 format,
             } => {
                 let (server, tool_name) = split_server_target(&target)?;
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
-                let tools = client.list_tools().await?;
-                let tool = tools
-                    .iter()
-                    .find(|tool| tool.name.as_ref() == tool_name)
-                    .ok_or_else(|| {
-                        sxmc::error::SxmcError::Other(format!(
-                            "Tool '{}' not found on server '{}'",
-                            tool_name, server
-                        ))
-                    })?;
-                println!("{}", output::format_tool_detail(tool, pretty, format));
-                client.close().await?;
+                let client = connect_named_baked_mcp_client(server).await?;
+                let result = async {
+                    let tools = client.list_tools().await?;
+                    let tool = tools
+                        .iter()
+                        .find(|tool| tool.name.as_ref() == tool_name)
+                        .ok_or_else(|| {
+                            sxmc::error::SxmcError::Other(format!(
+                                "Tool '{}' not found on server '{}'",
+                                tool_name, server
+                            ))
+                        })?;
+                    println!("{}", output::format_tool_detail(tool, pretty, format));
+                    Ok(())
+                }
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Call {
                 target,
@@ -1510,22 +1487,26 @@ async fn main() -> anyhow::Result<()> {
                 pretty,
             } => {
                 let (server, tool_name) = split_server_target(&target)?;
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
                 let arguments = parse_json_object_arg(payload)?;
-                let result = client.call_tool(tool_name, arguments).await?;
-                println!("{}", output::format_tool_result(&result, pretty));
-                client.close().await?;
+                let client = connect_named_baked_mcp_client(server).await?;
+                let result = async {
+                    let result = client.call_tool(tool_name, arguments).await?;
+                    println!("{}", output::format_tool_result(&result, pretty));
+                    Ok(())
+                }
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Read { target, pretty } => {
                 let (server, resource_uri) = split_server_target(&target)?;
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
-                let result = client.read_resource(resource_uri).await?;
-                println!("{}", output::format_resource_result(&result, pretty));
-                client.close().await?;
+                let client = connect_named_baked_mcp_client(server).await?;
+                let result = async {
+                    let result = client.read_resource(resource_uri).await?;
+                    println!("{}", output::format_resource_result(&result, pretty));
+                    Ok(())
+                }
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
             McpAction::Prompt {
                 target,
@@ -1533,18 +1514,15 @@ async fn main() -> anyhow::Result<()> {
                 pretty,
             } => {
                 let (server, prompt_name) = split_server_target(&target)?;
-                let store = BakeStore::load()?;
-                let config = get_baked_mcp_server(&store, server)?;
-                let client = ConnectedMcpClient::connect(&config).await?;
-                let arguments = parse_kv_args(&args);
-                let arguments = if arguments.is_empty() {
-                    None
-                } else {
-                    Some(arguments)
-                };
-                let result = client.get_prompt(prompt_name, arguments).await?;
-                println!("{}", output::format_prompt_result(&result, pretty));
-                client.close().await?;
+                let arguments = parse_optional_kv_args(&args);
+                let client = connect_named_baked_mcp_client(server).await?;
+                let result = async {
+                    let result = client.get_prompt(prompt_name, arguments).await?;
+                    println!("{}", output::format_prompt_result(&result, pretty));
+                    Ok(())
+                }
+                .await;
+                finish_connected_mcp_client(client, result).await?;
             }
         },
 
