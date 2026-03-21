@@ -88,6 +88,64 @@ The more reliable value signal is workflow compression:
 | Scan skills | Grep and manual review | `sxmc scan` | Structured, severity-ranked findings with deeper checks. |
 | `CLI -> AI` startup setup | Manual doc/config work per host | `sxmc inspect cli ...` + `sxmc init ai ...` | Host-aware startup artifacts generated instead of handwritten. |
 
+## Real-World Side-by-Side
+
+The current comparison set exercised:
+
+- five real-world skills:
+  - `git-commit-review`
+  - `docker-debug`
+  - `code-review`
+  - `pr-summary`
+  - `dependency-audit`
+- five MCP servers:
+  - `server-everything`
+  - `server-filesystem`
+  - `server-memory`
+  - `server-sequential-thinking`
+  - `sxmc serve`
+
+### Skills
+
+| Test | Without `sxmc` | With `sxmc` | Practical result |
+|---|---|---|---|
+| Discover 5 skills | Custom shell/frontmatter parsing | `sxmc skills list` | Cleaner discovery with fewer edge cases and one built-in command. |
+| Serve skills as MCP | Handwritten JSON-RPC server code | `sxmc serve --paths <dir>` | Large implementation savings: serving skills over MCP becomes a built-in path. |
+| Inspect served MCP surfaces | Custom client script | `sxmc stdio "sxmc serve ..." --list` | Immediate inspection of prompts, tools, and resources. |
+| Fetch prompt with args | JSON-RPC client plus prompt payload formatting | `sxmc stdio ... --prompt code-review arguments="src/main.rs"` | Prompt retrieval becomes direct, and argument substitution stays consistent with skill metadata. |
+| Scan all 5 skills | Grep/manual review | `sxmc scan` | Broader checks across Unicode, permissions, injection patterns, and rule-coded severity output. |
+
+### MCP Servers
+
+| Test | Without `sxmc` | With `sxmc` | Practical result |
+|---|---|---|---|
+| List tools from `server-everything` | Custom JSON-RPC script | `sxmc stdio "mcp-server-everything" --list` | Shell-level server inspection with no throwaway client code. |
+| Invoke `echo` tool | Same plus call framing | `sxmc stdio ... echo message="Hello"` | One-shot tool invocation from the terminal. |
+| List filesystem tools | Custom discovery logic | `sxmc stdio "mcp-server-filesystem /tmp" --list` | Direct tool listing for third-party MCP servers. |
+| Read a file via MCP | Custom JSON-RPC client | `sxmc stdio ... read_file path=/path/to/file` | MCP resource/tool access becomes a CLI command instead of bespoke code. |
+| Discover memory server | Read source or write a probe client | `sxmc stdio "mcp-server-memory" --list-tools` | Faster schema discovery for servers you did not author. |
+| Create entity and search | Custom call framing with nested params | `sxmc stdio ... create_entities ...` then `search_nodes query=sxmc` | Complex tool calls become scriptable shell commands. |
+| Inspect tool schema | Read source code or build a schema probe | `sxmc stdio ... --describe-tool sequentialthinking` | Full parameter and type inspection on demand. |
+| Cross-server grep | Custom aggregation tooling | `sxmc mcp grep "file"` | Unique cross-server search across baked MCP inventories. |
+
+### Current Read
+
+Across this comparison set, the gains fall into three practical buckets:
+
+- gap-filling:
+  - `skills -> MCP`
+  - ad hoc `MCP -> CLI`
+  - cross-server baked `mcp grep`
+  - on-demand `--describe-tool` inspection
+- major time savings:
+  - serving skills over MCP
+  - invoking MCP tools without custom JSON-RPC clients
+  - structured security scanning instead of ad hoc grep
+- convenience:
+  - API listing/calling
+  - skill discovery
+  - startup scaffolding for AI hosts
+
 ## Startup Sanity
 
 Quick startup checks:

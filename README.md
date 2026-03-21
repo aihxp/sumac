@@ -23,6 +23,9 @@ Why that matters:
 
 ## Practical Wins
 
+These comparisons reflect the current validation style in this repo: real
+skills, real MCP servers, and the day-to-day shell workflows around them.
+
 | Task | Without `sxmc` | With `sxmc` | Improvement |
 |---|---|---|---|
 | List API endpoints | `curl` plus custom parsing, and you need to know the response shape | `sxmc api <url> --list` | One command instead of a custom script, with sorted output and operation count included. |
@@ -31,6 +34,11 @@ Why that matters:
 | Invoke MCP tool | Same custom scripting problem, plus argument handling | `sxmc stdio "<cmd>" tool_name key=value` | Direct MCP tool access from the terminal without writing a throwaway client. |
 | Security scan skills | Ad hoc `grep` misses hidden Unicode, wildcard permissions, and structured severity | `sxmc scan` | Higher-signal results with rule codes, severity, and checks that plain text search misses. |
 | `CLI -> AI` scaffold | Manual per-host setup and docs generation | `sxmc inspect cli gh` -> `sxmc init ai --from-cli gh` | Turns repetitive startup-doc and config work into generated artifacts for many AI hosts in seconds. |
+
+In the current real-world comparison set:
+- five skills were exercised through discovery, serving, prompting, and scanning
+- five MCP servers were exercised through list, inspect, and tool-call flows
+- the biggest practical wins were `skills -> MCP`, ad hoc `MCP -> CLI`, and security scanning
 
 ```
 Skills  -->  MCP Server     (serve skills to any MCP client)
