@@ -3,8 +3,8 @@
 This guide consolidates the release checklist, compatibility notes, smoke
 tests, and benchmark summary.
 
-For a concrete maintainer validation pass against **`2.0.0`**, see
-[`VALIDATION_RUN_v2.0.0.md`](VALIDATION_RUN_v2.0.0.md). Older snapshots:
+For a concrete maintainer validation pass against **`0.2.0`**, see
+[`VALIDATION_RUN_v0.2.0.md`](VALIDATION_RUN_v0.2.0.md). Older snapshots:
 [`VALIDATION_RUN_v0.1.9.md`](VALIDATION_RUN_v0.1.9.md),
 [`VALIDATION_RUN_v0.1.8.md`](VALIDATION_RUN_v0.1.8.md).
 
@@ -96,6 +96,6 @@ The current validation posture is:
 
 ## Latest maintainer snapshot
 
-**[VALIDATION_RUN_v2.0.0.md](VALIDATION_RUN_v2.0.0.md)** — **2.0.0** pass: tests (**123**), certify + smoke, benchmarks, five skills, five MCPs, **JSON / stderr notes**, promptless multi-invocation, **MCP → CLI**, **`sxmc mcp`**, **`sxmc mcp session`**, **Cursor-style stdio simulation (per USAGE)**, and **warnings inventory**.
+**[VALIDATION_RUN_v0.2.0.md](VALIDATION_RUN_v0.2.0.md)** — **0.2.0** pass: tests (**123**), certify + smoke, benchmarks, five skills, five MCPs, **JSON / stderr notes**, promptless multi-invocation, **MCP → CLI**, **`sxmc mcp`**, **`sxmc mcp session`**, **Cursor-style stdio simulation (per USAGE)**, and **warnings inventory**.
 
 Repeated standalone **`sxmc stdio …`** invocations do **not** share MCP session memory. For continuity, use **`sxmc mcp session <server>`** (see validation run §9).

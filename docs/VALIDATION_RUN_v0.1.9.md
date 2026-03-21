@@ -1,6 +1,6 @@
 # Validation run — **sxmc v0.1.9** (2026-03-21)
 
-**Newer run:** [`VALIDATION_RUN_v2.0.0.md`](VALIDATION_RUN_v2.0.0.md) (**2.0.0**).
+**Newer run:** [`VALIDATION_RUN_v0.2.0.md`](VALIDATION_RUN_v0.2.0.md) (**0.2.0**).
 
 Maintainer pass: **automated tests**, **`certify_release.sh`**, **`smoke_real_world_mcps.sh`**, **benchmarks**, **five real skills**, **five npm MCPs**, **promptless multi-invocation**, **JSON outputs**, **MCP → CLI**, **`bake` + `sxmc mcp` (CLI → agent)**, and **`sxmc mcp session`** (stateful MCP).
 

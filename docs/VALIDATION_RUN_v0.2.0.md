@@ -1,11 +1,11 @@
-# Validation run — **sxmc 2.0.0** (2026-03-21)
+# Validation run — **sxmc 0.2.0** (2026-03-21)
 
-Maintainer pass after the **2.0.0** release: **tests**, **`certify_release.sh`**, **`smoke_real_world_mcps.sh`**, **benchmarks**, **five real skills**, **five npm MCPs**, **promptless multi-invocation**, **JSON on stdout**, **MCP → CLI**, **`bake` + `sxmc mcp`**, **`sxmc mcp session`**, **Cursor-oriented workflow (simulated)**, and a **warnings / stderr** inventory.
+Maintainer pass after the **0.2.0** release: **tests**, **`certify_release.sh`**, **`smoke_real_world_mcps.sh`**, **benchmarks**, **five real skills**, **five npm MCPs**, **promptless multi-invocation**, **JSON on stdout**, **MCP → CLI**, **`bake` + `sxmc mcp`**, **`sxmc mcp session`**, **Cursor-oriented workflow (simulated)**, and a **warnings / stderr** inventory.
 
 ## Environment
 
 - **Host:** Linux x86_64  
-- **sxmc:** **2.0.0** (`target/release/sxmc`; `cargo search sxmc` → **2.0.0**)  
+- **sxmc:** **0.2.0** (`target/release/sxmc`; `cargo search sxmc` → **0.2.0**)  
 - **Node:** `npx` for smoke script  
 
 ---
@@ -87,12 +87,12 @@ Path: `/tmp/sxmc-realworld-skills` (same symlink bundle as prior runs).
 | Check | Result (stdout only, stderr discarded) |
 |-------|----------------------------------------|
 | `skills list --json` | Valid JSON — **OK** |
-| `scan --paths … --json` | Single JSON document — **OK** (**2.0.0** changelog: multi-target scan emits one document) |
-| `api … --list --format json` | Valid JSON (e.g. `api_type`, `count`, `operations[]`) — **OK** (**2.0.0**: `--list` honors structured flags) |
+| `scan --paths … --json` | Single JSON document — **OK** (**0.2.0** changelog: multi-target scan emits one document) |
+| `api … --list --format json` | Valid JSON (e.g. `api_type`, `count`, `operations[]`) — **OK** (**0.2.0**: `--list` honors structured flags) |
 | `stdio … --describe --format json` | Valid JSON — **OK** |
 | `api … <operation> --format json` | Valid JSON — **OK** (spot-check: `findPetsByStatus`) |
 
-**Finding:** Behavior matches **2.0.0** release notes for **structured `--list`** and **scan JSON**.
+**Finding:** Behavior matches **0.2.0** release notes for **structured `--list`** and **scan JSON**.
 
 ---
 
@@ -144,7 +144,7 @@ args: ["serve", "--paths", "/absolute/path/to/skills"]
 | Area | Verdict |
 |------|---------|
 | **Tests + certify + smoke** | **Yes** |
-| **2.0.0 structured list + scan JSON** | **Yes** (§7) |
+| **0.2.0 structured list + scan JSON** | **Yes** (§7) |
 | **Stateful `mcp session`** | **Yes** (§9) |
 | **Cursor-style stdio command** | **Yes** for documented JSON-array / `serve` pattern (§10) |
 | **Performance** | Benchmarks for **sanity** only (§4) |
