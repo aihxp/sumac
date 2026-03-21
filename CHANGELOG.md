@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-03-21
+
+### Added
+
+- `sxmc mcp session <server>` for explicit stateful multi-step MCP workflows over one baked connection
+- stateful MCP fixture coverage proving session memory survives repeated tool calls inside one session
+
+### Changed
+
+- `api/spec/graphql --list` now honors structured output flags like `--format json`, `--pretty`, and `--format toon`
+- `scan --json` now emits a single machine-readable JSON document across multi-target scans
+- product and validation docs now point stateful MCP users to `sxmc mcp session` instead of treating session continuity as an unsupported terminal path
+- `sxmc` is now released as a stable `2.0.0` surface for skills, MCP, and API workflows
+- release metadata and package docs now align to `2.0.0`
+
 ## [0.1.9] - 2026-03-21
 
 ### Added
@@ -168,4 +183,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 [0.1.7]: https://github.com/aihxp/sxmc/compare/v0.1.6...v0.1.7
 [0.1.8]: https://github.com/aihxp/sxmc/compare/v0.1.7...v0.1.8
 [0.1.9]: https://github.com/aihxp/sxmc/compare/v0.1.8...v0.1.9
+[2.0.0]: https://github.com/aihxp/sxmc/compare/v0.1.9...v2.0.0
 [0.1.0]: https://github.com/aihxp/sxmc/releases/tag/v0.1.0
