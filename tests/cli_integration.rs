@@ -402,6 +402,10 @@ fn test_init_ai_full_apply_updates_selected_hosts_and_sidecars_rest() {
         .path()
         .join(".sxmc/ai/openai-codex/mcp.toml.sxmc.snippet")
         .exists());
+    assert!(temp
+        .path()
+        .join(".sxmc/ai/openai-codex/AGENTS.md.sxmc.snippet")
+        .exists());
 }
 
 #[test]
@@ -428,8 +432,40 @@ fn test_scaffold_agent_doc_apply_preserves_existing_content() {
 
     let contents = fs::read_to_string(&agents).unwrap();
     assert!(contents.contains("Keep me."));
-    assert!(contents.contains("<!-- sxmc:begin cli-ai -->"));
+    assert!(contents.contains("<!-- sxmc:begin cli-ai:openai-codex -->"));
     assert!(contents.contains("sxmc CLI Surface: `gh`"));
+}
+
+#[test]
+fn test_init_ai_full_apply_keeps_multiple_agents_blocks_for_shared_targets() {
+    let temp = tempfile::tempdir().unwrap();
+    let agents = temp.path().join("AGENTS.md");
+    fs::write(&agents, "# Existing\n").unwrap();
+
+    sxmc()
+        .args([
+            "init",
+            "ai",
+            "--from-cli",
+            "gh",
+            "--coverage",
+            "full",
+            "--host",
+            "open-code,openai-codex",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+        ])
+        .assert()
+        .success();
+
+    let contents = fs::read_to_string(&agents).unwrap();
+    assert!(contents.contains("<!-- sxmc:begin cli-ai:portable -->"));
+    assert!(contents.contains("<!-- sxmc:begin cli-ai:opencode -->"));
+    assert!(contents.contains("<!-- sxmc:begin cli-ai:openai-codex -->"));
+    assert!(contents.contains("OpenCode"));
+    assert!(contents.contains("OpenAI/Codex"));
 }
 
 #[test]

@@ -488,9 +488,7 @@ pub fn generate_host_native_agent_doc_artifacts(
             spec.native_doc_target.is_some()
                 && !matches!(
                     spec.client,
-                    AiClientProfile::OpenaiCodex
-                        | AiClientProfile::GenericStdioMcp
-                        | AiClientProfile::GenericHttpMcp
+                    AiClientProfile::GenericStdioMcp | AiClientProfile::GenericHttpMcp
                 )
         })
         .map(|spec| GeneratedArtifact {
@@ -1535,7 +1533,7 @@ fn proposed_applied_content(artifact: &GeneratedArtifact, root: &Path) -> Result
             Ok(upsert_managed_block(
                 &existing,
                 &artifact.content,
-                markdown_block_markers(&artifact.target_path),
+                markdown_block_markers(artifact),
             ))
         }
         ApplyStrategy::JsonMcpConfig => {
@@ -1555,7 +1553,7 @@ fn proposed_applied_content(artifact: &GeneratedArtifact, root: &Path) -> Result
             Ok(upsert_managed_block(
                 &existing,
                 &artifact.content,
-                toml_block_markers(&artifact.target_path),
+                toml_block_markers(artifact),
             ))
         }
         ApplyStrategy::DirectWrite => Ok(artifact.content.clone()),
@@ -1600,7 +1598,7 @@ fn apply_artifact(artifact: &GeneratedArtifact, root: &Path) -> Result<PathBuf> 
             let updated = upsert_managed_block(
                 &existing,
                 &artifact.content,
-                markdown_block_markers(&artifact.target_path),
+                markdown_block_markers(artifact),
             );
             write_file(&artifact.target_path, &updated)?;
             Ok(artifact.target_path.clone())
@@ -1621,11 +1619,8 @@ fn apply_artifact(artifact: &GeneratedArtifact, root: &Path) -> Result<PathBuf> 
             } else {
                 String::new()
             };
-            let updated = upsert_managed_block(
-                &existing,
-                &artifact.content,
-                toml_block_markers(&artifact.target_path),
-            );
+            let updated =
+                upsert_managed_block(&existing, &artifact.content, toml_block_markers(artifact));
             write_file(&artifact.target_path, &updated)?;
             Ok(artifact.target_path.clone())
         }
@@ -1644,19 +1639,23 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
-fn markdown_block_markers(target_path: &Path) -> (&'static str, &'static str) {
-    let _ = target_path;
-    ("<!-- sxmc:begin cli-ai -->", "<!-- sxmc:end cli-ai -->")
+fn markdown_block_markers(artifact: &GeneratedArtifact) -> (String, String) {
+    (
+        format!("<!-- sxmc:begin cli-ai:{} -->", artifact.sidecar_scope),
+        format!("<!-- sxmc:end cli-ai:{} -->", artifact.sidecar_scope),
+    )
 }
 
-fn toml_block_markers(target_path: &Path) -> (&'static str, &'static str) {
-    let _ = target_path;
-    ("# sxmc:begin cli-ai", "# sxmc:end cli-ai")
+fn toml_block_markers(artifact: &GeneratedArtifact) -> (String, String) {
+    (
+        format!("# sxmc:begin cli-ai:{}", artifact.sidecar_scope),
+        format!("# sxmc:end cli-ai:{}", artifact.sidecar_scope),
+    )
 }
 
-fn upsert_managed_block(existing: &str, new_content: &str, markers: (&str, &str)) -> String {
+fn upsert_managed_block(existing: &str, new_content: &str, markers: (String, String)) -> String {
     let block = format!("{}\n{}\n{}\n", markers.0, new_content.trim_end(), markers.1);
-    if let (Some(start), Some(end)) = (existing.find(markers.0), existing.find(markers.1)) {
+    if let (Some(start), Some(end)) = (existing.find(&markers.0), existing.find(&markers.1)) {
         let mut updated = String::new();
         updated.push_str(&existing[..start]);
         if !updated.ends_with('\n') && !updated.is_empty() {
@@ -1744,14 +1743,50 @@ mod tests {
     #[test]
     fn merge_markdown_block_preserves_existing_content() {
         let existing = "# Repo\n\nExisting text.\n";
+        let artifact = GeneratedArtifact {
+            label: "Portable agent doc".into(),
+            target_path: PathBuf::from("AGENTS.md"),
+            content: String::new(),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Portable,
+            sidecar_scope: "portable".into(),
+        };
         let updated = upsert_managed_block(
             existing,
             "## Generated\ncontent",
-            markdown_block_markers(Path::new("AGENTS.md")),
+            markdown_block_markers(&artifact),
         );
         assert!(updated.contains("Existing text."));
-        assert!(updated.contains("<!-- sxmc:begin cli-ai -->"));
+        assert!(updated.contains("<!-- sxmc:begin cli-ai:portable -->"));
         assert!(updated.contains("## Generated"));
+    }
+
+    #[test]
+    fn merge_markdown_blocks_with_different_scopes_coexist() {
+        let portable = GeneratedArtifact {
+            label: "Portable agent doc".into(),
+            target_path: PathBuf::from("AGENTS.md"),
+            content: String::new(),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Portable,
+            sidecar_scope: "portable".into(),
+        };
+        let codex = GeneratedArtifact {
+            label: "OpenAI Codex agent doc".into(),
+            target_path: PathBuf::from("AGENTS.md"),
+            content: String::new(),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Client(AiClientProfile::OpenaiCodex),
+            sidecar_scope: "openai-codex".into(),
+        };
+
+        let first = upsert_managed_block("", "## Portable", markdown_block_markers(&portable));
+        let second = upsert_managed_block(&first, "## Codex", markdown_block_markers(&codex));
+
+        assert!(second.contains("<!-- sxmc:begin cli-ai:portable -->"));
+        assert!(second.contains("<!-- sxmc:begin cli-ai:openai-codex -->"));
+        assert!(second.contains("## Portable"));
+        assert!(second.contains("## Codex"));
     }
 
     #[test]
