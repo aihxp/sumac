@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.9] - 2026-03-21
+
+### Added
+
+- `sxmc mcp session <server>` for explicit stateful multi-step MCP workflows over one baked connection
+- stateful MCP fixture coverage proving session memory survives repeated tool calls inside one session
+
+### Changed
+
+- product and validation docs now point stateful MCP users to `sxmc mcp session` instead of treating session continuity as an unsupported terminal path
+- release metadata and package docs now align to `0.1.9`
+
 ## [0.1.8] - 2026-03-21
 
 ### Fixed
@@ -155,4 +167,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 [0.1.6]: https://github.com/aihxp/sxmc/compare/v0.1.5...v0.1.6
 [0.1.7]: https://github.com/aihxp/sxmc/compare/v0.1.6...v0.1.7
 [0.1.8]: https://github.com/aihxp/sxmc/compare/v0.1.7...v0.1.8
+[0.1.9]: https://github.com/aihxp/sxmc/compare/v0.1.8...v0.1.9
 [0.1.0]: https://github.com/aihxp/sxmc/releases/tag/v0.1.0
