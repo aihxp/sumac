@@ -13,6 +13,7 @@ Additional documentation for sxmc developers and maintainers.
 | [RELEASING.md](RELEASING.md) | Release process, version bumping, and crates.io publishing |
 | [DISTRIBUTION.md](DISTRIBUTION.md) | Distribution channels: npm wrapper, Homebrew formula, asset naming |
 | [SMOKE_TESTS.md](SMOKE_TESTS.md) | Startup sanity and client smoke procedures (automated and manual) |
+| [E2E_SCENARIOS.md](E2E_SCENARIOS.md) | 25 high-value end-to-end scenarios, mapped to automated, certified, or manual coverage |
 | [E2E_VALIDATION_REPORT.md](E2E_VALIDATION_REPORT.md) | E2E validation: v0.1.1 regressions, 0.1.2 fixes, and the manual test matrix |
 | [BENCHMARK_RUN_v0.1.6.md](BENCHMARK_RUN_v0.1.6.md) | v0.1.6 crates.io benchmark + `cargo test` counts + `scripts/benchmark_cli.sh` |
 | [BENCHMARK_RUN_v0.1.5.md](BENCHMARK_RUN_v0.1.5.md) | Prior benchmark capture (v0.1.5) |

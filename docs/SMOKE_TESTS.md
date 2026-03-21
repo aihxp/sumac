@@ -12,6 +12,8 @@ For the release-by-release validation ledger, pair this file with
 [`COMPATIBILITY_MATRIX.md`](COMPATIBILITY_MATRIX.md).
 For the explicit support boundary, pair it with
 [`PRODUCT_CONTRACT.md`](PRODUCT_CONTRACT.md).
+For the maintained 25-scenario release checklist, pair it with
+[`E2E_SCENARIOS.md`](E2E_SCENARIOS.md).
 
 These checks are intentionally separate from the Linux timing harness in
 [`VALUE_AND_BENCHMARK_FINDINGS.md`](VALUE_AND_BENCHMARK_FINDINGS.md). Smoke
