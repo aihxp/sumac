@@ -146,6 +146,34 @@ Across this comparison set, the gains fall into three practical buckets:
   - skill discovery
   - startup scaffolding for AI hosts
 
+## Token Utilization Summary
+
+Across the current 10-scenario comparison set:
+
+| Metric | Without `sxmc` | With `sxmc` | Savings |
+|---|---|---|---|
+| Total tokens | ~20,671 | ~11,894 | ~8,777 fewer tokens (~42%) |
+| Total agent turns | ~30-47 | ~10 | ~20-37 fewer turns |
+| Estimated input cost at $3/M | ~$0.062 | ~$0.036 | ~42% lower |
+
+Notable scenario-level takeaways:
+
+- biggest token wins:
+  - API discovery
+  - MCP tool invocation
+  - security scanning
+- biggest turn wins:
+  - serve plus inspect workflows
+  - cross-server grep across baked MCP inventories
+- important outlier:
+  - direct API invocation saves much less because the response payload is still the same size; the main savings there come from avoiding spec-reading overhead
+- uncounted downside of the manual path:
+  - retry turns from broken JSON-RPC scripts or hand-built protocol glue are not included in these totals
+
+These numbers are best read as workflow-efficiency estimates, not billing-grade
+measurements. The stable product lesson is the same: `sxmc` helps most when it
+replaces protocol glue, spec-reading, or multi-step discovery flows.
+
 ## Startup Sanity
 
 Quick startup checks:

@@ -39,6 +39,11 @@ In the current real-world comparison set:
 - five skills were exercised through discovery, serving, prompting, and scanning
 - five MCP servers were exercised through list, inspect, and tool-call flows
 - the biggest practical wins were `skills -> MCP`, ad hoc `MCP -> CLI`, and security scanning
+- the current token-utilization report across 10 scenarios estimates:
+  - about `42%` lower token use overall
+  - about `20-37` fewer agent turns
+  - the biggest token wins in API discovery, MCP tool invocation, and security scanning
+  - the biggest turn wins in `serve + inspect` and cross-server grep workflows
 
 ```
 Skills  -->  MCP Server     (serve skills to any MCP client)
