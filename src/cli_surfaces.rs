@@ -142,6 +142,8 @@ pub enum AiClientProfile {
     GeminiCli,
     GithubCopilot,
     ContinueDev,
+    OpenCode,
+    JetbrainsAiAssistant,
     Junie,
     Windsurf,
     OpenaiCodex,
@@ -384,6 +386,14 @@ pub fn generate_host_native_agent_doc_artifacts(
             sidecar_scope: slugify(client_label(AiClientProfile::ContinueDev)),
         },
         GeneratedArtifact {
+            label: "JetBrains AI Assistant rules doc".into(),
+            target_path: root.join(".aiassistant/rules/sxmc-cli-ai.md"),
+            content: render_agent_doc(profile, AiClientProfile::JetbrainsAiAssistant),
+            apply_strategy: ApplyStrategy::ManagedMarkdownBlock,
+            audience: ArtifactAudience::Client(AiClientProfile::JetbrainsAiAssistant),
+            sidecar_scope: slugify(client_label(AiClientProfile::JetbrainsAiAssistant)),
+        },
+        GeneratedArtifact {
             label: "Junie guidelines".into(),
             target_path: root.join(".junie/guidelines.md"),
             content: render_agent_doc(profile, AiClientProfile::Junie),
@@ -417,6 +427,8 @@ pub fn generate_full_coverage_init_artifacts(
         AiClientProfile::GeminiCli,
         AiClientProfile::GithubCopilot,
         AiClientProfile::ContinueDev,
+        AiClientProfile::OpenCode,
+        AiClientProfile::JetbrainsAiAssistant,
         AiClientProfile::Junie,
         AiClientProfile::Windsurf,
         AiClientProfile::OpenaiCodex,
@@ -447,7 +459,9 @@ pub fn generate_client_config_artifact(
     let server_name = format!("sxmc-cli-ai-{}", slugify(&profile.command));
     let content = render_client_config(client, &server_name, &absolute_skills_path);
     let apply_strategy = match client {
-        AiClientProfile::Cursor | AiClientProfile::GeminiCli => ApplyStrategy::JsonMcpConfig,
+        AiClientProfile::Cursor | AiClientProfile::GeminiCli | AiClientProfile::OpenCode => {
+            ApplyStrategy::JsonMcpConfig
+        }
         AiClientProfile::OpenaiCodex => ApplyStrategy::TomlManagedBlock,
         _ => ApplyStrategy::SidecarOnly,
     };
@@ -1062,6 +1076,8 @@ fn client_label(client: AiClientProfile) -> &'static str {
         AiClientProfile::GeminiCli => "Gemini CLI",
         AiClientProfile::GithubCopilot => "GitHub Copilot",
         AiClientProfile::ContinueDev => "Continue",
+        AiClientProfile::OpenCode => "OpenCode",
+        AiClientProfile::JetbrainsAiAssistant => "JetBrains AI Assistant",
         AiClientProfile::Junie => "Junie",
         AiClientProfile::Windsurf => "Windsurf",
         AiClientProfile::OpenaiCodex => "OpenAI/Codex",
@@ -1076,6 +1092,7 @@ fn agent_doc_target(client: AiClientProfile) -> &'static str {
         AiClientProfile::GeminiCli => "GEMINI.md",
         AiClientProfile::GithubCopilot => ".github/copilot-instructions.md",
         AiClientProfile::ContinueDev => ".continue/rules/sxmc-cli-ai.md",
+        AiClientProfile::JetbrainsAiAssistant => ".aiassistant/rules/sxmc-cli-ai.md",
         AiClientProfile::Junie => ".junie/guidelines.md",
         AiClientProfile::Windsurf => ".windsurf/rules/sxmc-cli-ai.md",
         _ => "AGENTS.md",
@@ -1089,6 +1106,8 @@ fn client_config_target(client: AiClientProfile) -> Option<&'static str> {
         AiClientProfile::GeminiCli => Some(".gemini/settings.json"),
         AiClientProfile::GithubCopilot => None,
         AiClientProfile::ContinueDev => None,
+        AiClientProfile::OpenCode => Some("opencode.json"),
+        AiClientProfile::JetbrainsAiAssistant => None,
         AiClientProfile::Junie => None,
         AiClientProfile::Windsurf => None,
         AiClientProfile::OpenaiCodex => Some(".codex/mcp.toml"),
@@ -1286,6 +1305,15 @@ fn render_client_config(client: AiClientProfile, server_name: &str, skills_path:
                 server_name: {
                     "command": "sxmc",
                     "args": ["serve", "--paths", skills_display]
+                }
+            }
+        }))
+        .unwrap(),
+        AiClientProfile::OpenCode => serde_json::to_string_pretty(&json!({
+            "mcp": {
+                server_name: {
+                    "type": "local",
+                    "command": ["sxmc", "serve", "--paths", skills_display]
                 }
             }
         }))
@@ -1609,30 +1637,43 @@ fn upsert_managed_block(existing: &str, new_content: &str, markers: (&str, &str)
 }
 
 fn merge_json_mcp_config(existing: &str, generated: &str) -> Result<String> {
+    let generated_value = serde_json::from_str::<Value>(generated)?;
+    let root_key = if generated_value.get("mcpServers").is_some() {
+        "mcpServers"
+    } else if generated_value.get("mcp").is_some() {
+        "mcp"
+    } else {
+        return Err(SxmcError::Other(
+            "Generated config missing mcpServers or mcp object".into(),
+        ));
+    };
+
     let mut base = if existing.trim().is_empty() {
-        json!({ "mcpServers": {} })
+        json!({ root_key: {} })
     } else {
         serde_json::from_str::<Value>(existing)?
     };
 
-    let generated_value = serde_json::from_str::<Value>(generated)?;
     let generated_servers = generated_value
-        .get("mcpServers")
+        .get(root_key)
         .and_then(Value::as_object)
-        .ok_or_else(|| SxmcError::Other("Generated config missing mcpServers object".into()))?
+        .ok_or_else(|| SxmcError::Other(format!("Generated config missing {} object", root_key)))?
         .clone();
 
     let root_obj = base
         .as_object_mut()
         .ok_or_else(|| SxmcError::Other("Existing config is not a JSON object".into()))?;
-    if !root_obj.contains_key("mcpServers") {
-        root_obj.insert("mcpServers".into(), Value::Object(Map::new()));
+    if !root_obj.contains_key(root_key) {
+        root_obj.insert(root_key.into(), Value::Object(Map::new()));
     }
     let servers = root_obj
-        .get_mut("mcpServers")
+        .get_mut(root_key)
         .and_then(Value::as_object_mut)
         .ok_or_else(|| {
-            SxmcError::Other("Existing config has a non-object mcpServers value".into())
+            SxmcError::Other(format!(
+                "Existing config has a non-object {} value",
+                root_key
+            ))
         })?;
 
     for (name, config) in generated_servers {
@@ -1676,6 +1717,15 @@ mod tests {
     }
 
     #[test]
+    fn merge_json_config_supports_opencode_shape() {
+        let existing = r#"{"mcp":{"existing":{"type":"local","command":["foo"]}}}"#;
+        let generated = r#"{"mcp":{"sxmc-cli-ai-gh":{"type":"local","command":["sxmc","serve"]}}}"#;
+        let merged = merge_json_mcp_config(existing, generated).unwrap();
+        assert!(merged.contains("\"existing\""));
+        assert!(merged.contains("\"sxmc-cli-ai-gh\""));
+    }
+
+    #[test]
     fn generate_client_config_for_all_profiles() {
         let profile: CliSurfaceProfile =
             serde_json::from_str(include_str!("../examples/profiles/from_cli.json")).unwrap();
@@ -1688,6 +1738,8 @@ mod tests {
             AiClientProfile::GeminiCli,
             AiClientProfile::GithubCopilot,
             AiClientProfile::ContinueDev,
+            AiClientProfile::OpenCode,
+            AiClientProfile::JetbrainsAiAssistant,
             AiClientProfile::Junie,
             AiClientProfile::Windsurf,
             AiClientProfile::OpenaiCodex,

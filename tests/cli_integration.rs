@@ -307,6 +307,10 @@ fn test_init_ai_full_preview_lists_multi_host_targets() {
         .stdout(predicate::str::contains("GEMINI.md"))
         .stdout(predicate::str::contains(".github/copilot-instructions.md"))
         .stdout(predicate::str::contains(".continue/rules/sxmc-cli-ai.md"))
+        .stdout(predicate::str::contains("opencode.json"))
+        .stdout(predicate::str::contains(
+            ".aiassistant/rules/sxmc-cli-ai.md",
+        ))
         .stdout(predicate::str::contains(".junie/guidelines.md"))
         .stdout(predicate::str::contains(".windsurf/rules/sxmc-cli-ai.md"))
         .stdout(predicate::str::contains(".cursor/mcp.json"))
@@ -373,6 +377,14 @@ fn test_init_ai_full_apply_updates_selected_hosts_and_sidecars_rest() {
     assert!(temp
         .path()
         .join(".sxmc/ai/continue/sxmc-cli-ai.md.sxmc.snippet")
+        .exists());
+    assert!(temp
+        .path()
+        .join(".sxmc/ai/opencode/opencode.json.sxmc.snippet")
+        .exists());
+    assert!(temp
+        .path()
+        .join(".sxmc/ai/jetbrains-ai-assistant/sxmc-cli-ai.md.sxmc.snippet")
         .exists());
     assert!(temp
         .path()
@@ -493,6 +505,31 @@ fn test_scaffold_agent_doc_apply_for_continue_writes_rules_doc() {
 }
 
 #[test]
+fn test_scaffold_agent_doc_apply_for_jetbrains_ai_assistant_writes_rules_doc() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc()
+        .args([
+            "scaffold",
+            "agent-doc",
+            "--from-profile",
+            "examples/profiles/from_cli.json",
+            "--client",
+            "jetbrains-ai-assistant",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+        ])
+        .assert()
+        .success();
+
+    let contents =
+        fs::read_to_string(temp.path().join(".aiassistant/rules/sxmc-cli-ai.md")).unwrap();
+    assert!(contents.contains("sxmc CLI Surface: `gh`"));
+}
+
+#[test]
 fn test_scaffold_agent_doc_apply_for_junie_writes_guidelines() {
     let temp = tempfile::tempdir().unwrap();
 
@@ -592,6 +629,38 @@ fn test_scaffold_client_config_for_github_copilot_is_rejected() {
         .stderr(predicate::str::contains(
             "GitHub Copilot does not have a native MCP config target",
         ));
+}
+
+#[test]
+fn test_scaffold_client_config_apply_merges_opencode_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_path = temp.path().join("opencode.json");
+    fs::write(
+        &config_path,
+        r#"{"mcp":{"existing":{"type":"local","command":["foo"]}}}"#,
+    )
+    .unwrap();
+
+    sxmc()
+        .args([
+            "scaffold",
+            "client-config",
+            "--from-profile",
+            "examples/profiles/from_cli.json",
+            "--client",
+            "open-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+        ])
+        .assert()
+        .success();
+
+    let contents = fs::read_to_string(&config_path).unwrap();
+    assert!(contents.contains("\"existing\""));
+    assert!(contents.contains("\"sxmc-cli-ai-gh\""));
+    assert!(contents.contains("\"mcp\""));
 }
 
 #[test]

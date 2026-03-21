@@ -193,6 +193,8 @@ Current host profiles:
 - `gemini-cli`
 - `github-copilot`
 - `continue-dev`
+- `open-code`
+- `jetbrains-ai-assistant`
 - `junie`
 - `windsurf`
 - `openai-codex`
@@ -207,6 +209,8 @@ Full-coverage generation produces:
 - `GEMINI.md` for Gemini CLI
 - `.github/copilot-instructions.md` for GitHub Copilot
 - `.continue/rules/sxmc-cli-ai.md` for Continue
+- `opencode.json` for OpenCode
+- `.aiassistant/rules/sxmc-cli-ai.md` for JetBrains AI Assistant
 - `.junie/guidelines.md` for Junie
 - `.windsurf/rules/sxmc-cli-ai.md` for Windsurf
 - host config scaffolds for Claude, Cursor, Gemini, OpenAI/Codex, and generic stdio/http MCP
@@ -214,7 +218,9 @@ Full-coverage generation produces:
 Notes:
 
 - GitHub Copilot gets a native instructions file, not an MCP config scaffold
+- OpenCode gets a native `opencode.json` scaffold
 - Continue, Junie, and Windsurf are native doc targets today, not MCP config targets
+- JetBrains AI Assistant is a native rules-doc target today, not an MCP config target
 - `llms.txt` is optional and exported separately through `scaffold llms-txt`
 
 ## Client Setup Notes

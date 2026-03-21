@@ -9,6 +9,8 @@ This matrix tracks the currently shipped `CLI -> AI` host coverage in `sxmc`.
 | Gemini CLI | `GEMINI.md` | `.gemini/settings.json` | Yes | merges JSON config and managed doc | Supported |
 | GitHub Copilot | `.github/copilot-instructions.md` | none | Yes | native instructions file only | Supported |
 | Continue | `.continue/rules/sxmc-cli-ai.md` | none | Yes | native rules doc only | Supported |
+| OpenCode | `AGENTS.md` portable fallback | `opencode.json` | Yes | merges JSON config in native OpenCode shape | Supported |
+| JetBrains AI Assistant | `.aiassistant/rules/sxmc-cli-ai.md` | none | Yes | native rules doc only | Supported |
 | Junie | `.junie/guidelines.md` | none | Yes | native guidelines doc only | Supported |
 | Windsurf | `.windsurf/rules/sxmc-cli-ai.md` | none | Yes | native rules doc only | Supported |
 | OpenAI/Codex | `AGENTS.md` portable fallback | `.codex/mcp.toml` | Yes | managed TOML block for config | Supported |

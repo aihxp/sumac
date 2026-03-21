@@ -110,6 +110,8 @@ Current CLI-to-AI coverage is automated rather than client-UI-driven:
 - Gemini-native `GEMINI.md` apply behavior
 - GitHub Copilot native instructions generation
 - Continue / Junie / Windsurf native doc generation
+- OpenCode config generation
+- JetBrains AI Assistant native rules generation
 - optional `llms.txt` export generation
 
 See [CLI_TO_AI_COMPATIBILITY.md](CLI_TO_AI_COMPATIBILITY.md) for the maintained

@@ -365,6 +365,8 @@ Current host-aware coverage includes:
 - Gemini CLI
 - GitHub Copilot
 - Continue
+- OpenCode
+- JetBrains AI Assistant
 - Junie
 - Windsurf
 - OpenAI/Codex-style setups

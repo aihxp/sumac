@@ -45,6 +45,8 @@ Current full-coverage host outputs:
 - `GEMINI.md`
 - `.github/copilot-instructions.md`
 - `.continue/rules/sxmc-cli-ai.md`
+- `opencode.json`
+- `.aiassistant/rules/sxmc-cli-ai.md`
 - `.junie/guidelines.md`
 - `.windsurf/rules/sxmc-cli-ai.md`
 - host config scaffolds for Claude Code, Cursor, Gemini CLI, OpenAI/Codex, and generic stdio/http MCP

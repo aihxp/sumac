@@ -65,6 +65,8 @@ These are the core product paths we should treat as stable:
   - `gemini-cli`
   - `github-copilot`
   - `continue-dev`
+  - `open-code`
+  - `jetbrains-ai-assistant`
   - `junie`
   - `windsurf`
   - `openai-codex`
