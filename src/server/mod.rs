@@ -12,6 +12,7 @@ use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use axum::{
+    extract::DefaultBodyLimit,
     extract::Request,
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::{self, Next},
@@ -19,6 +20,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, GetPromptRequestParams, GetPromptResult,
     ListPromptsResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
@@ -31,6 +33,8 @@ use rmcp::transport::streamable_http_server::{
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
+use tower::limit::ConcurrencyLimitLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::error::{Result, SxmcError};
 use crate::skills::discovery;
@@ -62,6 +66,21 @@ struct SkillInventorySummary {
     skill_count: usize,
     tool_count: usize,
     resource_count: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HttpServeLimits {
+    pub max_concurrency: usize,
+    pub max_request_body_bytes: usize,
+}
+
+impl Default for HttpServeLimits {
+    fn default() -> Self {
+        Self {
+            max_concurrency: 64,
+            max_request_body_bytes: 1024 * 1024,
+        }
+    }
 }
 
 impl HttpAuth {
@@ -210,7 +229,7 @@ pub async fn serve_stdio(paths: &[PathBuf], watch: bool) -> Result<()> {
     let server = ReloadableSkillsServer::new(build_server(paths)?);
     let cancellation_token = CancellationToken::new();
     if watch {
-        eprintln!("[sxmc] Watch mode enabled; polling skill paths for changes");
+        eprintln!("[sxmc] Watch mode enabled");
         spawn_watch_task(
             Arc::new(paths.to_vec()),
             server.clone(),
@@ -254,6 +273,7 @@ fn build_http_router(
     cancellation_token: CancellationToken,
     auth: Arc<HttpAuthConfig>,
     inventory: Arc<RwLock<SkillInventorySummary>>,
+    limits: HttpServeLimits,
 ) -> Router {
     let service = build_streamable_http_service(server, cancellation_token);
     let info = Arc::new(HttpServerInfo {
@@ -281,6 +301,9 @@ fn build_http_router(
             }),
         )
         .merge(mcp_router)
+        .layer(DefaultBodyLimit::max(limits.max_request_body_bytes))
+        .layer(RequestBodyLimitLayer::new(limits.max_request_body_bytes))
+        .layer(ConcurrencyLimitLayer::new(limits.max_concurrency))
 }
 
 /// Run the MCP server over streamable HTTP.
@@ -294,6 +317,7 @@ pub async fn serve_http(
     required_headers: &[(String, String)],
     bearer_token: Option<&str>,
     watch: bool,
+    limits: HttpServeLimits,
 ) -> Result<()> {
     let bind_addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&bind_addr)
@@ -307,7 +331,7 @@ pub async fn serve_http(
     let inventory = Arc::new(RwLock::new(summarize_paths(paths)));
     let server = ReloadableSkillsServer::new(build_server(paths)?);
     if watch {
-        eprintln!("[sxmc] Watch mode enabled; polling skill paths for changes");
+        eprintln!("[sxmc] Watch mode enabled");
         spawn_watch_task(
             Arc::new(paths.to_vec()),
             server.clone(),
@@ -320,6 +344,7 @@ pub async fn serve_http(
         cancellation_token.clone(),
         Arc::new(auth),
         inventory,
+        limits,
     );
 
     eprintln!(
@@ -335,6 +360,10 @@ pub async fn serve_http(
     if bearer_token.is_some() {
         eprintln!("[sxmc] Bearer token auth enabled for remote MCP access");
     }
+    eprintln!(
+        "[sxmc] HTTP limits: max concurrency={}, max request body={} bytes",
+        limits.max_concurrency, limits.max_request_body_bytes
+    );
 
     let shutdown = cancellation_token.clone();
     tokio::spawn(async move {
@@ -434,33 +463,123 @@ fn spawn_watch_task(
     cancellation_token: CancellationToken,
 ) {
     tokio::spawn(async move {
-        let mut last_fingerprint = compute_skill_fingerprint(paths.as_ref());
+        if let Err(error) = run_notify_watch_loop(
+            paths.clone(),
+            server.clone(),
+            inventory.clone(),
+            cancellation_token.clone(),
+        )
+        .await
+        {
+            eprintln!(
+                "[sxmc] Watch setup fell back to polling because filesystem events failed: {}",
+                error
+            );
+            run_poll_watch_loop(paths, server, inventory, cancellation_token).await;
+        }
+    });
+}
 
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => break,
-                _ = sleep(Duration::from_secs(1)) => {
-                    let current_fingerprint = compute_skill_fingerprint(paths.as_ref());
-                    if current_fingerprint == last_fingerprint {
-                        continue;
+async fn run_notify_watch_loop(
+    paths: Arc<Vec<PathBuf>>,
+    server: ReloadableSkillsServer,
+    inventory: Arc<RwLock<SkillInventorySummary>>,
+    cancellation_token: CancellationToken,
+) -> Result<()> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut watcher = RecommendedWatcher::new(
+        move |result| {
+            let _ = tx.send(result);
+        },
+        NotifyConfig::default(),
+    )
+    .map_err(|e| SxmcError::Other(format!("failed to initialize watcher: {}", e)))?;
+
+    let mut watched_any = false;
+    for path in paths.iter() {
+        if path.exists() {
+            watcher.watch(path, RecursiveMode::Recursive).map_err(|e| {
+                SxmcError::Other(format!("failed to watch {}: {}", path.display(), e))
+            })?;
+            watched_any = true;
+        }
+    }
+
+    if !watched_any {
+        return Err(SxmcError::Other(
+            "no existing skill paths were available for filesystem watching".into(),
+        ));
+    }
+
+    eprintln!("[sxmc] Watching skill paths with filesystem events");
+
+    loop {
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            maybe_event = rx.recv() => {
+                let Some(result) = maybe_event else {
+                    break;
+                };
+
+                match result {
+                    Ok(_event) => {
+                        sleep(Duration::from_millis(250)).await;
+                        while rx.try_recv().is_ok() {}
+                        reload_skills_from_watch(paths.as_ref(), &server, &inventory);
                     }
-
-                    last_fingerprint = current_fingerprint;
-                    let summary = summarize_paths(paths.as_ref());
-                    match build_server(paths.as_ref()) {
-                        Ok(next_server) => {
-                            server.replace(next_server);
-                            *write_lock(&inventory) = summary;
-                            eprintln!("[sxmc] Reloaded skills after filesystem change");
-                        }
-                        Err(error) => {
-                            eprintln!("[sxmc] Watch reload failed: {}", error);
-                        }
+                    Err(error) => {
+                        eprintln!("[sxmc] Watch event error: {}", error);
                     }
                 }
             }
         }
-    });
+    }
+
+    drop(watcher);
+    Ok(())
+}
+
+async fn run_poll_watch_loop(
+    paths: Arc<Vec<PathBuf>>,
+    server: ReloadableSkillsServer,
+    inventory: Arc<RwLock<SkillInventorySummary>>,
+    cancellation_token: CancellationToken,
+) {
+    eprintln!("[sxmc] Polling skill paths for changes");
+    let mut last_fingerprint = compute_skill_fingerprint(paths.as_ref());
+
+    loop {
+        tokio::select! {
+            _ = cancellation_token.cancelled() => break,
+            _ = sleep(Duration::from_secs(1)) => {
+                let current_fingerprint = compute_skill_fingerprint(paths.as_ref());
+                if current_fingerprint == last_fingerprint {
+                    continue;
+                }
+
+                last_fingerprint = current_fingerprint;
+                reload_skills_from_watch(paths.as_ref(), &server, &inventory);
+            }
+        }
+    }
+}
+
+fn reload_skills_from_watch(
+    paths: &[PathBuf],
+    server: &ReloadableSkillsServer,
+    inventory: &Arc<RwLock<SkillInventorySummary>>,
+) {
+    let summary = summarize_paths(paths);
+    match build_server(paths) {
+        Ok(next_server) => {
+            server.replace(next_server);
+            *write_lock(inventory) = summary;
+            eprintln!("[sxmc] Reloaded skills after filesystem change");
+        }
+        Err(error) => {
+            eprintln!("[sxmc] Watch reload failed: {}", error);
+        }
+    }
 }
 
 fn compute_skill_fingerprint(paths: &[PathBuf]) -> u64 {
@@ -512,14 +631,24 @@ fn hash_system_time(time: SystemTime, hasher: &mut DefaultHasher) {
 fn read_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
     match lock.read() {
         Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
+        Err(poisoned) => {
+            eprintln!(
+                "[sxmc] Warning: recovering from a poisoned read lock; in-memory state may be stale"
+            );
+            poisoned.into_inner()
+        }
     }
 }
 
 fn write_lock<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
     match lock.write() {
         Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
+        Err(poisoned) => {
+            eprintln!(
+                "[sxmc] Warning: recovering from a poisoned write lock; replacing in-memory state"
+            );
+            poisoned.into_inner()
+        }
     }
 }
 
@@ -534,7 +663,13 @@ mod tests {
         let paths = vec![PathBuf::from("tests/fixtures")];
         let inventory = Arc::new(RwLock::new(summarize_paths(&paths)));
         let server = ReloadableSkillsServer::new(build_server(&paths).unwrap());
-        build_http_router(server, cancel.child_token(), auth, inventory)
+        build_http_router(
+            server,
+            cancel.child_token(),
+            auth,
+            inventory,
+            HttpServeLimits::default(),
+        )
     }
 
     #[tokio::test]

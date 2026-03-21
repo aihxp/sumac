@@ -5,6 +5,8 @@ Additional documentation for sxmc developers and maintainers.
 | Document | Description |
 |----------|-------------|
 | [USAGE.md](USAGE.md) | Install, quick start, MCP workflows, client setup, and agent guidance |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Module map, pipeline boundaries, extension points, and design decisions |
+| [DEMO.md](DEMO.md) | Short scripted demo path for terminal recordings or GIF capture |
 | [OPERATIONS.md](OPERATIONS.md) | Hosted deployment, release process, and distribution notes |
 | [VALIDATION.md](VALIDATION.md) | Test, smoke, compatibility, and benchmark summary |
 | [CLI_TO_AI_COMPATIBILITY.md](CLI_TO_AI_COMPATIBILITY.md) | Host-by-host `CLI -> AI` coverage matrix for startup docs, native config, and apply behavior |

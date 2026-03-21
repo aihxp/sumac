@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
@@ -22,16 +24,20 @@ pub enum ApiClient {
 
 impl ApiClient {
     /// Auto-detect API type from source and connect.
-    pub async fn connect(source: &str, auth_headers: &[(String, String)]) -> Result<Self> {
-        let api_type = detect_api_type(source, auth_headers).await?;
+    pub async fn connect(
+        source: &str,
+        auth_headers: &[(String, String)],
+        timeout: Option<Duration>,
+    ) -> Result<Self> {
+        let api_type = detect_api_type(source, auth_headers, timeout).await?;
 
         match api_type {
             ApiType::OpenApi => {
-                let spec = openapi::OpenApiSpec::load(source, auth_headers).await?;
+                let spec = openapi::OpenApiSpec::load(source, auth_headers, timeout).await?;
                 Ok(ApiClient::OpenApi(spec))
             }
             ApiType::GraphQL => {
-                let client = graphql::GraphQLClient::connect(source, auth_headers).await?;
+                let client = graphql::GraphQLClient::connect(source, auth_headers, timeout).await?;
                 Ok(ApiClient::GraphQL(client))
             }
         }
@@ -101,7 +107,11 @@ impl ApiClient {
 }
 
 /// Detect the API type from a source URL or file path.
-async fn detect_api_type(source: &str, auth_headers: &[(String, String)]) -> Result<ApiType> {
+async fn detect_api_type(
+    source: &str,
+    auth_headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Result<ApiType> {
     let lower = source.to_lowercase();
 
     // File extension hints
@@ -120,7 +130,7 @@ async fn detect_api_type(source: &str, auth_headers: &[(String, String)]) -> Res
 
     // If it's a URL, try to fetch and detect from content
     if source.starts_with("http://") || source.starts_with("https://") {
-        return detect_from_url(source, auth_headers).await;
+        return detect_from_url(source, auth_headers, timeout).await;
     }
 
     // If it's a file, try to detect from content
@@ -135,8 +145,12 @@ async fn detect_api_type(source: &str, auth_headers: &[(String, String)]) -> Res
 }
 
 /// Detect API type by fetching content from a URL.
-async fn detect_from_url(url: &str, auth_headers: &[(String, String)]) -> Result<ApiType> {
-    let client = build_client(auth_headers)?;
+async fn detect_from_url(
+    url: &str,
+    auth_headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Result<ApiType> {
+    let client = build_client(auth_headers, timeout)?;
     let resp = client
         .get(url)
         .send()
@@ -188,7 +202,10 @@ fn detect_from_content(content: &str) -> Result<ApiType> {
     ))
 }
 
-fn build_client(auth_headers: &[(String, String)]) -> Result<reqwest::Client> {
+fn build_client(
+    auth_headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Result<reqwest::Client> {
     let mut header_map = reqwest::header::HeaderMap::new();
     for (key, value) in auth_headers {
         if let (Ok(name), Ok(val)) = (
@@ -199,8 +216,12 @@ fn build_client(auth_headers: &[(String, String)]) -> Result<reqwest::Client> {
         }
     }
 
-    reqwest::Client::builder()
-        .default_headers(header_map)
+    let mut builder = reqwest::Client::builder().default_headers(header_map);
+    if let Some(timeout) = timeout {
+        builder = builder.timeout(timeout);
+    }
+
+    builder
         .build()
         .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))
 }

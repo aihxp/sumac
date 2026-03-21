@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use rmcp::model::*;
 use rmcp::service::RunningService;
 use rmcp::transport::streamable_http_client::{
@@ -15,7 +17,11 @@ pub struct HttpClient {
 
 impl HttpClient {
     /// Connect to an MCP server over HTTP.
-    pub async fn connect(url: &str, headers: &[(String, String)]) -> Result<Self> {
+    pub async fn connect(
+        url: &str,
+        headers: &[(String, String)],
+        timeout: Option<Duration>,
+    ) -> Result<Self> {
         let config = StreamableHttpClientTransportConfig::with_uri(url);
 
         let mut header_map = reqwest::header::HeaderMap::new();
@@ -29,9 +35,12 @@ impl HttpClient {
             header_map.insert(name, val);
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(header_map)
-            .build()?;
+        let mut builder = reqwest::Client::builder().default_headers(header_map);
+        if let Some(timeout) = timeout {
+            builder = builder.timeout(timeout);
+        }
+
+        let client = builder.build()?;
 
         let transport = StreamableHttpClientTransport::with_client(client, config);
 

@@ -9,7 +9,7 @@ pub async fn generate_from_openapi(
     output_dir: &Path,
     auth_headers: &[(String, String)],
 ) -> Result<std::path::PathBuf> {
-    let spec = OpenApiSpec::load(source, auth_headers).await?;
+    let spec = OpenApiSpec::load(source, auth_headers, None).await?;
     let commands = spec.commands();
 
     let skill_name = sanitize_name(&spec.title);

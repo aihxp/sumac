@@ -144,7 +144,70 @@ fn test_help() {
         .stdout(predicate::str::contains("init"))
         .stdout(predicate::str::contains("scaffold"))
         .stdout(predicate::str::contains("scan"))
-        .stdout(predicate::str::contains("bake"));
+        .stdout(predicate::str::contains("bake"))
+        .stdout(predicate::str::contains("completions"));
+}
+
+#[test]
+fn test_completions_bash() {
+    sxmc()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("_sxmc"));
+}
+
+#[test]
+fn test_http_help_mentions_timeout() {
+    sxmc()
+        .args(["http", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--timeout-seconds"));
+}
+
+#[test]
+fn test_api_help_mentions_timeout() {
+    sxmc()
+        .args(["api", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--timeout-seconds"));
+}
+
+#[test]
+fn test_serve_help_mentions_http_limits() {
+    sxmc()
+        .args(["serve", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--max-concurrency"))
+        .stdout(predicate::str::contains("--max-request-bytes"));
+}
+
+#[test]
+fn test_bake_timeout_round_trip() {
+    let temp = tempfile::tempdir().unwrap();
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake",
+            "create",
+            "demo-http",
+            "--type",
+            "http",
+            "--source",
+            "http://127.0.0.1:8000/mcp",
+            "--timeout-seconds",
+            "9",
+        ])
+        .assert()
+        .success();
+
+    sxmc_with_config_home(temp.path())
+        .args(["bake", "show", "demo-http"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Timeout: 9s"));
 }
 
 #[test]

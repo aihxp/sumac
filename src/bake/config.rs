@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 
 use crate::error::{Result, SxmcError};
 
@@ -13,6 +14,8 @@ pub struct BakeConfig {
     pub source: String,
     pub auth_headers: Vec<String>,
     pub env_vars: Vec<String>,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
     pub description: Option<String>,
 }
 
@@ -57,8 +60,21 @@ impl BakeStore {
     /// Save the store to disk.
     fn save(&self) -> Result<()> {
         let json = serde_json::to_string_pretty(&self.configs)?;
-        std::fs::write(&self.path, json)
-            .map_err(|e| SxmcError::Other(format!("Failed to write bakes: {}", e)))?;
+        let parent = self.path.parent().ok_or_else(|| {
+            SxmcError::Other(format!(
+                "Failed to determine bake config directory for {}",
+                self.path.display()
+            ))
+        })?;
+        let mut temp = NamedTempFile::new_in(parent)
+            .map_err(|e| SxmcError::Other(format!("Failed to create temp bake file: {}", e)))?;
+        use std::io::Write;
+        temp.write_all(json.as_bytes())
+            .map_err(|e| SxmcError::Other(format!("Failed to write temp bake file: {}", e)))?;
+        temp.flush()
+            .map_err(|e| SxmcError::Other(format!("Failed to flush temp bake file: {}", e)))?;
+        temp.persist(&self.path)
+            .map_err(|e| SxmcError::Other(format!("Failed to persist bakes: {}", e)))?;
         Ok(())
     }
 
@@ -115,9 +131,44 @@ impl BakeStore {
 impl std::fmt::Display for BakeConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({:?}: {})", self.name, self.source_type, self.source)?;
+        if let Some(timeout) = self.timeout_seconds {
+            write!(f, " [timeout={}s]", timeout)?;
+        }
         if let Some(ref desc) = self.description {
             write!(f, " — {}", desc)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_persists_valid_json() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("bakes.json");
+        let mut configs = HashMap::new();
+        configs.insert(
+            "demo".into(),
+            BakeConfig {
+                name: "demo".into(),
+                source_type: SourceType::Stdio,
+                source: "sxmc serve".into(),
+                auth_headers: Vec::new(),
+                env_vars: Vec::new(),
+                timeout_seconds: Some(15),
+                description: Some("demo".into()),
+            },
+        );
+
+        let store = BakeStore { path, configs };
+        store.save().unwrap();
+
+        let written = std::fs::read_to_string(&store.path).unwrap();
+        let parsed: HashMap<String, BakeConfig> = serde_json::from_str(&written).unwrap();
+        assert!(parsed.contains_key("demo"));
+        assert_eq!(parsed["demo"].timeout_seconds, Some(15));
     }
 }

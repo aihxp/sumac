@@ -11,6 +11,8 @@ Please note that this project follows a [Code of Conduct](CODE_OF_CONDUCT.md). B
 
 ## Development
 
+Start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) if you need a higher-level map before jumping into the code.
+
 ### Project Structure
 
 ```

@@ -45,6 +45,8 @@ Hosted streamable HTTP MCP:
 
 ```bash
 sxmc serve --transport http --host 0.0.0.0 --port 8000 \
+  --max-concurrency 64 \
+  --max-request-bytes 1048576 \
   --bearer-token env:SXMC_MCP_TOKEN \
   --paths /absolute/path/to/skills
 ```
@@ -65,6 +67,7 @@ Hosted bridge:
 ```bash
 sxmc http http://127.0.0.1:8000/mcp \
   --auth-header "Authorization: Bearer $SXMC_MCP_TOKEN" \
+  --timeout-seconds 15 \
   --describe --format toon --limit 10
 ```
 
@@ -111,6 +114,7 @@ Auto-detect:
 ```bash
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json findPetsByStatus status=available
+sxmc api https://petstore3.swagger.io/api/v3/openapi.json --timeout-seconds 15 --list
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json findPetsByStatus status=available --format toon
 ```
 
@@ -119,7 +123,14 @@ Explicit OpenAPI / GraphQL:
 ```bash
 sxmc spec ./openapi.yaml listPets limit=10
 sxmc graphql https://api.example.com/graphql users limit=5
+sxmc graphql https://api.example.com/graphql --timeout-seconds 15 users limit=5
 ```
+
+Network timeout notes:
+
+- `sxmc http`, `sxmc api`, `sxmc spec`, and `sxmc graphql` accept `--timeout-seconds`
+- baked HTTP/API/spec/graphql connections can persist a timeout with `sxmc bake create --timeout-seconds ...`
+- if omitted, the underlying client default applies
 
 ## Turn CLIs Into AI Startup Surfaces
 
@@ -236,6 +247,23 @@ Notes:
 - Continue, Junie, and Windsurf are native doc targets today, not MCP config targets
 - JetBrains AI Assistant is a native rules-doc target today, not an MCP config target
 - `llms.txt` is optional and exported separately through `scaffold llms-txt`
+
+## Shell Completions
+
+Generate completions from clap:
+
+```bash
+sxmc completions bash
+sxmc completions zsh
+sxmc completions fish
+```
+
+Example installation:
+
+```bash
+sxmc completions zsh > "${fpath[1]}/_sxmc"
+sxmc completions bash > ~/.local/share/bash-completion/completions/sxmc
+```
 
 ## Client Setup Notes
 

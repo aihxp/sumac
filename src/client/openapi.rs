@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -44,9 +45,13 @@ pub struct OpenApiSpec {
 
 impl OpenApiSpec {
     /// Load an OpenAPI spec from a URL or file path.
-    pub async fn load(source: &str, auth_headers: &[(String, String)]) -> Result<Self> {
+    pub async fn load(
+        source: &str,
+        auth_headers: &[(String, String)],
+        timeout: Option<Duration>,
+    ) -> Result<Self> {
         let raw = if source.starts_with("http://") || source.starts_with("https://") {
-            fetch_spec(source, auth_headers).await?
+            fetch_spec(source, auth_headers, timeout).await?
         } else {
             let path = Path::new(source);
             let content = std::fs::read_to_string(path)
@@ -79,8 +84,12 @@ impl OpenApiSpec {
             }
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(header_map)
+        let mut builder = reqwest::Client::builder().default_headers(header_map);
+        if let Some(timeout) = timeout {
+            builder = builder.timeout(timeout);
+        }
+
+        let client = builder
             .build()
             .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))?;
 
@@ -254,7 +263,11 @@ impl OpenApiParam {
 }
 
 /// Fetch a spec from a URL.
-async fn fetch_spec(url: &str, auth_headers: &[(String, String)]) -> Result<String> {
+async fn fetch_spec(
+    url: &str,
+    auth_headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Result<String> {
     let mut header_map = reqwest::header::HeaderMap::new();
     for (key, value) in auth_headers {
         if let (Ok(name), Ok(val)) = (
@@ -265,8 +278,12 @@ async fn fetch_spec(url: &str, auth_headers: &[(String, String)]) -> Result<Stri
         }
     }
 
-    let client = reqwest::Client::builder()
-        .default_headers(header_map)
+    let mut builder = reqwest::Client::builder().default_headers(header_map);
+    if let Some(timeout) = timeout {
+        builder = builder.timeout(timeout);
+    }
+
+    let client = builder
         .build()
         .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))?;
 

@@ -1,11 +1,21 @@
-use clap::{Parser, Subcommand};
+mod cli_args;
+mod command_handlers;
+
+use clap::{CommandFactory, Parser};
+use clap_complete::generate;
 use rmcp::model::{Prompt, Resource, ServerInfo, Tool};
 use serde_json::{json, Value};
 use std::io::BufRead;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use std::collections::HashMap;
 
+use cli_args::{
+    BakeAction, Cli, Commands, InitAction, InspectAction, McpAction, McpSessionAction,
+    McpSessionCli, ScaffoldAction, SkillsAction,
+};
+use command_handlers::{cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run};
 use sxmc::auth::secrets::{resolve_header, resolve_secret};
 use sxmc::bake::config::SourceType;
 use sxmc::bake::{BakeConfig, BakeStore};
@@ -14,838 +24,8 @@ use sxmc::client::{api, graphql, mcp_http, mcp_stdio, openapi};
 use sxmc::error::Result;
 use sxmc::output;
 use sxmc::security;
-use sxmc::server;
+use sxmc::server::{self, HttpServeLimits};
 use sxmc::skills::{discovery, generator, parser};
-
-#[derive(Parser)]
-#[command(name = "sxmc", version, about = "AI-agnostic Skills × MCP × CLI")]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Start the MCP server (serves skills over MCP)
-    Serve {
-        /// Skill search paths (comma-separated)
-        #[arg(long, value_delimiter = ',')]
-        paths: Option<Vec<PathBuf>>,
-
-        /// Watch skill files and reload the in-memory server on change
-        #[arg(long)]
-        watch: bool,
-
-        /// Transport: stdio, http, or sse (alias for http)
-        #[arg(long, default_value = "stdio")]
-        transport: String,
-
-        /// Port for HTTP transport
-        #[arg(long, default_value = "8000")]
-        port: u16,
-
-        /// Host for HTTP transport
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
-
-        /// Require HTTP header(s) for remote MCP access (Key:Value)
-        #[arg(long = "require-header", value_name = "K:V")]
-        require_headers: Vec<String>,
-
-        /// Require a Bearer token for remote MCP access
-        #[arg(long, value_name = "TOKEN")]
-        bearer_token: Option<String>,
-    },
-
-    /// Manage skills
-    Skills {
-        #[command(subcommand)]
-        action: SkillsAction,
-    },
-
-    /// Connect to an MCP server via stdio (MCP Server → CLI)
-    Stdio {
-        /// Command spec to spawn the MCP server.
-        /// Supports shell-style quoting or a JSON array like ["sxmc","serve"].
-        command: String,
-
-        /// Prompt to fetch
-        #[arg(long, conflicts_with = "resource_uri")]
-        prompt: Option<String>,
-
-        /// Resource URI to read
-        #[arg(long = "resource", conflicts_with = "prompt")]
-        resource_uri: Option<String>,
-
-        /// Tool name followed by key=value pairs
-        #[arg(trailing_var_arg = true)]
-        args: Vec<String>,
-
-        /// List available tools, prompts, and resources
-        #[arg(long)]
-        list: bool,
-
-        /// List only tools
-        #[arg(long)]
-        list_tools: bool,
-
-        /// List only prompts
-        #[arg(long)]
-        list_prompts: bool,
-
-        /// List only resources
-        #[arg(long)]
-        list_resources: bool,
-
-        /// Search/filter tools by name or description
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Describe the negotiated MCP server surface as structured JSON
-        #[arg(long, conflicts_with = "describe_tool")]
-        describe: bool,
-
-        /// Show detailed schema/help for a single tool
-        #[arg(long, value_name = "TOOL", conflicts_with = "describe")]
-        describe_tool: Option<String>,
-
-        /// Structured output format for MCP describe output
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// Maximum items to show per listed MCP surface
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Environment variables for the server (KEY=VALUE)
-        #[arg(long = "env", value_name = "KEY=VALUE")]
-        env_vars: Vec<String>,
-
-        /// Working directory for the spawned MCP server
-        #[arg(long)]
-        cwd: Option<PathBuf>,
-    },
-
-    /// Connect to an MCP server via HTTP (MCP Server → CLI)
-    Http {
-        /// MCP server URL
-        url: String,
-
-        /// Prompt to fetch
-        #[arg(long, conflicts_with = "resource_uri")]
-        prompt: Option<String>,
-
-        /// Resource URI to read
-        #[arg(long = "resource", conflicts_with = "prompt")]
-        resource_uri: Option<String>,
-
-        /// Tool name followed by key=value pairs
-        #[arg(trailing_var_arg = true)]
-        args: Vec<String>,
-
-        /// List available tools, prompts, and resources
-        #[arg(long)]
-        list: bool,
-
-        /// List only tools
-        #[arg(long)]
-        list_tools: bool,
-
-        /// List only prompts
-        #[arg(long)]
-        list_prompts: bool,
-
-        /// List only resources
-        #[arg(long)]
-        list_resources: bool,
-
-        /// Search/filter tools by name or description
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Describe the negotiated MCP server surface as structured JSON
-        #[arg(long, conflicts_with = "describe_tool")]
-        describe: bool,
-
-        /// Show detailed schema/help for a single tool
-        #[arg(long, value_name = "TOOL", conflicts_with = "describe")]
-        describe_tool: Option<String>,
-
-        /// Structured output format for MCP describe output
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// Maximum items to show per listed MCP surface
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// HTTP headers (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-    },
-
-    /// Use baked MCP connections in a token-efficient, mcp-cli-style workflow
-    Mcp {
-        #[command(subcommand)]
-        action: McpAction,
-    },
-
-    /// Connect to any API (auto-detects OpenAPI or GraphQL)
-    Api {
-        /// API URL or spec file path
-        source: String,
-
-        /// Operation to call (omit for --list)
-        operation: Option<String>,
-
-        /// Arguments as key=value pairs
-        args: Vec<String>,
-
-        /// List available operations
-        #[arg(long)]
-        list: bool,
-
-        /// Search/filter operations
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format for API responses
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// HTTP headers (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-    },
-
-    /// Connect to an OpenAPI spec (explicit)
-    Spec {
-        /// OpenAPI spec URL or file path
-        source: String,
-
-        /// Operation to call (omit for --list)
-        operation: Option<String>,
-
-        /// Arguments as key=value pairs
-        args: Vec<String>,
-
-        /// List available operations
-        #[arg(long)]
-        list: bool,
-
-        /// Search/filter operations
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format for API responses
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// HTTP headers (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-    },
-
-    /// Connect to a GraphQL endpoint (explicit)
-    Graphql {
-        /// GraphQL endpoint URL
-        url: String,
-
-        /// Operation to call (omit for --list)
-        operation: Option<String>,
-
-        /// Arguments as key=value pairs
-        args: Vec<String>,
-
-        /// List available operations
-        #[arg(long)]
-        list: bool,
-
-        /// Search/filter operations
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format for API responses
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// HTTP headers (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-    },
-
-    /// Scan skills and MCP servers for security issues
-    Scan {
-        /// Skill search paths (comma-separated)
-        #[arg(long, value_delimiter = ',')]
-        paths: Option<Vec<PathBuf>>,
-
-        /// Scan a specific skill by name
-        #[arg(long)]
-        skill: Option<String>,
-
-        /// Scan an MCP server via stdio
-        #[arg(long = "mcp-stdio")]
-        mcp_stdio: Option<String>,
-
-        /// Scan an MCP server via HTTP
-        #[arg(long = "mcp")]
-        mcp: Option<String>,
-
-        /// Minimum severity to report: info, warn, error, critical
-        #[arg(long, default_value = "info")]
-        severity: String,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-
-        /// Environment variables for stdio server (KEY=VALUE)
-        #[arg(long = "env", value_name = "KEY=VALUE")]
-        env_vars: Vec<String>,
-    },
-
-    /// Inspect structured sxmc artifacts
-    Inspect {
-        #[command(subcommand)]
-        action: InspectAction,
-    },
-
-    /// Initialize startup-facing AI artifacts from an inspected CLI
-    Init {
-        #[command(subcommand)]
-        action: InitAction,
-    },
-
-    /// Generate AI-facing scaffolds from an existing CLI surface profile
-    Scaffold {
-        #[command(subcommand)]
-        action: ScaffoldAction,
-    },
-
-    /// Manage baked connection configs
-    Bake {
-        #[command(subcommand)]
-        action: BakeAction,
-    },
-}
-
-#[derive(Subcommand)]
-enum BakeAction {
-    /// Create a new baked config
-    Create {
-        /// Config name
-        name: String,
-
-        /// Source type: stdio, http, api, spec, graphql
-        #[arg(long = "type", default_value = "stdio")]
-        source_type: String,
-
-        /// Source URL, command, or path
-        #[arg(long)]
-        source: String,
-
-        /// Description
-        #[arg(long)]
-        description: Option<String>,
-
-        /// Auth headers (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-
-        /// Env vars for stdio (KEY=VALUE)
-        #[arg(long = "env", value_name = "KEY=VALUE")]
-        env_vars: Vec<String>,
-    },
-    /// List all baked configs
-    List,
-    /// Show details for a baked config
-    Show { name: String },
-    /// Update an existing baked config
-    Update {
-        /// Config name
-        name: String,
-
-        /// Source type: stdio, http, api, spec, graphql
-        #[arg(long = "type")]
-        source_type: Option<String>,
-
-        /// Source URL, command, or path
-        #[arg(long)]
-        source: Option<String>,
-
-        /// Description
-        #[arg(long)]
-        description: Option<String>,
-
-        /// Auth headers (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-
-        /// Env vars for stdio (KEY=VALUE)
-        #[arg(long = "env", value_name = "KEY=VALUE")]
-        env_vars: Vec<String>,
-    },
-    /// Remove a baked config
-    Remove { name: String },
-}
-
-#[derive(Subcommand)]
-enum InspectAction {
-    /// Inspect a real CLI into a normalized profile
-    Cli {
-        /// Command spec to inspect.
-        /// Supports shell-style quoting or a JSON array like ["gh"].
-        command: String,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format for the profile
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// Allow inspecting sxmc itself
-        #[arg(long)]
-        allow_self: bool,
-    },
-
-    /// Render a CLI surface profile from JSON
-    Profile {
-        /// Path to a JSON profile file
-        input: PathBuf,
-
-        /// Pretty-print JSON output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format for the profile
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-    },
-}
-
-#[derive(Subcommand)]
-enum InitAction {
-    /// Inspect a CLI and generate startup-facing AI artifacts for one host profile
-    Ai {
-        /// Command spec to inspect.
-        /// Supports shell-style quoting or a JSON array like ["gh"].
-        #[arg(long = "from-cli")]
-        from_cli: String,
-
-        /// Generation coverage
-        #[arg(long, value_enum, default_value = "single")]
-        coverage: AiCoverage,
-
-        /// Target host/client profile for single-host generation
-        #[arg(long, value_enum)]
-        client: Option<AiClientProfile>,
-
-        /// Host/client profiles to apply when using --coverage full with --mode apply
-        #[arg(long = "host", value_enum, value_delimiter = ',')]
-        hosts: Vec<AiClientProfile>,
-
-        /// Skills path to embed in generated host configs
-        #[arg(long, default_value = ".claude/skills")]
-        skills_path: PathBuf,
-
-        /// Root directory for generated or applied artifacts
-        #[arg(long)]
-        root: Option<PathBuf>,
-
-        /// Output mode
-        #[arg(long, value_enum, default_value = "preview")]
-        mode: ArtifactMode,
-
-        /// Allow inspecting sxmc itself
-        #[arg(long)]
-        allow_self: bool,
-    },
-}
-
-#[derive(Subcommand)]
-enum ScaffoldAction {
-    /// Generate a SKILL.md scaffold from a CLI surface profile
-    Skill {
-        /// Path to a JSON profile file
-        #[arg(long = "from-profile")]
-        from_profile: PathBuf,
-
-        /// Root directory for generated or applied artifacts
-        #[arg(long)]
-        root: Option<PathBuf>,
-
-        /// Output directory for generated skill files
-        #[arg(long, default_value = ".claude/skills")]
-        output_dir: PathBuf,
-
-        /// Output mode
-        #[arg(long, value_enum, default_value = "preview")]
-        mode: ArtifactMode,
-    },
-
-    /// Generate an agent-doc snippet/block from a CLI surface profile
-    AgentDoc {
-        /// Path to a JSON profile file
-        #[arg(long = "from-profile")]
-        from_profile: PathBuf,
-
-        /// Target host/client profile
-        #[arg(long, value_enum)]
-        client: Option<AiClientProfile>,
-
-        /// Generation coverage
-        #[arg(long, value_enum, default_value = "single")]
-        coverage: AiCoverage,
-
-        /// Host/client profiles to apply when using --coverage full with --mode apply
-        #[arg(long = "host", value_enum, value_delimiter = ',')]
-        hosts: Vec<AiClientProfile>,
-
-        /// Root directory for generated or applied artifacts
-        #[arg(long)]
-        root: Option<PathBuf>,
-
-        /// Output mode
-        #[arg(long, value_enum, default_value = "preview")]
-        mode: ArtifactMode,
-    },
-
-    /// Generate a host-specific client config scaffold from a CLI surface profile
-    ClientConfig {
-        /// Path to a JSON profile file
-        #[arg(long = "from-profile")]
-        from_profile: PathBuf,
-
-        /// Target host/client profile
-        #[arg(long, value_enum)]
-        client: Option<AiClientProfile>,
-
-        /// Generation coverage
-        #[arg(long, value_enum, default_value = "single")]
-        coverage: AiCoverage,
-
-        /// Host/client profiles to apply when using --coverage full with --mode apply
-        #[arg(long = "host", value_enum, value_delimiter = ',')]
-        hosts: Vec<AiClientProfile>,
-
-        /// Skills path to embed in generated host configs
-        #[arg(long, default_value = ".claude/skills")]
-        skills_path: PathBuf,
-
-        /// Root directory for generated or applied artifacts
-        #[arg(long)]
-        root: Option<PathBuf>,
-
-        /// Output mode
-        #[arg(long, value_enum, default_value = "preview")]
-        mode: ArtifactMode,
-    },
-
-    /// Generate an MCP wrapper scaffold from a CLI surface profile
-    McpWrapper {
-        /// Path to a JSON profile file
-        #[arg(long = "from-profile")]
-        from_profile: PathBuf,
-
-        /// Root directory for generated or applied artifacts
-        #[arg(long)]
-        root: Option<PathBuf>,
-
-        /// Output directory for generated wrapper files
-        #[arg(long, default_value = ".sxmc/mcp-wrappers")]
-        output_dir: PathBuf,
-
-        /// Output mode
-        #[arg(long, value_enum, default_value = "preview")]
-        mode: ArtifactMode,
-    },
-
-    /// Generate an optional llms.txt export from a CLI surface profile
-    #[command(name = "llms-txt")]
-    LlmTxt {
-        /// Path to a JSON profile file
-        #[arg(long = "from-profile")]
-        from_profile: PathBuf,
-
-        /// Root directory for generated or applied artifacts
-        #[arg(long)]
-        root: Option<PathBuf>,
-
-        /// Output mode
-        #[arg(long, value_enum, default_value = "preview")]
-        mode: ArtifactMode,
-    },
-}
-
-#[derive(Subcommand)]
-enum McpAction {
-    /// List baked MCP servers (stdio/http bakes only)
-    Servers {
-        /// Pretty-print structured output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-    },
-    /// List tools for a baked MCP server
-    Tools {
-        /// Baked MCP server name
-        server: String,
-
-        /// Search/filter tools by name or description
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Maximum items to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// Search tools across baked MCP servers
-    Grep {
-        /// Search pattern
-        pattern: String,
-
-        /// Restrict search to one baked MCP server
-        #[arg(long)]
-        server: Option<String>,
-
-        /// Maximum matches to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// List prompts for a baked MCP server
-    Prompts {
-        /// Baked MCP server name
-        server: String,
-
-        /// Maximum items to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// List resources for a baked MCP server
-    Resources {
-        /// Baked MCP server name
-        server: String,
-
-        /// Maximum items to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// Show detailed schema/help for one tool as SERVER/TOOL
-    Info {
-        /// Target tool in SERVER/TOOL form
-        target: String,
-
-        /// Pretty-print structured output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-    },
-    /// Call one tool as SERVER/TOOL with optional JSON object input
-    Call {
-        /// Target tool in SERVER/TOOL form
-        target: String,
-
-        /// JSON object payload, or '-' to read JSON from stdin
-        payload: Option<String>,
-
-        /// Pretty-print JSON-like tool output
-        #[arg(long)]
-        pretty: bool,
-    },
-    /// Read one resource as SERVER/RESOURCE_URI
-    Read {
-        /// Target resource in SERVER/RESOURCE_URI form
-        target: String,
-
-        /// Pretty-print structured output
-        #[arg(long)]
-        pretty: bool,
-    },
-    /// Fetch one prompt as SERVER/PROMPT with key=value arguments
-    Prompt {
-        /// Target prompt in SERVER/PROMPT form
-        target: String,
-
-        /// Prompt arguments as key=value pairs
-        args: Vec<String>,
-
-        /// Pretty-print structured output
-        #[arg(long)]
-        pretty: bool,
-    },
-    /// Keep a baked MCP connection open for multi-step stateful workflows
-    Session {
-        /// Baked MCP server name
-        server: String,
-
-        /// Read session commands from a file instead of stdin
-        #[arg(long, value_name = "FILE")]
-        script: Option<PathBuf>,
-
-        /// Suppress session banner/help text
-        #[arg(long)]
-        quiet: bool,
-    },
-}
-
-#[derive(Parser)]
-struct McpSessionCli {
-    #[command(subcommand)]
-    action: McpSessionAction,
-}
-
-#[derive(Subcommand, Debug)]
-enum McpSessionAction {
-    /// List tools on the connected MCP server
-    Tools {
-        /// Search/filter tools by name or description
-        #[arg(long)]
-        search: Option<String>,
-
-        /// Maximum items to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// List prompts on the connected MCP server
-    Prompts {
-        /// Maximum items to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// List resources on the connected MCP server
-    Resources {
-        /// Maximum items to show
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// Describe the connected MCP server surface
-    Describe {
-        /// Pretty-print structured output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-
-        /// Maximum items to show per surface
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-    },
-    /// Show detailed schema/help for one tool
-    Info {
-        /// Tool name
-        tool: String,
-
-        /// Pretty-print structured output
-        #[arg(long)]
-        pretty: bool,
-
-        /// Structured output format
-        #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
-    },
-    /// Call one tool with optional JSON object input
-    Call {
-        /// Tool name
-        tool: String,
-
-        /// JSON object payload, or '-' to read JSON from stdin
-        payload: Option<String>,
-
-        /// Pretty-print tool output
-        #[arg(long)]
-        pretty: bool,
-    },
-    /// Read one resource
-    Read {
-        /// Resource URI
-        resource: String,
-
-        /// Pretty-print output
-        #[arg(long)]
-        pretty: bool,
-    },
-    /// Fetch one prompt with optional key=value arguments
-    Prompt {
-        /// Prompt name
-        prompt: String,
-
-        /// Prompt arguments as key=value pairs
-        args: Vec<String>,
-
-        /// Pretty-print output
-        #[arg(long)]
-        pretty: bool,
-    },
-}
-
-#[derive(Subcommand)]
-enum SkillsAction {
-    /// List discovered skills
-    List {
-        #[arg(long, value_delimiter = ',')]
-        paths: Option<Vec<PathBuf>>,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show details for a specific skill
-    Info {
-        name: String,
-        #[arg(long, value_delimiter = ',')]
-        paths: Option<Vec<PathBuf>>,
-    },
-    /// Run a skill directly
-    Run {
-        name: String,
-        #[arg(trailing_var_arg = true)]
-        arguments: Vec<String>,
-        #[arg(long, value_delimiter = ',')]
-        paths: Option<Vec<PathBuf>>,
-    },
-    /// Generate a skill from an API spec
-    Create {
-        /// API spec URL or file path
-        source: String,
-
-        /// Output directory for the generated skill
-        #[arg(long, default_value = ".claude/skills")]
-        output_dir: PathBuf,
-
-        /// HTTP headers for fetching the spec (Key:Value)
-        #[arg(long = "auth-header", value_name = "K:V")]
-        auth_headers: Vec<String>,
-    },
-}
 
 fn resolve_paths(paths: Option<Vec<PathBuf>>) -> Vec<PathBuf> {
     paths.unwrap_or_else(discovery::default_paths)
@@ -891,6 +71,10 @@ fn parse_optional_secret(secret: Option<String>) -> Result<Option<String>> {
     secret.map(|value| resolve_secret(&value)).transpose()
 }
 
+fn parse_timeout(timeout_seconds: Option<u64>) -> Option<Duration> {
+    timeout_seconds.map(Duration::from_secs)
+}
+
 enum ConnectedMcpClient {
     Stdio(mcp_stdio::StdioClient),
     Http(mcp_http::HttpClient),
@@ -908,7 +92,12 @@ impl ConnectedMcpClient {
             SourceType::Http => {
                 let headers = parse_headers(&config.auth_headers)?;
                 Ok(Self::Http(
-                    mcp_http::HttpClient::connect(&config.source, &headers).await?,
+                    mcp_http::HttpClient::connect(
+                        &config.source,
+                        &headers,
+                        parse_timeout(config.timeout_seconds),
+                    )
+                    .await?,
                 ))
             }
             _ => Err(sxmc::error::SxmcError::Other(format!(
@@ -1966,10 +1155,16 @@ async fn main() -> anyhow::Result<()> {
             host,
             require_headers,
             bearer_token,
+            max_concurrency,
+            max_request_bytes,
         } => {
             let search_paths = resolve_paths(paths);
             let required_headers = parse_headers(&require_headers)?;
             let bearer_token = parse_optional_secret(bearer_token)?;
+            let limits = HttpServeLimits {
+                max_concurrency,
+                max_request_body_bytes: max_request_bytes,
+            };
             match transport.as_str() {
                 "stdio" => {
                     if !required_headers.is_empty() || bearer_token.is_some() {
@@ -1987,6 +1182,7 @@ async fn main() -> anyhow::Result<()> {
                         &required_headers,
                         bearer_token.as_deref(),
                         watch,
+                        limits,
                     )
                     .await?
                 }
@@ -2080,10 +1276,13 @@ async fn main() -> anyhow::Result<()> {
             limit,
             pretty,
             auth_headers,
+            timeout_seconds,
         } => {
             let headers = parse_headers(&auth_headers)?;
-            let client =
-                ConnectedMcpClient::Http(mcp_http::HttpClient::connect(&url, &headers).await?);
+            let client = ConnectedMcpClient::Http(
+                mcp_http::HttpClient::connect(&url, &headers, parse_timeout(timeout_seconds))
+                    .await?,
+            );
             let request = McpBridgeRequest {
                 prompt: prompt.as_deref(),
                 resource_uri: resource_uri.as_deref(),
@@ -2280,14 +1479,17 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             format,
             auth_headers,
+            timeout_seconds,
         } => {
             let headers = parse_headers(&auth_headers)?;
-            let client = api::ApiClient::connect(&source, &headers).await?;
+            let client =
+                api::ApiClient::connect(&source, &headers, parse_timeout(timeout_seconds)).await?;
             eprintln!("[sxmc] Detected {} API", client.api_type());
+            let arguments = parse_string_kv_args(&args);
             cmd_api(
                 &client,
                 operation,
-                &args,
+                &arguments,
                 list,
                 search.as_deref(),
                 pretty,
@@ -2305,15 +1507,19 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             format,
             auth_headers,
+            timeout_seconds,
         } => {
             let headers = parse_headers(&auth_headers)?;
-            let spec = openapi::OpenApiSpec::load(&source, &headers).await?;
+            let spec =
+                openapi::OpenApiSpec::load(&source, &headers, parse_timeout(timeout_seconds))
+                    .await?;
             eprintln!("[sxmc] Loaded OpenAPI spec: {}", spec.title);
             let client = api::ApiClient::OpenApi(spec);
+            let arguments = parse_string_kv_args(&args);
             cmd_api(
                 &client,
                 operation,
-                &args,
+                &arguments,
                 list,
                 search.as_deref(),
                 pretty,
@@ -2331,14 +1537,18 @@ async fn main() -> anyhow::Result<()> {
             pretty,
             format,
             auth_headers,
+            timeout_seconds,
         } => {
             let headers = parse_headers(&auth_headers)?;
-            let gql = graphql::GraphQLClient::connect(&url, &headers).await?;
+            let gql =
+                graphql::GraphQLClient::connect(&url, &headers, parse_timeout(timeout_seconds))
+                    .await?;
             let client = api::ApiClient::GraphQL(gql);
+            let arguments = parse_string_kv_args(&args);
             cmd_api(
                 &client,
                 operation,
-                &args,
+                &arguments,
                 list,
                 search.as_deref(),
                 pretty,
@@ -2375,7 +1585,7 @@ async fn main() -> anyhow::Result<()> {
                 client.close().await?;
             } else if let Some(ref mcp_url) = mcp {
                 // Scan MCP server via HTTP
-                let client = mcp_http::HttpClient::connect(mcp_url, &[]).await?;
+                let client = mcp_http::HttpClient::connect(mcp_url, &[], None).await?;
                 let tools = client.list_tools().await?;
                 let report = security::mcp_scanner::scan_tools(&tools, mcp_url);
                 reports.push(report);
@@ -2604,6 +1814,7 @@ async fn main() -> anyhow::Result<()> {
                 description,
                 auth_headers,
                 env_vars,
+                timeout_seconds,
             } => {
                 let st = parse_source_type(&source_type);
                 let mut store = BakeStore::load()?;
@@ -2613,6 +1824,7 @@ async fn main() -> anyhow::Result<()> {
                     source,
                     auth_headers,
                     env_vars,
+                    timeout_seconds,
                     description,
                 })?;
                 println!("Created bake: {}", name);
@@ -2643,6 +1855,9 @@ async fn main() -> anyhow::Result<()> {
                     if !config.env_vars.is_empty() {
                         println!("Env vars: {}", config.env_vars.len());
                     }
+                    if let Some(timeout) = config.timeout_seconds {
+                        println!("Timeout: {}s", timeout);
+                    }
                 } else {
                     eprintln!("Bake '{}' not found", name);
                     std::process::exit(1);
@@ -2655,6 +1870,7 @@ async fn main() -> anyhow::Result<()> {
                 description,
                 auth_headers,
                 env_vars,
+                timeout_seconds,
             } => {
                 let mut store = BakeStore::load()?;
                 let existing = match store.show(&name) {
@@ -2682,6 +1898,7 @@ async fn main() -> anyhow::Result<()> {
                     } else {
                         env_vars
                     },
+                    timeout_seconds: timeout_seconds.or(existing.timeout_seconds),
                     description: description.or(existing.description),
                 };
 
@@ -2694,150 +1911,12 @@ async fn main() -> anyhow::Result<()> {
                 println!("Removed bake: {}", name);
             }
         },
-    }
-
-    Ok(())
-}
-
-fn cmd_skills_list(paths: &[PathBuf], json_output: bool) -> Result<()> {
-    let skill_dirs = discovery::discover_skills(paths)?;
-    let mut skills = Vec::new();
-
-    for dir in &skill_dirs {
-        let source = dir.parent().and_then(|p| p.to_str()).unwrap_or("unknown");
-        match parser::parse_skill(dir, source) {
-            Ok(skill) => skills.push(skill),
-            Err(e) => eprintln!("Warning: {}: {}", dir.display(), e),
+        Commands::Completions { shell } => {
+            let mut command = Cli::command();
+            generate(shell, &mut command, "sxmc", &mut std::io::stdout());
         }
     }
 
-    if json_output {
-        let items: Vec<serde_json::Value> = skills
-            .iter()
-            .map(|s| {
-                serde_json::json!({
-                    "name": s.name,
-                    "description": s.frontmatter.description,
-                    "scripts": s.scripts.iter().map(|sc| &sc.name).collect::<Vec<_>>(),
-                    "references": s.references.iter().map(|r| &r.name).collect::<Vec<_>>(),
-                    "source": s.source,
-                })
-            })
-            .collect();
-        println!("{}", serde_json::to_string_pretty(&items)?);
-    } else if skills.is_empty() {
-        println!("No skills found.");
-        for p in paths {
-            println!("  {}", p.display());
-        }
-    } else {
-        for skill in &skills {
-            println!("{}", skill.name);
-            if !skill.frontmatter.description.is_empty() {
-                println!("  {}", skill.frontmatter.description);
-            }
-            if !skill.scripts.is_empty() {
-                let names: Vec<_> = skill.scripts.iter().map(|s| s.name.as_str()).collect();
-                println!("  Tools: {}", names.join(", "));
-            }
-            if !skill.references.is_empty() {
-                let names: Vec<_> = skill.references.iter().map(|r| r.name.as_str()).collect();
-                println!("  Resources: {}", names.join(", "));
-            }
-            println!();
-        }
-    }
-    Ok(())
-}
-
-fn cmd_skills_info(paths: &[PathBuf], name: &str) -> Result<()> {
-    let skill_dirs = discovery::discover_skills(paths)?;
-
-    for dir in &skill_dirs {
-        let source = dir.parent().and_then(|p| p.to_str()).unwrap_or("unknown");
-        if let Ok(skill) = parser::parse_skill(dir, source) {
-            if skill.name == name {
-                println!("Name: {}", skill.name);
-                println!("Description: {}", skill.frontmatter.description);
-                println!("Source: {}", skill.source);
-                println!("Directory: {}", skill.base_dir.display());
-                if let Some(ref hint) = skill.frontmatter.argument_hint {
-                    println!("Arguments: {}", hint);
-                }
-                if !skill.scripts.is_empty() {
-                    println!("\nScripts:");
-                    for s in &skill.scripts {
-                        println!("  {} -> {}", s.name, s.path.display());
-                    }
-                }
-                if !skill.references.is_empty() {
-                    println!("\nReferences:");
-                    for r in &skill.references {
-                        println!("  {} ({})", r.name, r.uri);
-                    }
-                }
-                println!("\n--- Body ---");
-                println!("{}", skill.body);
-                return Ok(());
-            }
-        }
-    }
-    Err(sxmc::error::SxmcError::SkillNotFound(name.to_string()))
-}
-
-async fn cmd_skills_run(paths: &[PathBuf], name: &str, arguments: &[String]) -> Result<()> {
-    let skill_dirs = discovery::discover_skills(paths)?;
-
-    for dir in &skill_dirs {
-        let source = dir.parent().and_then(|p| p.to_str()).unwrap_or("unknown");
-        if let Ok(skill) = parser::parse_skill(dir, source) {
-            if skill.name == name {
-                let args_str = arguments.join(" ");
-                let mut body = skill.body.clone();
-
-                for (i, arg) in arguments.iter().enumerate().rev() {
-                    body = body.replace(&format!("$ARGUMENTS[{}]", i), arg);
-                    body = body.replace(&format!("${}", i), arg);
-                }
-
-                body = body.replace("$ARGUMENTS", &args_str);
-
-                println!("{}", body);
-                return Ok(());
-            }
-        }
-    }
-    Err(sxmc::error::SxmcError::SkillNotFound(name.to_string()))
-}
-
-async fn cmd_api(
-    client: &api::ApiClient,
-    operation: Option<String>,
-    args: &[String],
-    list: bool,
-    search: Option<&str>,
-    pretty: bool,
-    format: Option<output::StructuredOutputFormat>,
-) -> anyhow::Result<()> {
-    if list || search.is_some() {
-        if format.is_some() || pretty {
-            let format = output::resolve_structured_format(format, pretty);
-            println!(
-                "{}",
-                output::format_structured_value(&client.list_value(search), format)
-            );
-        } else {
-            println!("{}", client.format_list(search));
-        }
-    } else if let Some(op_name) = operation {
-        let arguments = parse_string_kv_args(args);
-        let result = client.execute(&op_name, &arguments).await?;
-        let format = output::resolve_structured_format(format, pretty);
-        println!("{}", output::format_structured_value(&result, format));
-    } else {
-        eprintln!("Specify an operation name or use --list");
-        std::process::exit(1);
-    }
     Ok(())
 }
 

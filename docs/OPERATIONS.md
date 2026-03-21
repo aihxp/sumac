@@ -8,6 +8,8 @@ Serve a remote MCP endpoint:
 
 ```bash
 sxmc serve --transport http --host 0.0.0.0 --port 8000 \
+  --max-concurrency 64 \
+  --max-request-bytes 1048576 \
   --bearer-token env:SXMC_MCP_TOKEN \
   --paths /absolute/path/to/skills
 ```
@@ -16,6 +18,8 @@ Or require an exact header:
 
 ```bash
 sxmc serve --transport http --host 0.0.0.0 --port 8000 \
+  --max-concurrency 64 \
+  --max-request-bytes 1048576 \
   --require-header "X-Internal-Token: secret-value" \
   --paths /absolute/path/to/skills
 ```
@@ -30,6 +34,7 @@ Recommended default for hosted deployments:
 - prefer `--bearer-token env:...` for a single shared token
 - use `--require-header` for stricter internal or proxy-based setups
 - keep the service behind a reverse proxy for TLS and access control
+- keep request-body and concurrency limits in place for public or semi-public deployments
 
 ## Release Process
 
@@ -39,6 +44,7 @@ Before a release:
 2. update `CHANGELOG.md`
 3. confirm `Cargo.toml` and packaging metadata are aligned
 4. confirm `README.md` matches the current public surface
+5. confirm the architecture and usage docs still match the shipped command set
 
 Release steps:
 
@@ -50,6 +56,12 @@ cargo publish
 
 GitHub Actions will build the release archives and checksums from the pushed
 tag.
+
+Release cadence policy:
+
+- batch related changes into meaningful versions
+- avoid rapid-fire public releases unless you are correcting a broken published release
+- prefer validating the full docs, packaging, and smoke path once per release instead of shipping every intermediate checkpoint
 
 ## Distribution
 
@@ -69,6 +81,7 @@ cargo install sxmc
 ## Maintenance Notes
 
 - keep `master` as the canonical branch
+- keep branch protection enabled at least for force-push and deletion protection
 - prefer `sxmc mcp` as the primary daily MCP client UX
 - keep `sxmc stdio` and `sxmc http` as the lower-level raw bridge/debug layer
 - keep docs focused on stable product paths rather than release-by-release notes

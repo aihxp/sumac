@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -38,7 +40,11 @@ pub struct GraphQLClient {
 
 impl GraphQLClient {
     /// Connect to a GraphQL endpoint and introspect its schema.
-    pub async fn connect(url: &str, auth_headers: &[(String, String)]) -> Result<Self> {
+    pub async fn connect(
+        url: &str,
+        auth_headers: &[(String, String)],
+        timeout: Option<Duration>,
+    ) -> Result<Self> {
         let mut header_map = reqwest::header::HeaderMap::new();
         for (key, value) in auth_headers {
             if let (Ok(name), Ok(val)) = (
@@ -49,8 +55,12 @@ impl GraphQLClient {
             }
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(header_map)
+        let mut builder = reqwest::Client::builder().default_headers(header_map);
+        if let Some(timeout) = timeout {
+            builder = builder.timeout(timeout);
+        }
+
+        let client = builder
             .build()
             .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))?;
 
