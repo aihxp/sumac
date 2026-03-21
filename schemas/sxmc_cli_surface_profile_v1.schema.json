@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aihxp/sxmc/schemas/sxmc_cli_surface_profile_v1.schema.json",
+  "title": "sxmc_cli_surface_profile_v1",
+  "type": "object",
+  "required": [
+    "profile_schema",
+    "command",
+    "summary",
+    "source",
+    "provenance"
+  ],
+  "properties": {
+    "profile_schema": {
+      "const": "sxmc_cli_surface_profile_v1"
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "identifier"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cli",
+            "generated_cli",
+            "mcp"
+          ]
+        },
+        "identifier": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "subcommands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/subcommand"
+      },
+      "default": []
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/option"
+      },
+      "default": []
+    },
+    "positionals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/positional"
+      },
+      "default": []
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/example"
+      },
+      "default": []
+    },
+    "auth": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/auth_requirement"
+      },
+      "default": []
+    },
+    "environment": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/environment_requirement"
+      },
+      "default": []
+    },
+    "output_behavior": {
+      "type": "object",
+      "properties": {
+        "stdout_style": {
+          "type": "string",
+          "enum": [
+            "plain_text",
+            "json",
+            "mixed",
+            "unknown"
+          ]
+        },
+        "stderr_usage": {
+          "type": "string"
+        },
+        "machine_friendly": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/workflow"
+      },
+      "default": []
+    },
+    "confidence_notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/confidence_note"
+      },
+      "default": []
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "subcommand": {
+      "type": "object",
+      "required": [
+        "name",
+        "summary"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence_level"
+        }
+      },
+      "additionalProperties": false
+    },
+    "option": {
+      "type": "object",
+      "required": [
+        "name",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "short": {
+          "type": "string"
+        },
+        "value_name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence_level"
+        }
+      },
+      "additionalProperties": false
+    },
+    "positional": {
+      "type": "object",
+      "required": [
+        "name",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence_level"
+        }
+      },
+      "additionalProperties": false
+    },
+    "example": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence_level"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth_requirement": {
+      "type": "object",
+      "required": [
+        "kind",
+        "summary"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "env_var",
+            "oauth",
+            "token",
+            "header",
+            "interactive",
+            "unknown"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment_requirement": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "required": [
+        "name",
+        "steps"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence_level"
+        }
+      },
+      "additionalProperties": false
+    },
+    "confidence_note": {
+      "type": "object",
+      "required": [
+        "level",
+        "summary"
+      ],
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/confidence_level"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "generated_by",
+        "generator_version",
+        "source_kind",
+        "source_identifier",
+        "profile_schema",
+        "generation_depth"
+      ],
+      "properties": {
+        "generated_by": {
+          "const": "sxmc"
+        },
+        "generator_version": {
+          "type": "string"
+        },
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "cli",
+            "generated_cli",
+            "mcp"
+          ]
+        },
+        "source_identifier": {
+          "type": "string"
+        },
+        "profile_schema": {
+          "const": "sxmc_cli_surface_profile_v1"
+        },
+        "generation_depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generated_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "confidence_level": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    }
+  }
+}

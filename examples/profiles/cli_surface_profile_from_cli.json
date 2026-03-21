@@ -1,0 +1,77 @@
+{
+  "profile_schema": "sxmc_cli_surface_profile_v1",
+  "command": "gh",
+  "summary": "GitHub CLI for repository, issue, pull request, and workflow operations.",
+  "description": "Example of a profile derived from a real CLI rather than a generated wrapper.",
+  "source": {
+    "kind": "cli",
+    "identifier": "gh"
+  },
+  "subcommands": [
+    {
+      "name": "issue",
+      "summary": "Work with GitHub issues.",
+      "confidence": "high"
+    },
+    {
+      "name": "pr",
+      "summary": "Work with pull requests.",
+      "confidence": "high"
+    }
+  ],
+  "options": [
+    {
+      "name": "--repo",
+      "value_name": "OWNER/REPO",
+      "required": false,
+      "summary": "Target a specific repository.",
+      "confidence": "high"
+    }
+  ],
+  "positionals": [],
+  "examples": [
+    {
+      "command": "gh pr list --repo openai/openai-python",
+      "summary": "List pull requests in a specific repository.",
+      "confidence": "high"
+    }
+  ],
+  "auth": [
+    {
+      "kind": "interactive",
+      "summary": "The CLI usually expects the user to authenticate with GitHub before repository operations."
+    }
+  ],
+  "environment": [],
+  "output_behavior": {
+    "stdout_style": "mixed",
+    "stderr_usage": "Can emit prompts and auth guidance.",
+    "machine_friendly": true
+  },
+  "workflows": [
+    {
+      "name": "Review PRs",
+      "steps": [
+        "List pull requests",
+        "Inspect a specific PR",
+        "Comment or merge if appropriate"
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "confidence_notes": [
+    {
+      "level": "medium",
+      "summary": "Workflow grouping is inferred from subcommand names and common CLI usage."
+    }
+  ],
+  "provenance": {
+    "generated_by": "sxmc",
+    "generator_version": "0.1.x",
+    "source_kind": "cli",
+    "source_identifier": "gh",
+    "profile_schema": "sxmc_cli_surface_profile_v1",
+    "generation_depth": 0,
+    "generated_at": "2026-03-20T00:00:00Z"
+  }
+}

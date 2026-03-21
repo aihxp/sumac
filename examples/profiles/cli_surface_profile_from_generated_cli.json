@@ -1,0 +1,82 @@
+{
+  "profile_schema": "sxmc_cli_surface_profile_v1",
+  "command": "github-mcp-cli",
+  "summary": "Standalone generated CLI wrapper around the GitHub MCP server.",
+  "description": "Example of a generated CLI profile with provenance that prevents accidental recursive regeneration.",
+  "source": {
+    "kind": "generated_cli",
+    "identifier": "generated://mcp/github-wrapper"
+  },
+  "subcommands": [
+    {
+      "name": "get_issue",
+      "summary": "Read one GitHub issue through the MCP-backed wrapper.",
+      "confidence": "high"
+    }
+  ],
+  "options": [
+    {
+      "name": "--repo",
+      "value_name": "OWNER/REPO",
+      "required": true,
+      "summary": "Repository to query.",
+      "confidence": "high"
+    }
+  ],
+  "positionals": [],
+  "examples": [
+    {
+      "command": "github-mcp-cli get_issue --repo openai/openai-python --number 1",
+      "summary": "Fetch a specific issue through the generated wrapper.",
+      "confidence": "high"
+    }
+  ],
+  "auth": [
+    {
+      "kind": "env_var",
+      "summary": "Generated wrapper expects a GitHub token environment variable."
+    }
+  ],
+  "environment": [
+    {
+      "name": "GITHUB_TOKEN",
+      "summary": "Token used by the wrapped MCP server.",
+      "required": true
+    }
+  ],
+  "output_behavior": {
+    "stdout_style": "json",
+    "stderr_usage": "Wrapper startup and upstream notices.",
+    "machine_friendly": true
+  },
+  "workflows": [
+    {
+      "name": "Inspect repository state",
+      "steps": [
+        "List issues or pull requests",
+        "Fetch one record",
+        "Summarize it in an agent doc or skill"
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "confidence_notes": [
+    {
+      "level": "high",
+      "summary": "This profile is derived from a generated CLI wrapper, not a raw inspected binary."
+    },
+    {
+      "level": "medium",
+      "summary": "By default this profile should not be recursively transformed without explicit user opt-in."
+    }
+  ],
+  "provenance": {
+    "generated_by": "sxmc",
+    "generator_version": "0.1.x",
+    "source_kind": "generated_cli",
+    "source_identifier": "generated://mcp/github-wrapper",
+    "profile_schema": "sxmc_cli_surface_profile_v1",
+    "generation_depth": 1,
+    "generated_at": "2026-03-20T00:00:00Z"
+  }
+}
