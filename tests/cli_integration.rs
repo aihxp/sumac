@@ -15,7 +15,10 @@ fn sxmc() -> Command {
 fn sxmc_with_config_home(home: &Path) -> Command {
     let mut cmd = sxmc();
     cmd.env("HOME", home);
+    cmd.env("USERPROFILE", home);
     cmd.env("XDG_CONFIG_HOME", home.join(".config"));
+    cmd.env("APPDATA", home.join("AppData").join("Roaming"));
+    cmd.env("LOCALAPPDATA", home.join("AppData").join("Local"));
     cmd
 }
 
