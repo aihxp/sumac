@@ -137,15 +137,9 @@ fn read_help_text(parts: &[String]) -> Result<String> {
 
 fn parse_help_text(command_name: &str, source_identifier: &str, help: &str) -> CliSurfaceProfile {
     let lines: Vec<&str> = help.lines().collect();
-    let summary = lines
-        .iter()
-        .map(|line| line.trim())
-        .find(|line| !line.is_empty())
-        .unwrap_or(command_name)
-        .to_string();
-
-    let description = parse_description(&lines);
-    let subcommands = parse_subcommands(&lines);
+    let summary = select_summary(&lines, command_name);
+    let description = parse_description(&lines, command_name, &summary);
+    let subcommands = parse_subcommands(&lines, command_name);
     let options = parse_options(&lines);
     let positionals = parse_positionals(&lines, command_name);
     let examples = parse_examples(&lines, command_name);
@@ -193,10 +187,36 @@ fn parse_help_text(command_name: &str, source_identifier: &str, help: &str) -> C
     }
 }
 
-fn parse_description(lines: &[&str]) -> Option<String> {
+fn select_summary(lines: &[&str], command_name: &str) -> String {
+    let first_non_empty = lines
+        .iter()
+        .map(|line| line.trim())
+        .find(|line| !line.is_empty())
+        .unwrap_or(command_name);
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if is_unhelpful_summary_line(trimmed, command_name) {
+            continue;
+        }
+        return sanitize_for_profile(trimmed, command_name);
+    }
+
+    if !is_unhelpful_summary_line(first_non_empty, command_name) {
+        sanitize_for_profile(first_non_empty, command_name)
+    } else {
+        format!("{} command-line interface", command_name)
+    }
+}
+
+fn parse_description(lines: &[&str], command_name: &str, summary: &str) -> Option<String> {
     let mut description = Vec::new();
     let mut started = false;
-    for line in lines.iter().skip(1) {
+    let mut skipped_summary = false;
+    for line in lines {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             if started {
@@ -204,11 +224,16 @@ fn parse_description(lines: &[&str]) -> Option<String> {
             }
             continue;
         }
-        if is_section_heading(trimmed) || trimmed.starts_with("Usage:") {
+        let sanitized = sanitize_for_profile(trimmed, command_name);
+        if !skipped_summary && sanitized == summary {
+            skipped_summary = true;
+            continue;
+        }
+        if is_major_section_heading(trimmed) || looks_like_usage_line(trimmed, command_name) {
             break;
         }
         started = true;
-        description.push(trimmed.to_string());
+        description.push(sanitized);
     }
     if description.is_empty() {
         None
@@ -217,33 +242,75 @@ fn parse_description(lines: &[&str]) -> Option<String> {
     }
 }
 
-fn parse_subcommands(lines: &[&str]) -> Vec<ProfileSubcommand> {
-    parse_table_section(lines, &["commands", "subcommands", "available commands"])
-        .into_iter()
-        .map(|(name, summary)| ProfileSubcommand {
-            name,
-            summary,
-            confidence: ConfidenceLevel::High,
-        })
-        .collect()
+fn parse_subcommands(lines: &[&str], command_name: &str) -> Vec<ProfileSubcommand> {
+    let mut subcommands = Vec::new();
+    let mut in_command_section = false;
+
+    for line in lines {
+        let trimmed = line.trim_end();
+        let stripped = trimmed.trim();
+
+        if stripped.is_empty() {
+            continue;
+        }
+
+        if is_command_section_heading(stripped)
+            || stripped.starts_with("These are common ")
+            || stripped.starts_with("These are available ")
+        {
+            in_command_section = true;
+            continue;
+        }
+
+        if !in_command_section {
+            continue;
+        }
+
+        if is_major_section_heading(stripped) && !is_command_section_heading(stripped) {
+            if !subcommands.is_empty() {
+                break;
+            }
+            continue;
+        }
+
+        if let Some((name, summary, confidence)) = parse_subcommand_row(stripped, command_name) {
+            push_subcommand(
+                &mut subcommands,
+                ProfileSubcommand {
+                    name,
+                    summary,
+                    confidence,
+                },
+            );
+            continue;
+        }
+
+        for name in parse_subcommand_list(stripped) {
+            push_subcommand(
+                &mut subcommands,
+                ProfileSubcommand {
+                    name,
+                    summary: "Listed in CLI help output.".into(),
+                    confidence: ConfidenceLevel::Medium,
+                },
+            );
+        }
+    }
+
+    for inferred in parse_usage_subcommands(lines, command_name) {
+        push_subcommand(&mut subcommands, inferred);
+    }
+
+    subcommands
 }
 
 fn parse_options(lines: &[&str]) -> Vec<ProfileOption> {
     let mut options = Vec::new();
     let mut in_options = false;
-    let regex = Regex::new(
-        r"^\s*(?:(-[A-Za-z0-9])(?:,\s*)?)?(--[A-Za-z0-9][A-Za-z0-9-]*)(?:[ =]([A-Z<>\[\]\-_|]+))?\s{2,}(.*)$",
-    )
-    .unwrap();
-    let short_only_regex =
-        Regex::new(r"^\s*(-[A-Za-z0-9])(?:[ =]([A-Z<>\[\]\-_|]+))?\s{2,}(.*)$").unwrap();
 
     for line in lines {
         let trimmed = line.trim_end();
         if trimmed.trim().is_empty() {
-            if in_options {
-                break;
-            }
             continue;
         }
         if is_named_section(trimmed, &["options", "flags"]) {
@@ -253,37 +320,22 @@ fn parse_options(lines: &[&str]) -> Vec<ProfileOption> {
         if !in_options {
             continue;
         }
-        if is_section_heading(trimmed.trim()) {
+        if is_major_section_heading(trimmed.trim())
+            && !is_named_section(trimmed, &["options", "flags"])
+        {
             break;
         }
-        if let Some(caps) = regex.captures(trimmed) {
-            options.push(ProfileOption {
-                name: caps
-                    .get(2)
-                    .map(|m| m.as_str().to_string())
-                    .unwrap_or_default(),
-                short: caps.get(1).map(|m| m.as_str().to_string()),
-                value_name: caps
-                    .get(3)
-                    .map(|m| m.as_str().trim_matches(&['<', '>'][..]).to_string()),
-                required: false,
-                summary: caps.get(4).map(|m| m.as_str().trim().to_string()),
-                confidence: ConfidenceLevel::High,
-            });
-        } else if let Some(caps) = short_only_regex.captures(trimmed) {
-            options.push(ProfileOption {
-                name: caps
-                    .get(1)
-                    .map(|m| m.as_str().to_string())
-                    .unwrap_or_default(),
-                short: caps.get(1).map(|m| m.as_str().to_string()),
-                value_name: caps
-                    .get(2)
-                    .map(|m| m.as_str().trim_matches(&['<', '>'][..]).to_string()),
-                required: false,
-                summary: caps.get(3).map(|m| m.as_str().trim().to_string()),
-                confidence: ConfidenceLevel::Medium,
-            });
+        if let Some(option) = parse_option_entry(trimmed) {
+            options.push(option);
+        } else if let Some(last) = options.last_mut() {
+            let continuation = trimmed.trim();
+            if !continuation.starts_with('-') {
+                let merged = match &last.summary {
+                    Some(existing) => format!("{existing} {continuation}"),
+                    None => continuation.to_string(),
+                };
+                last.summary = Some(merged.trim().to_string());
+            }
         }
     }
     options
@@ -347,19 +399,19 @@ fn parse_examples(lines: &[&str], command_name: &str) -> Vec<ProfileExample> {
             }
             continue;
         }
-        if is_named_section(stripped, &["examples", "example"]) {
+        if is_named_section(stripped, &["examples", "example", "example usage"]) {
             in_examples = true;
             continue;
         }
         if !in_examples {
             continue;
         }
-        if is_section_heading(stripped) {
+        if is_major_section_heading(stripped) {
             break;
         }
         if stripped.starts_with(command_name) || stripped.starts_with('$') {
             examples.push(ProfileExample {
-                command: stripped.trim_start_matches("$ ").to_string(),
+                command: sanitize_for_profile(stripped.trim_start_matches("$ "), command_name),
                 summary: None,
                 confidence: ConfidenceLevel::High,
             });
@@ -372,11 +424,10 @@ fn infer_requirements(help: &str) -> (Vec<AuthRequirement>, Vec<EnvironmentRequi
     let mut auth = Vec::new();
     let mut environment = Vec::new();
     let mut seen_env = std::collections::BTreeSet::new();
+    let lowered = help.to_ascii_lowercase();
+    let auth_regex = Regex::new(r"\b(login|authenticate|authentication|auth)\b").unwrap();
 
-    if help.to_ascii_lowercase().contains("login")
-        || help.to_ascii_lowercase().contains("authenticate")
-        || help.to_ascii_lowercase().contains("auth")
-    {
+    if auth_regex.is_match(&lowered) {
         auth.push(AuthRequirement {
             kind: "interactive".into(),
             summary:
@@ -441,57 +492,305 @@ fn infer_output_behavior(help: &str) -> OutputBehavior {
     }
 }
 
-fn parse_table_section(lines: &[&str], headings: &[&str]) -> Vec<(String, String)> {
-    let mut rows = Vec::new();
-    let mut in_section = false;
+fn is_named_section(line: &str, headings: &[&str]) -> bool {
+    let normalized = line
+        .trim()
+        .trim_end_matches(':')
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    headings.iter().any(|heading| {
+        normalized == *heading
+            || normalized.contains(heading)
+            || normalized.contains(&format!("{heading} "))
+            || normalized.ends_with(&format!(" {heading}"))
+    })
+}
+
+fn is_major_section_heading(line: &str) -> bool {
+    if line.ends_with(':') {
+        return true;
+    }
+
+    let has_alpha = line.chars().any(|c| c.is_ascii_alphabetic());
+    let is_upperish = has_alpha
+        && line.chars().all(|c| {
+            c.is_ascii_uppercase()
+                || c.is_ascii_digit()
+                || c.is_ascii_whitespace()
+                || matches!(c, '&' | '/' | '-' | '_' | '(' | ')')
+        });
+
+    is_upperish
+}
+
+fn is_command_section_heading(line: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    lowered.contains("command") || lowered.contains("subcommand")
+}
+
+fn looks_like_usage_line(line: &str, command_name: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    lowered.starts_with("usage:")
+        || lowered == "usage"
+        || lowered.starts_with(&format!("{command_name} "))
+}
+
+fn is_unhelpful_summary_line(line: &str, command_name: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    let trimmed = line.trim();
+    let descriptive_intro =
+        trimmed.starts_with("These are common ") || trimmed.starts_with("These are available ");
+
+    trimmed.is_empty()
+        || (!descriptive_intro && is_major_section_heading(trimmed))
+        || looks_like_usage_line(trimmed, command_name)
+        || looks_like_option_line(trimmed)
+        || looks_like_cli_example_line(trimmed, command_name)
+        || parse_subcommand_row(trimmed, command_name).is_some()
+        || !parse_subcommand_list(trimmed).is_empty()
+        || lowered.starts_with("error:")
+        || lowered.contains("unrecognized option")
+        || lowered.contains("unknown option")
+        || lowered.contains("invalid option")
+        || lowered.starts_with("try '")
+        || lowered.starts_with("see ")
+        || trimmed == command_name
+        || trimmed == format!("{command_name} <command>")
+        || is_version_banner(trimmed)
+}
+
+fn is_version_banner(line: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    lowered.contains("version")
+        && !lowered.contains("command")
+        && line.chars().any(|c| c.is_ascii_digit())
+}
+
+fn looks_like_option_line(line: &str) -> bool {
+    line.trim_start().starts_with('-')
+}
+
+fn looks_like_cli_example_line(line: &str, command_name: &str) -> bool {
+    let trimmed = line.trim_start_matches("$ ").trim();
+    trimmed.starts_with(&format!("{command_name} "))
+}
+
+fn sanitize_for_profile(text: &str, command_name: &str) -> String {
+    let unix_path = Regex::new(r"(?P<prefix>^|[\s(])(?P<path>/[^\s:]+)").unwrap();
+    let windows_path = Regex::new(r"(?P<prefix>^|[\s(])(?P<path>[A-Za-z]:\\[^\s:]+)").unwrap();
+
+    let mut sanitized = unix_path
+        .replace_all(text, |caps: &regex::Captures<'_>| {
+            let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or_default();
+            let path = caps.name("path").map(|m| m.as_str()).unwrap_or_default();
+            let replacement = Path::new(path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or(command_name);
+            format!("{prefix}{replacement}")
+        })
+        .into_owned();
+
+    sanitized = windows_path
+        .replace_all(&sanitized, |caps: &regex::Captures<'_>| {
+            let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or_default();
+            let path = caps.name("path").map(|m| m.as_str()).unwrap_or_default();
+            let replacement = Path::new(path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or(command_name);
+            format!("{prefix}{replacement}")
+        })
+        .into_owned();
+
+    sanitized.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn parse_subcommand_row(
+    line: &str,
+    command_name: &str,
+) -> Option<(String, String, ConfidenceLevel)> {
+    let colon_match = Regex::new(
+        r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*(?:,\s*[A-Za-z0-9._-]+)*)\s*:\s+(?P<summary>.+)$",
+    )
+    .unwrap();
+    if let Some(caps) = colon_match.captures(line) {
+        let raw_name = caps.name("name")?.as_str().trim();
+        let summary = caps.name("summary")?.as_str().trim();
+        return Some((
+            canonical_subcommand_name(raw_name),
+            sanitize_for_profile(summary, command_name),
+            ConfidenceLevel::High,
+        ));
+    }
+
+    let columns: Vec<&str> = line
+        .split("  ")
+        .filter(|chunk| !chunk.trim().is_empty())
+        .collect();
+    if columns.len() >= 2 {
+        let raw_name = columns[0].trim();
+        if raw_name.starts_with('-') {
+            return None;
+        }
+        return Some((
+            canonical_subcommand_name(raw_name),
+            sanitize_for_profile(&columns[1..].join(" "), command_name),
+            ConfidenceLevel::High,
+        ));
+    }
+
+    None
+}
+
+fn canonical_subcommand_name(raw: &str) -> String {
+    raw.split(',')
+        .next()
+        .map(str::trim)
+        .unwrap_or(raw)
+        .to_string()
+}
+
+fn parse_subcommand_list(line: &str) -> Vec<String> {
+    if !line.contains(',') {
+        return Vec::new();
+    }
+
+    line.split(',')
+        .map(str::trim)
+        .filter(|item| {
+            !item.is_empty()
+                && item
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+fn push_subcommand(subcommands: &mut Vec<ProfileSubcommand>, candidate: ProfileSubcommand) {
+    if !subcommands
+        .iter()
+        .any(|existing| existing.name == candidate.name)
+    {
+        subcommands.push(candidate);
+    }
+}
+
+fn parse_usage_subcommands(lines: &[&str], command_name: &str) -> Vec<ProfileSubcommand> {
+    let mut inferred = Vec::new();
+    let mut in_usage_block = false;
 
     for line in lines {
-        let trimmed = line.trim_end();
-        let stripped = trimmed.trim();
-
-        if stripped.is_empty() {
-            if in_section && !rows.is_empty() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if in_usage_block {
                 break;
             }
             continue;
         }
 
-        if is_named_section(stripped, headings) {
-            in_section = true;
+        let usage_line = if let Some(rest) = trimmed.strip_prefix("Usage:") {
+            in_usage_block = true;
+            rest.trim()
+        } else if in_usage_block && trimmed.starts_with(command_name) {
+            trimmed
+        } else {
             continue;
-        }
+        };
 
-        if !in_section {
-            continue;
-        }
-
-        if is_section_heading(stripped) {
-            break;
-        }
-
-        let columns: Vec<&str> = stripped
-            .split("  ")
-            .filter(|chunk| !chunk.trim().is_empty())
-            .collect();
-
-        if columns.len() >= 2 {
-            rows.push((
-                columns[0].trim().to_string(),
-                columns[1..].join(" ").trim().to_string(),
-            ));
+        let tokens: Vec<&str> = usage_line.split_whitespace().collect();
+        let mut iter = tokens.into_iter().peekable();
+        while let Some(token) = iter.next() {
+            if token == command_name || token.ends_with(&format!("/{command_name}")) {
+                if let Some(next) = iter.peek().copied() {
+                    if is_literal_subcommand_token(next) {
+                        inferred.push(ProfileSubcommand {
+                            name: next.to_string(),
+                            summary: "Inferred from usage examples in help output.".into(),
+                            confidence: ConfidenceLevel::Medium,
+                        });
+                    }
+                }
+                break;
+            }
         }
     }
 
-    rows
+    inferred
 }
 
-fn is_named_section(line: &str, headings: &[&str]) -> bool {
-    let normalized = line.trim_end_matches(':').to_ascii_lowercase();
-    headings.iter().any(|heading| normalized == *heading)
+fn is_literal_subcommand_token(token: &str) -> bool {
+    !token.is_empty()
+        && !token.starts_with('-')
+        && !token.starts_with('<')
+        && !token.starts_with('[')
+        && token
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || matches!(c, '-' | '_' | '.'))
 }
 
-fn is_section_heading(line: &str) -> bool {
-    line.ends_with(':')
+fn parse_option_entry(line: &str) -> Option<ProfileOption> {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('-') {
+        return None;
+    }
+
+    let (signature, summary) = split_option_signature(trimmed);
+    let short_regex = Regex::new(r"(^|[\s,])(-[A-Za-z0-9?])(?:$|[\s,=:\[])").unwrap();
+    let long_regex = Regex::new(r"(--[A-Za-z0-9][A-Za-z0-9-]*)").unwrap();
+    let value_regex = Regex::new(
+        r"(?:(?:--[A-Za-z0-9][A-Za-z0-9-]*|-[A-Za-z0-9?]))(?:[ =]([A-Z<>\[\]\-_|.]+|\.\.\.))",
+    )
+    .unwrap();
+
+    let short = short_regex
+        .captures(signature)
+        .and_then(|caps| caps.get(2).map(|m| m.as_str().to_string()));
+    let long = long_regex
+        .captures(signature)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()));
+    let name = long.clone().or_else(|| short.clone())?;
+    let value_name = value_regex.captures(signature).and_then(|caps| {
+        caps.get(1)
+            .map(|m| m.as_str().trim_matches(&['<', '>'][..]).to_string())
+    });
+
+    Some(ProfileOption {
+        name,
+        short,
+        value_name,
+        required: false,
+        summary: summary.map(|value| value.to_string()),
+        confidence: if long.is_some() {
+            ConfidenceLevel::High
+        } else {
+            ConfidenceLevel::Medium
+        },
+    })
+}
+
+fn split_option_signature(line: &str) -> (&str, Option<&str>) {
+    if let Some(index) = line.find("  ") {
+        let (signature, rest) = line.split_at(index);
+        let summary = rest.trim().trim_start_matches(':').trim();
+        return (signature.trim(), (!summary.is_empty()).then_some(summary));
+    }
+
+    if let Some(index) = line.find(':') {
+        let (signature, rest) = line.split_at(index);
+        if signature.contains('-') {
+            let summary = rest.trim_start_matches(':').trim();
+            return (signature.trim(), (!summary.is_empty()).then_some(summary));
+        }
+    }
+
+    (line.trim(), None)
 }
 
 fn now_string() -> String {
@@ -504,11 +803,156 @@ fn now_string() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_command_spec;
+    use super::{parse_command_spec, parse_help_text};
 
     #[test]
     fn parse_json_array_command_spec() {
         let parsed = parse_command_spec(r#"["sxmc","serve","--paths","tests/fixtures"]"#).unwrap();
         assert_eq!(parsed, vec!["sxmc", "serve", "--paths", "tests/fixtures"]);
+    }
+
+    #[test]
+    fn parse_gh_style_grouped_commands() {
+        let help = r#"Work seamlessly with GitHub from the command line.
+
+USAGE
+  gh <command> <subcommand> [flags]
+
+CORE COMMANDS
+  auth:          Authenticate gh and git with GitHub
+  repo:          Manage repositories
+
+ADDITIONAL COMMANDS
+  api:           Make an authenticated GitHub API request
+
+EXAMPLES
+  $ gh repo clone cli/cli
+"#;
+        let profile = parse_help_text("gh", "gh", help);
+        assert_eq!(
+            profile.summary,
+            "Work seamlessly with GitHub from the command line."
+        );
+        assert_eq!(profile.subcommands.len(), 3);
+        assert_eq!(profile.subcommands[0].name, "auth");
+        assert_eq!(profile.subcommands[2].name, "api");
+        assert_eq!(profile.examples[0].command, "gh repo clone cli/cli");
+    }
+
+    #[test]
+    fn parse_git_style_common_commands() {
+        let help = r#"usage: git [-v | --version] [-h | --help] <command> [<args>]
+
+These are common Git commands used in various situations:
+
+start a working area (see also: git help tutorial)
+   clone      Clone a repository into a new directory
+   init       Create an empty Git repository or reinitialize an existing one
+
+collaborate (see also: git help workflows)
+   fetch      Download objects and refs from another repository
+"#;
+        let profile = parse_help_text("git", "git", help);
+        assert_eq!(
+            profile.summary,
+            "These are common Git commands used in various situations:"
+        );
+        assert_eq!(profile.subcommands.len(), 3);
+        assert_eq!(profile.subcommands[0].name, "clone");
+        assert_eq!(profile.subcommands[2].name, "fetch");
+    }
+
+    #[test]
+    fn parse_npm_style_command_lists() {
+        let help = r#"npm <command>
+
+Usage:
+
+npm install        install all the dependencies in your project
+npm test           run this project's tests
+
+All commands:
+
+    access, adduser, audit, bugs, cache, ci, completion,
+    config, dedupe, doctor, exec
+"#;
+        let profile = parse_help_text("npm", "npm", help);
+        assert_eq!(profile.summary, "npm command-line interface");
+        assert!(profile
+            .subcommands
+            .iter()
+            .any(|command| command.name == "access"));
+        assert!(profile
+            .subcommands
+            .iter()
+            .any(|command| command.name == "doctor"));
+    }
+
+    #[test]
+    fn parse_python_help_sanitizes_paths_and_options() {
+        let help = r#"usage: /opt/homebrew/Cellar/python@3.14/3.14.2_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python [option] ...
+Options (and corresponding environment variables):
+-h     : print this help message and exit
+-X opt : set implementation-specific option
+
+Arguments:
+file   : program read from script file
+"#;
+        let profile = parse_help_text("python3", "python3", help);
+        assert_eq!(profile.summary, "python3 command-line interface");
+        assert!(profile.options.iter().any(|option| option.name == "-h"));
+        assert!(profile.options.iter().any(|option| option.name == "-X"));
+        let option = profile
+            .options
+            .iter()
+            .find(|option| option.name == "-h")
+            .unwrap();
+        assert_eq!(
+            option.summary.as_deref(),
+            Some("print this help message and exit")
+        );
+        assert!(!profile.summary.contains("/opt/homebrew"));
+    }
+
+    #[test]
+    fn parse_node_usage_subcommands_and_wrapped_options() {
+        let help = r#"Usage: node [options] [ script.js ] [arguments]
+       node inspect [options] [ script.js | host:port ] [arguments]
+
+Options:
+  --abort-on-uncaught-exception
+                              aborting instead of exiting causes a
+                              core file to be generated for analysis
+  -c, --check                 syntax check script without executing
+"#;
+        let profile = parse_help_text("node", "node", help);
+        assert!(profile.auth.is_empty());
+        assert!(profile
+            .subcommands
+            .iter()
+            .any(|command| command.name == "inspect"));
+        let option = profile
+            .options
+            .iter()
+            .find(|option| option.name == "--abort-on-uncaught-exception")
+            .unwrap();
+        assert!(option
+            .summary
+            .as_deref()
+            .unwrap_or_default()
+            .contains("core file"));
+    }
+
+    #[test]
+    fn parse_cargo_aliases_uses_primary_name() {
+        let help = r#"Rust's package manager
+
+Commands:
+    build, b    Compile the current package
+    check, c    Analyze the current package and report errors
+"#;
+        let profile = parse_help_text("cargo", "cargo", help);
+        assert_eq!(profile.subcommands[0].name, "build");
+        assert_eq!(profile.subcommands[1].name, "check");
     }
 }

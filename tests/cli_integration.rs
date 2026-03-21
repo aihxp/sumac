@@ -1,6 +1,7 @@
 use assert_cmd::Command;
 use axum::{routing::get, routing::post, Json, Router};
 use predicates::prelude::*;
+use serde_json::Value;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -116,6 +117,10 @@ fn command_stdout(args: &[&str]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn command_json(args: &[&str]) -> Value {
+    serde_json::from_str(&command_stdout(args)).unwrap()
 }
 
 #[test]
@@ -325,6 +330,29 @@ fn test_inspect_cli_self_with_allow_self() {
         .stdout(predicate::str::contains("\"profile_schema\""))
         .stdout(predicate::str::contains("\"command\": \"sxmc\""))
         .stdout(predicate::str::contains("\"subcommands\""));
+}
+
+#[test]
+fn test_inspect_cli_git_detects_common_subcommands() {
+    let profile = command_json(&["inspect", "cli", "git", "--pretty"]);
+    assert_eq!(profile["command"], "git");
+    assert_ne!(
+        profile["summary"],
+        Value::String("usage: git [-v | --version] [-h | --help] <command> [<args>]".into())
+    );
+
+    let subcommands = profile["subcommands"].as_array().unwrap();
+    assert!(subcommands.iter().any(|entry| entry["name"] == "clone"
+        && entry["summary"] == "Clone a repository into a new directory"));
+    assert!(subcommands.iter().any(|entry| entry["name"] == "fetch"));
+}
+
+#[test]
+fn test_inspect_cli_cargo_uses_primary_subcommand_names() {
+    let profile = command_json(&["inspect", "cli", "cargo", "--pretty"]);
+    let subcommands = profile["subcommands"].as_array().unwrap();
+    assert!(subcommands.iter().any(|entry| entry["name"] == "build"));
+    assert!(!subcommands.iter().any(|entry| entry["name"] == "build, b"));
 }
 
 #[test]
