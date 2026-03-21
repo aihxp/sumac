@@ -370,6 +370,12 @@ sxmc scaffold client-config \
   --mode apply
 ```
 
+Pipeline:
+
+```text
+CLI binary -> sxmc inspect cli -> JSON profile -> sxmc init ai / scaffold -> AI-ready files
+```
+
 This shipped slice is intentionally safe:
 
 - `inspect cli` builds the canonical JSON profile for a real command

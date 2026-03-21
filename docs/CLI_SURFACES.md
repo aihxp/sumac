@@ -65,6 +65,75 @@ The intended pipeline is:
 real CLI -> normalized JSON profile -> chosen AI surface(s)
 ```
 
+Concrete shipped pipeline:
+
+```text
+CLI binary
+  -> sxmc inspect cli <command>
+  -> JSON profile
+  -> sxmc init ai / sxmc scaffold ...
+  -> startup-ready AI files
+```
+
+### Stage 1: `sxmc inspect cli <command>`
+
+`inspect cli` runs a real CLI, reads its help surface, and normalizes that into
+the canonical JSON profile.
+
+The profile is designed to capture things agents and startup docs actually need:
+
+| Field area | What it captures |
+|---|---|
+| `summary` / `description` | high-level purpose and one-line description |
+| `subcommands` | names, summaries, and confidence levels |
+| `options` | long flags, short flags, value names, and required/optional hints |
+| `examples` | usage examples recovered from help text |
+| `environment` | auth or env requirements when they are visible |
+| `output_behavior` | whether the command looks machine-friendly or human-oriented |
+| `confidence_notes` | how much of the profile was observed vs inferred |
+| `provenance` | generator, version, source command, and generation time |
+
+Because this comes from CLI help, some fields are directly observed while
+others are heuristic. That is why the profile carries confidence metadata.
+
+### Stage 2: `sxmc init ai --from-cli <command> --client <host>`
+
+`init ai` takes the profile and generates startup-facing files for a selected
+host profile.
+
+Current native targets:
+
+| AI host | Agent doc path | Config path |
+|---|---|---|
+| Claude Code | `CLAUDE.md` | `.sxmc/ai/claude-code-mcp.json` |
+| Cursor | `.cursor/rules/sxmc-cli-ai.md` | `.cursor/mcp.json` |
+| Gemini CLI | `GEMINI.md` | `.gemini/settings.json` |
+| GitHub Copilot | `.github/copilot-instructions.md` | none |
+| Continue | `.continue/rules/sxmc-cli-ai.md` | none |
+| OpenCode | `AGENTS.md` | `opencode.json` |
+| JetBrains AI Assistant | `.aiassistant/rules/sxmc-cli-ai.md` | none |
+| Junie | `.junie/guidelines.md` | none |
+| Windsurf | `.windsurf/rules/sxmc-cli-ai.md` | none |
+| OpenAI/Codex | `AGENTS.md` | `.codex/mcp.toml` |
+| Generic stdio MCP | `AGENTS.md` portable fallback | `.sxmc/ai/generic-stdio-mcp.json` |
+| Generic HTTP MCP | `AGENTS.md` portable fallback | `.sxmc/ai/generic-http-mcp.json` |
+
+With `--coverage full`, `sxmc` generates the broad host set together. With
+`--coverage full --mode apply`, selected hosts are applied and the rest stay as
+sidecars.
+
+### Stage 3: `sxmc scaffold`
+
+`scaffold` produces deeper artifacts from the same profile:
+
+| Command | Output |
+|---|---|
+| `scaffold llms-txt` | `llms.txt` export |
+| `scaffold skill` | `SKILL.md` scaffold |
+| `scaffold mcp-wrapper` | `README.md` + `manifest.json` scaffold |
+| `scaffold agent-doc` | managed markdown block for one host |
+| `scaffold client-config` | host config scaffold for one host |
+
 Optional broader product graph:
 
 ```text
@@ -127,6 +196,15 @@ Preferred order of operations:
 3. patch preview
 4. explicit write/apply
 
+Current modes map to that model like this:
+
+| Mode | Behavior |
+|---|---|
+| `preview` | prints what would be generated; writes nothing |
+| `write-sidecar` | writes under `.sxmc/ai/...`; does not touch real startup files |
+| `patch` | prints a patch-style preview for apply-capable targets |
+| `apply` | updates real files via managed blocks or mergeable config shapes |
+
 Full-coverage rule:
 
 - use `--coverage full` for preview or sidecar generation across multiple tools
@@ -152,6 +230,10 @@ Recommended default behavior:
   - reserved for explicit future mutation of existing docs
 
 For agent-doc outputs, `--apply` should never be the default.
+
+Existing startup docs are not overwritten wholesale. `AGENTS.md`, `CLAUDE.md`,
+and similar files are updated with managed `sxmc` blocks so generated guidance
+can coexist with human-written project context.
 
 ## Intermediate Representation
 

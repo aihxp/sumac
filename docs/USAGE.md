@@ -139,6 +139,12 @@ sxmc init ai --from-cli gh --coverage full --mode preview
 sxmc init ai --from-cli gh --coverage full --host claude-code,cursor --mode apply
 ```
 
+Pipeline summary:
+
+```text
+CLI binary -> sxmc inspect cli -> JSON profile -> sxmc init ai / scaffold -> AI-ready files
+```
+
 Generate from an existing saved profile:
 
 ```bash
@@ -214,6 +220,14 @@ Full-coverage generation produces:
 - `.junie/guidelines.md` for Junie
 - `.windsurf/rules/sxmc-cli-ai.md` for Windsurf
 - host config scaffolds for Claude, Cursor, Gemini, OpenAI/Codex, and generic stdio/http MCP
+
+At a high level:
+
+| Stage | Command | Result |
+|---|---|---|
+| Inspect | `sxmc inspect cli gh --format json-pretty` | canonical JSON profile |
+| Initialize | `sxmc init ai --from-cli gh --client claude-code` | startup-facing host artifacts |
+| Scaffold | `sxmc scaffold ... --from-profile ...` | deeper outputs like `SKILL.md`, `llms.txt`, or an MCP wrapper |
 
 Notes:
 
