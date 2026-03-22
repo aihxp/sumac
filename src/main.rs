@@ -1671,6 +1671,11 @@ fn augment_bake_validation_message(config: &BakeConfig, base: &str, detail: &str
 }
 
 fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
+    let mut created = 0usize;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut removed = 0usize;
+
     for outcome in outcomes {
         match outcome.mode {
             ArtifactMode::Preview => {}
@@ -1682,6 +1687,12 @@ fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
                     cli_surfaces::WriteStatus::Removed => "Removed sidecar for",
                 };
                 println!("{} {}: {}", verb, outcome.label, outcome.path.display());
+                match outcome.status {
+                    cli_surfaces::WriteStatus::Created => created += 1,
+                    cli_surfaces::WriteStatus::Updated => updated += 1,
+                    cli_surfaces::WriteStatus::Skipped => skipped += 1,
+                    cli_surfaces::WriteStatus::Removed => removed += 1,
+                }
             }
             ArtifactMode::Patch => {}
             ArtifactMode::Apply => {
@@ -1692,8 +1703,22 @@ fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
                     cli_surfaces::WriteStatus::Removed => "Removed",
                 };
                 println!("{} {}: {}", verb, outcome.label, outcome.path.display());
+                match outcome.status {
+                    cli_surfaces::WriteStatus::Created => created += 1,
+                    cli_surfaces::WriteStatus::Updated => updated += 1,
+                    cli_surfaces::WriteStatus::Skipped => skipped += 1,
+                    cli_surfaces::WriteStatus::Removed => removed += 1,
+                }
             }
         }
+    }
+
+    let total = created + updated + skipped + removed;
+    if total > 0 {
+        println!(
+            "Summary: Created {}, Updated {}, Skipped unchanged {}, Removed {}",
+            created, updated, skipped, removed
+        );
     }
 }
 

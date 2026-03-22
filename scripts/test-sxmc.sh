@@ -765,7 +765,8 @@ chmod +x "$TMPDIR_TEST/doctor-fix-cli"
 TMP_DOCTOR_FIX_ROOT="$TMPDIR_TEST/doctor-fix-root"
 mkdir -p "$TMP_DOCTOR_FIX_ROOT"
 if "$SXMC" doctor --check --fix --allow-low-confidence --only claude-code,cursor --from-cli "$TMPDIR_TEST/doctor-fix-cli" --root "$TMP_DOCTOR_FIX_ROOT" >/dev/null 2>&1; then
-  if [ -f "$TMP_DOCTOR_FIX_ROOT/CLAUDE.md" ] && [ -f "$TMP_DOCTOR_FIX_ROOT/.cursor/rules/sxmc-cli-ai.md" ]; then
+  doctor_fix_human=$("$SXMC" doctor --check --fix --allow-low-confidence --only claude-code,cursor --from-cli "$TMPDIR_TEST/doctor-fix-cli" --root "$TMP_DOCTOR_FIX_ROOT" --human 2>/dev/null)
+  if [ -f "$TMP_DOCTOR_FIX_ROOT/CLAUDE.md" ] && [ -f "$TMP_DOCTOR_FIX_ROOT/.cursor/rules/sxmc-cli-ai.md" ] && echo "$doctor_fix_human" | grep -q "Summary:"; then
     pass "doctor --fix repairs selected startup files"
   else
     fail "doctor --fix should create selected startup files"
@@ -965,13 +966,34 @@ else
   skip "inspect diff" "git not installed"
 fi
 
-compact_before="$TMPDIR_TEST/cargo-before-compact.json"
-"$SXMC" inspect cli cargo --compact > "$compact_before"
-compact_diff_err=$("$SXMC" inspect diff cargo --before "$compact_before" 2>&1 || true)
+compact_before="$TMPDIR_TEST/git-before-compact.json"
+"$SXMC" inspect cli git --compact > "$compact_before"
+compact_diff_err=$("$SXMC" inspect diff git --before "$compact_before" 2>&1 || true)
 if echo "$compact_diff_err" | grep -q "Compact profiles cannot be diffed"; then
   pass "inspect diff explains compact-profile limitation"
 else
   fail "inspect diff compact guidance" "${compact_diff_err:0:120}"
+fi
+
+legacy_before="$TMPDIR_TEST/git-before-legacyish.json"
+python3 - <<'PY' "$before_profile" "$legacy_before"
+import json, sys
+src, dest = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    data = json.load(f)
+if data.get("subcommands"):
+    data["subcommands"][0].pop("confidence", None)
+if data.get("options"):
+    data["options"][0].pop("confidence", None)
+data.get("provenance", {}).pop("generated_at", None)
+with open(dest, "w") as f:
+    json.dump(data, f)
+PY
+legacy_diff_out=$("$SXMC" inspect diff git --before "$legacy_before" 2>/dev/null)
+if json_check "$legacy_diff_out" "'summary_changed' in d and 'options_added' in d"; then
+  pass "inspect diff tolerates older or partially-missing profile fields"
+else
+  fail "inspect diff legacy-profile tolerance" "${legacy_diff_out:0:120}"
 fi
 
 # ============================================================================

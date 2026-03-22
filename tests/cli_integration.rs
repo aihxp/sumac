@@ -526,6 +526,7 @@ fn test_doctor_fix_repairs_selected_hosts() {
         .clone();
     let rerun_stdout = String::from_utf8_lossy(&rerun);
     assert!(rerun_stdout.contains("Skipped unchanged"));
+    assert!(rerun_stdout.contains("Summary:"));
 }
 
 #[test]
@@ -668,6 +669,42 @@ fn test_inspect_diff_toon_is_human_oriented() {
         .success()
         .stdout(predicate::str::contains("command: cargo"))
         .stdout(predicate::str::contains("summary_changed:"));
+}
+
+#[test]
+fn test_inspect_diff_tolerates_missing_legacy_fields_in_saved_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut before = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+
+    if let Some(subcommands) = before["subcommands"].as_array_mut() {
+        if let Some(first) = subcommands.first_mut() {
+            first.as_object_mut().unwrap().remove("confidence");
+        }
+    }
+    if let Some(options) = before["options"].as_array_mut() {
+        if let Some(first) = options.first_mut() {
+            first.as_object_mut().unwrap().remove("confidence");
+        }
+    }
+    before["provenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("generated_at");
+
+    let before_path = temp.path().join("before-legacyish.json");
+    fs::write(&before_path, serde_json::to_string_pretty(&before).unwrap()).unwrap();
+
+    sxmc()
+        .args([
+            "inspect",
+            "diff",
+            "cargo",
+            "--before",
+            before_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"summary_changed\""));
 }
 
 #[test]

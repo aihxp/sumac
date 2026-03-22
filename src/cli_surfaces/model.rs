@@ -8,11 +8,15 @@ pub const CLI_AI_HOSTS_LAST_VERIFIED: &str = "2026-03-21";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliSurfaceProfile {
+    #[serde(default)]
     pub profile_schema: String,
+    #[serde(default)]
     pub command: String,
+    #[serde(default)]
     pub summary: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default)]
     pub source: ProfileSource,
     #[serde(default)]
     pub subcommands: Vec<ProfileSubcommand>,
@@ -28,15 +32,17 @@ pub struct CliSurfaceProfile {
     pub auth: Vec<AuthRequirement>,
     #[serde(default)]
     pub environment: Vec<EnvironmentRequirement>,
+    #[serde(default)]
     pub output_behavior: OutputBehavior,
     #[serde(default)]
     pub workflows: Vec<Workflow>,
     #[serde(default)]
     pub confidence_notes: Vec<ConfidenceNote>,
+    #[serde(default)]
     pub provenance: Provenance,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProfileSource {
     pub kind: String,
     pub identifier: String,
@@ -45,71 +51,88 @@ pub struct ProfileSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileSubcommand {
     pub name: String,
+    #[serde(default)]
     pub summary: String,
+    #[serde(default)]
     pub confidence: ConfidenceLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileOption {
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_name: Option<String>,
+    #[serde(default)]
     pub required: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(default)]
     pub confidence: ConfidenceLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilePositional {
     pub name: String,
+    #[serde(default)]
     pub required: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(default)]
     pub confidence: ConfidenceLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileExample {
     pub command: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(default)]
     pub confidence: ConfidenceLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthRequirement {
+    #[serde(default)]
     pub kind: String,
+    #[serde(default)]
     pub summary: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentRequirement {
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(default)]
     pub required: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OutputBehavior {
+    #[serde(default)]
     pub stdout_style: String,
+    #[serde(default)]
     pub stderr_usage: String,
+    #[serde(default)]
     pub machine_friendly: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workflow {
     pub name: String,
+    #[serde(default)]
     pub steps: Vec<String>,
+    #[serde(default)]
     pub confidence: ConfidenceLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfidenceNote {
+    #[serde(default)]
     pub level: ConfidenceLevel,
+    #[serde(default)]
     pub summary: String,
 }
 
@@ -158,21 +181,29 @@ impl CliSurfaceProfile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Provenance {
+    #[serde(default)]
     pub generated_by: String,
+    #[serde(default)]
     pub generator_version: String,
+    #[serde(default)]
     pub source_kind: String,
+    #[serde(default)]
     pub source_identifier: String,
+    #[serde(default)]
     pub profile_schema: String,
+    #[serde(default)]
     pub generation_depth: u32,
+    #[serde(default)]
     pub generated_at: String,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfidenceLevel {
     High,
+    #[default]
     Medium,
     Low,
 }

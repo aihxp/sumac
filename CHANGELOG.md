@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.19] - 2026-03-22
+
+### Changed
+
+- `sxmc inspect diff` now tolerates older or partially-missing saved profile fields instead of failing on strict schema decoding
+- `sxmc doctor --fix` and related write flows now print a summary line with created, updated, skipped, and removed counts
+- the validation suite now covers diffing a legacy-ish saved profile and the new doctor repair summary output
+
 ## [0.2.18] - 2026-03-22
 
 ### Changed
