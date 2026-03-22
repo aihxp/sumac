@@ -377,6 +377,10 @@ pub enum Commands {
         #[arg(long)]
         check: bool,
 
+        /// Limit doctor startup-file checks to specific AI hosts
+        #[arg(long = "only", value_enum, value_delimiter = ',')]
+        only_hosts: Vec<AiClientProfile>,
+
         /// Force the human-readable report even when stdout is not a TTY
         #[arg(long)]
         human: bool,
@@ -498,6 +502,8 @@ pub enum InspectAction {
     },
     CacheInvalidate {
         command: String,
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]

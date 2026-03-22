@@ -719,6 +719,18 @@ else
   pass "doctor --check fails when startup files are missing"
 fi
 
+mkdir -p "$TMP_DOCTOR_ROOT/.cursor/rules" "$TMP_DOCTOR_ROOT/.cursor"
+mkdir -p "$TMP_DOCTOR_ROOT/.sxmc/ai"
+printf '# Claude\n' > "$TMP_DOCTOR_ROOT/CLAUDE.md"
+printf '{"mcpServers":{}}' > "$TMP_DOCTOR_ROOT/.sxmc/ai/claude-code-mcp.json"
+printf '# Cursor\n' > "$TMP_DOCTOR_ROOT/.cursor/rules/sxmc-cli-ai.md"
+printf '{\"mcpServers\":{}}' > "$TMP_DOCTOR_ROOT/.cursor/mcp.json"
+if "$SXMC" doctor --check --only claude-code,cursor --root "$TMP_DOCTOR_ROOT" >/dev/null 2>&1; then
+  pass "doctor --check --only scopes validation to selected hosts"
+else
+  fail "doctor --check --only should pass when selected host files are present"
+fi
+
 # ============================================================================
 # SECTION 14: Self-Dogfooding
 # ============================================================================
@@ -765,7 +777,8 @@ else
   skip "depth expansion tests" "git not installed"
 fi
 
-printf 'git\ncargo\n' > "$TMPDIR_TEST/tools.txt"
+printf 'git\nls\n' > "$TMPDIR_TEST/tools.txt"
+printf 'cargo\n# comment\n   \n git \n' > "$TMPDIR_TEST/tools-with-comments.txt"
 
 batch_out=$("$SXMC" inspect batch git cargo this-command-should-not-exist-xyz --parallel 4 --progress 2>/dev/null)
 if json_check "$batch_out" "d.get('count', 0) == 3"; then
@@ -793,6 +806,13 @@ else
   fail "inspect batch --from-file" "${batch_from_file:0:100}"
 fi
 
+batch_from_file_comments=$("$SXMC" inspect batch --from-file "$TMPDIR_TEST/tools-with-comments.txt" --parallel 2 2>/dev/null)
+if json_check "$batch_from_file_comments" "d.get('count', 0) == 2 and d.get('failed_count', 0) == 0"; then
+  pass "inspect batch --from-file ignores blank lines and # comments"
+else
+  fail "inspect batch --from-file comments" "${batch_from_file_comments:0:100}"
+fi
+
 cache_stats=$("$SXMC" inspect cache-stats 2>/dev/null)
 if json_check "$cache_stats" "'entry_count' in d and 'total_bytes' in d"; then
   pass "inspect cache-stats returns cache metrics"
@@ -807,8 +827,15 @@ else
   fail "inspect cache-invalidate" "${cache_invalidate:0:100}"
 fi
 
+cache_dry_run=$("$SXMC" inspect cache-invalidate 'c*' --dry-run 2>/dev/null)
+if json_check "$cache_dry_run" "d.get('dry_run') is True and d.get('match_mode') == 'glob' and d.get('removed_entries') == 0"; then
+  pass "inspect cache-invalidate --dry-run previews glob matches"
+else
+  fail "inspect cache-invalidate --dry-run" "${cache_dry_run:0:120}"
+fi
+
 cache_pattern=$("$SXMC" inspect cache-invalidate 'c*' 2>/dev/null)
-if json_check "$cache_pattern" "'removed_entries' in d and d.get('match_mode') == 'pattern'"; then
+if json_check "$cache_pattern" "'removed_entries' in d and d.get('match_mode') == 'glob'"; then
   pass "inspect cache-invalidate supports glob patterns"
 else
   fail "inspect cache-invalidate pattern mode" "${cache_pattern:0:100}"
@@ -826,6 +853,13 @@ if echo "$batch_toon" | grep -q "profiles:" && echo "$batch_toon" | grep -q "par
   pass "inspect batch --format toon is summary-oriented"
 else
   fail "inspect batch --format toon should be summary-oriented" "${batch_toon:0:100}"
+fi
+
+batch_toon_fail=$("$SXMC" inspect batch git this-command-should-not-exist-xyz --format toon 2>/dev/null)
+if echo "$batch_toon_fail" | grep -q "failures:" && echo "$batch_toon_fail" | grep -q "this-command-should-not-exist-xyz"; then
+  pass "inspect batch --format toon includes failure details"
+else
+  fail "inspect batch --format toon failure details" "${batch_toon_fail:0:140}"
 fi
 
 # ============================================================================

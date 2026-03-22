@@ -92,6 +92,7 @@ pub fn inspect_cli_batch(
 ) -> Value {
     let requested_parallelism = parallelism.max(1);
     let worker_count = requested_parallelism.min(command_specs.len().max(1));
+    let progress = should_enable_batch_progress(command_specs.len(), progress);
     maybe_print_progress_mode(
         &format!(
             "Batch inspecting {} command(s) with parallelism {}",
@@ -195,7 +196,7 @@ pub fn clear_profile_cache_value() -> Result<Value> {
     }))
 }
 
-pub fn invalidate_profile_cache_value(command_spec: &str) -> Result<Value> {
+pub fn invalidate_profile_cache_value(command_spec: &str, dry_run: bool) -> Result<Value> {
     let cache = Cache::new(CLI_PROFILE_CACHE_TTL_SECS)?;
     let before = cache.stats()?;
     let trimmed = command_spec.trim();
@@ -221,6 +222,7 @@ pub fn invalidate_profile_cache_value(command_spec: &str) -> Result<Value> {
 
     let records = cache.records()?;
     let mut removed = 0usize;
+    let mut matched_commands = Vec::new();
     for record in records {
         let Ok(profile) = serde_json::from_str::<CliSurfaceProfile>(&record.data) else {
             continue;
@@ -230,22 +232,29 @@ pub fn invalidate_profile_cache_value(command_spec: &str) -> Result<Value> {
             trimmed,
             parts.as_deref(),
             pattern.as_ref(),
-        ) && std::fs::remove_file(&record.path).is_ok()
-        {
-            removed += 1;
+        ) {
+            matched_commands.push(render_cache_match_label(&profile));
+            if !dry_run && std::fs::remove_file(&record.path).is_ok() {
+                removed += 1;
+            }
         }
     }
+    matched_commands.sort();
+    matched_commands.dedup();
     let stats = cache.stats()?;
     Ok(json!({
-        "cleared": removed > 0,
+        "cleared": !dry_run && removed > 0,
+        "dry_run": dry_run,
         "removed_entries": removed,
+        "matched_entries": matched_commands.len(),
+        "matched_commands": matched_commands,
         "command": command_spec,
-        "match_mode": if glob_like { "pattern" } else { "exact" },
+        "match_mode": if glob_like { "glob" } else { "exact" },
         "before_entries": before.entry_count,
         "before_bytes": before.total_bytes,
         "path": stats.path.display().to_string(),
-        "remaining_entries": stats.entry_count,
-        "remaining_bytes": stats.total_bytes,
+        "remaining_entries": if dry_run { before.entry_count } else { stats.entry_count },
+        "remaining_bytes": if dry_run { before.total_bytes } else { stats.total_bytes },
     }))
 }
 
@@ -2277,8 +2286,20 @@ fn maybe_print_progress_mode(message: &str, force: bool) {
     }
 }
 
+fn should_enable_batch_progress(command_count: usize, explicit_progress: bool) -> bool {
+    explicit_progress || command_count >= 10
+}
+
 fn contains_glob_syntax(value: &str) -> bool {
     value.contains('*') || value.contains('?') || value.contains('[')
+}
+
+fn render_cache_match_label(profile: &CliSurfaceProfile) -> String {
+    if profile.command == profile.source.identifier {
+        profile.command.clone()
+    } else {
+        format!("{} {}", profile.source.identifier, profile.command)
+    }
 }
 
 fn should_invalidate_profile_cache_entry(
@@ -2698,5 +2719,12 @@ language. For details, use `man bc`.
 "#;
         let profile = parse_help_text("bc", "bc", help);
         assert!(profile.summary.starts_with("bc is a command-line"));
+    }
+
+    #[test]
+    fn batch_progress_auto_enables_for_large_batches() {
+        assert!(!super::should_enable_batch_progress(3, false));
+        assert!(super::should_enable_batch_progress(10, false));
+        assert!(super::should_enable_batch_progress(1, true));
     }
 }

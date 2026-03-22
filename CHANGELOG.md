@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.16] - 2026-03-22
+
+### Added
+
+- `sxmc doctor --check --only <hosts>` to gate only the AI hosts a repo actually uses
+- `sxmc inspect cache-invalidate <pattern> --dry-run` to preview exact or glob cache matches before removal
+
+### Changed
+
+- `sxmc inspect batch` now auto-enables stderr progress notes for larger batch runs on a real terminal
+- `sxmc inspect batch --from-file` now explicitly documents comment lines, blank lines, trailing whitespace, and preserved inline arguments
+- batch `--format toon` now has explicit validation coverage for failure details so TOON output stays self-contained
+
 ## [0.2.15] - 2026-03-22
 
 ### Added

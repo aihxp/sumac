@@ -971,42 +971,104 @@ fn resolve_generation_root(root: Option<PathBuf>) -> Result<PathBuf> {
     }
 }
 
-fn doctor_value(root: &std::path::Path) -> Result<Value> {
+fn doctor_target_key_for_host(client: AiClientProfile, config: bool) -> &'static str {
+    match (client, config) {
+        (AiClientProfile::ClaudeCode, false) => "claude_code",
+        (AiClientProfile::ClaudeCode, true) => "claude_code_mcp",
+        (AiClientProfile::Cursor, false) => "cursor_rules",
+        (AiClientProfile::Cursor, true) => "cursor_mcp",
+        (AiClientProfile::GeminiCli, false) => "gemini_cli",
+        (AiClientProfile::GeminiCli, true) => "gemini_mcp",
+        (AiClientProfile::GithubCopilot, false) => "github_copilot",
+        (AiClientProfile::GithubCopilot, true) => "github_copilot_config",
+        (AiClientProfile::ContinueDev, false) => "continue_dev",
+        (AiClientProfile::ContinueDev, true) => "continue_dev_config",
+        (AiClientProfile::OpenCode, false) => "open_code_agent_doc",
+        (AiClientProfile::OpenCode, true) => "open_code",
+        (AiClientProfile::JetbrainsAiAssistant, false) => "jetbrains_ai_assistant",
+        (AiClientProfile::JetbrainsAiAssistant, true) => "jetbrains_ai_assistant_config",
+        (AiClientProfile::Junie, false) => "junie",
+        (AiClientProfile::Junie, true) => "junie_config",
+        (AiClientProfile::Windsurf, false) => "windsurf",
+        (AiClientProfile::Windsurf, true) => "windsurf_config",
+        (AiClientProfile::OpenaiCodex, false) => "openai_codex_agent_doc",
+        (AiClientProfile::OpenaiCodex, true) => "openai_codex_mcp",
+        (AiClientProfile::GenericStdioMcp, false) => "generic_stdio_agent_doc",
+        (AiClientProfile::GenericStdioMcp, true) => "generic_stdio_mcp",
+        (AiClientProfile::GenericHttpMcp, false) => "generic_http_agent_doc",
+        (AiClientProfile::GenericHttpMcp, true) => "generic_http_mcp",
+    }
+}
+
+fn doctor_startup_targets(
+    root: &std::path::Path,
+    only_hosts: &[AiClientProfile],
+) -> Vec<(String, PathBuf)> {
+    if only_hosts.is_empty() {
+        return vec![
+            ("portable_agent_doc".into(), root.join("AGENTS.md")),
+            ("claude_code".into(), root.join("CLAUDE.md")),
+            ("gemini_cli".into(), root.join("GEMINI.md")),
+            (
+                "cursor_rules".into(),
+                root.join(".cursor").join("rules").join("sxmc-cli-ai.md"),
+            ),
+            (
+                "github_copilot".into(),
+                root.join(".github").join("copilot-instructions.md"),
+            ),
+            (
+                "continue_dev".into(),
+                root.join(".continue").join("rules").join("sxmc-cli-ai.md"),
+            ),
+            ("open_code".into(), root.join("opencode.json")),
+            (
+                "jetbrains_ai_assistant".into(),
+                root.join(".aiassistant")
+                    .join("rules")
+                    .join("sxmc-cli-ai.md"),
+            ),
+            ("junie".into(), root.join(".junie").join("guidelines.md")),
+            (
+                "windsurf".into(),
+                root.join(".windsurf").join("rules").join("sxmc-cli-ai.md"),
+            ),
+            ("openai_codex_agent_doc".into(), root.join("AGENTS.md")),
+            (
+                "openai_codex_mcp".into(),
+                root.join(".codex").join("mcp.toml"),
+            ),
+            ("cursor_mcp".into(), root.join(".cursor").join("mcp.json")),
+            (
+                "gemini_mcp".into(),
+                root.join(".gemini").join("settings.json"),
+            ),
+        ];
+    }
+
+    let mut targets = Vec::new();
+    for host in only_hosts {
+        let spec = cli_surfaces::host_profile_spec(*host);
+        if let Some(path) = spec.native_doc_target {
+            targets.push((
+                doctor_target_key_for_host(*host, false).into(),
+                root.join(path),
+            ));
+        }
+        if let Some(path) = spec.native_config_target {
+            targets.push((
+                doctor_target_key_for_host(*host, true).into(),
+                root.join(path),
+            ));
+        }
+    }
+    targets
+}
+
+fn doctor_value(root: &std::path::Path, only_hosts: &[AiClientProfile]) -> Result<Value> {
     let bake_store = BakeStore::load()?;
     let cache_stats = sxmc::cache::Cache::new(60 * 60 * 24 * 14)?.stats()?;
-    let startup_targets = [
-        ("portable_agent_doc", root.join("AGENTS.md")),
-        ("claude_code", root.join("CLAUDE.md")),
-        ("gemini_cli", root.join("GEMINI.md")),
-        (
-            "cursor_rules",
-            root.join(".cursor").join("rules").join("sxmc-cli-ai.md"),
-        ),
-        (
-            "github_copilot",
-            root.join(".github").join("copilot-instructions.md"),
-        ),
-        (
-            "continue_dev",
-            root.join(".continue").join("rules").join("sxmc-cli-ai.md"),
-        ),
-        ("open_code", root.join("opencode.json")),
-        (
-            "jetbrains_ai_assistant",
-            root.join(".aiassistant")
-                .join("rules")
-                .join("sxmc-cli-ai.md"),
-        ),
-        ("junie", root.join(".junie").join("guidelines.md")),
-        (
-            "windsurf",
-            root.join(".windsurf").join("rules").join("sxmc-cli-ai.md"),
-        ),
-        ("openai_codex_agent_doc", root.join("AGENTS.md")),
-        ("openai_codex_mcp", root.join(".codex").join("mcp.toml")),
-        ("cursor_mcp", root.join(".cursor").join("mcp.json")),
-        ("gemini_mcp", root.join(".gemini").join("settings.json")),
-    ];
+    let startup_targets = doctor_startup_targets(root, only_hosts);
 
     let startup_files = startup_targets
         .into_iter()
@@ -1023,6 +1085,10 @@ fn doctor_value(root: &std::path::Path) -> Result<Value> {
 
     Ok(json!({
         "root": root.display().to_string(),
+        "checked_hosts": only_hosts
+            .iter()
+            .map(|host| cli_surfaces::host_profile_spec(*host).sidecar_scope)
+            .collect::<Vec<_>>(),
         "baked_mcp_servers": bake_store.list().len(),
         "portable_profile_dir": {
             "path": root.join(".sxmc").join("ai").join("profiles").display().to_string(),
@@ -1109,8 +1175,21 @@ fn print_doctor_report(value: &Value) {
     let cache_entries = value["cache"]["entry_count"].as_u64().unwrap_or(0);
     let cache_total_bytes = value["cache"]["total_bytes"].as_u64().unwrap_or(0);
     let cache_ttl_hours = value["cache"]["default_ttl_secs"].as_u64().unwrap_or(0) / 3600;
+    let checked_hosts = value["checked_hosts"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
 
     println!("Root: {}", value["root"].as_str().unwrap_or("<unknown>"));
+    if !checked_hosts.is_empty() {
+        println!("Checked hosts: {}", checked_hosts);
+    }
     println!(
         "Baked MCP servers: {}",
         value["baked_mcp_servers"].as_u64().unwrap_or(0)
@@ -2296,6 +2375,7 @@ async fn main() -> Result<()> {
                             .collect::<Vec<_>>();
                         let compact_value = json!({
                             "count": value["count"],
+                            "parallelism": value["parallelism"],
                             "success_count": value["success_count"],
                             "failed_count": value["failed_count"],
                             "profiles": compact_profiles,
@@ -2352,19 +2432,29 @@ async fn main() -> Result<()> {
             }
             InspectAction::CacheInvalidate {
                 command,
+                dry_run,
                 pretty,
                 format,
             } => {
-                let value = cli_surfaces::invalidate_profile_cache_value(&command)?;
+                let value = cli_surfaces::invalidate_profile_cache_value(&command, dry_run)?;
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
-                    println!(
-                        "Invalidated {} cached profile entries for `{}` ({} entries remain)",
-                        value["removed_entries"].as_u64().unwrap_or(0),
-                        value["command"].as_str().unwrap_or("<unknown>"),
-                        value["remaining_entries"].as_u64().unwrap_or(0)
-                    );
+                    if value["dry_run"].as_bool().unwrap_or(false) {
+                        println!(
+                            "Would invalidate {} cached profile entries for `{}` ({} entries would remain)",
+                            value["matched_entries"].as_u64().unwrap_or(0),
+                            value["command"].as_str().unwrap_or("<unknown>"),
+                            value["remaining_entries"].as_u64().unwrap_or(0)
+                        );
+                    } else {
+                        println!(
+                            "Invalidated {} cached profile entries for `{}` ({} entries remain)",
+                            value["removed_entries"].as_u64().unwrap_or(0),
+                            value["command"].as_str().unwrap_or("<unknown>"),
+                            value["remaining_entries"].as_u64().unwrap_or(0)
+                        );
+                    }
                 }
             }
         },
@@ -2645,12 +2735,13 @@ async fn main() -> Result<()> {
         Commands::Doctor {
             root,
             check,
+            only_hosts,
             human,
             pretty,
             format,
         } => {
             let root = resolve_generation_root(root)?;
-            let value = doctor_value(&root)?;
+            let value = doctor_value(&root, &only_hosts)?;
             if should_render_doctor_human(human, format, pretty, std::io::stdout().is_terminal()) {
                 print_doctor_report(&value);
             } else if let Some(format) = output::prefer_structured_output(format, pretty) {

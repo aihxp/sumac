@@ -294,7 +294,7 @@ fn test_inspect_batch_returns_profiles_and_failures() {
 fn test_inspect_batch_from_file_loads_commands() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("tools.txt");
-    fs::write(&path, "cargo\n# comment\n git \n").unwrap();
+    fs::write(&path, "cargo\n# comment\n   \n git \n  # spaced comment\n").unwrap();
 
     let value = command_json(&[
         "inspect",
@@ -319,6 +319,25 @@ fn test_inspect_batch_toon_is_summary_oriented() {
 }
 
 #[test]
+fn test_inspect_batch_toon_includes_failure_details() {
+    sxmc()
+        .args([
+            "inspect",
+            "batch",
+            "cargo",
+            "this-command-should-not-exist-xyz",
+            "--format",
+            "toon",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("failures:"))
+        .stdout(predicate::str::contains(
+            "this-command-should-not-exist-xyz",
+        ));
+}
+
+#[test]
 fn test_inspect_cache_invalidate_and_clear() {
     let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
     let _ = command_json(&["inspect", "cli", "git", "--compact"]);
@@ -334,8 +353,15 @@ fn test_inspect_cache_invalidate_and_clear() {
     assert!(invalidate["remaining_entries"].as_u64().unwrap_or(0) >= 1);
 
     let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
+    let dry_run = command_json(&["inspect", "cache-invalidate", "c*", "--dry-run"]);
+    assert_eq!(dry_run["dry_run"], Value::Bool(true));
+    assert_eq!(dry_run["match_mode"], "glob");
+    assert!(dry_run["matched_entries"].as_u64().unwrap_or(0) >= 1);
+    assert_eq!(dry_run["removed_entries"], Value::from(0));
+
+    let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
     let wildcard = command_json(&["inspect", "cache-invalidate", "g*"]);
-    assert_eq!(wildcard["match_mode"], "pattern");
+    assert_eq!(wildcard["match_mode"], "glob");
     assert!(wildcard["removed_entries"].as_u64().unwrap_or(0) >= 1);
 
     let cleared = command_json(&["inspect", "cache-clear"]);
@@ -350,6 +376,61 @@ fn test_doctor_check_exits_non_zero_when_startup_files_missing() {
         .args(["doctor", "--check", "--root", temp.path().to_str().unwrap()])
         .assert()
         .failure();
+}
+
+#[test]
+fn test_doctor_check_only_hosts_limits_scope() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join(".cursor").join("rules")).unwrap();
+    fs::create_dir_all(temp.path().join(".sxmc").join("ai")).unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    fs::write(
+        temp.path().join(".sxmc").join("ai").join("claude-code-mcp.json"),
+        "{\"mcpServers\":{}}\n",
+    )
+    .unwrap();
+    fs::write(
+        temp.path()
+            .join(".cursor")
+            .join("rules")
+            .join("sxmc-cli-ai.md"),
+        "# Cursor\n",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join(".cursor").join("mcp.json"),
+        "{\"mcpServers\":{}}\n",
+    )
+    .unwrap();
+
+    sxmc()
+        .args([
+            "doctor",
+            "--check",
+            "--only",
+            "claude-code,cursor",
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let value = command_json(&[
+        "doctor",
+        "--root",
+        temp.path().to_str().unwrap(),
+        "--only",
+        "claude-code,cursor",
+    ]);
+    assert_eq!(
+        value["checked_hosts"],
+        Value::from(vec!["claude-code", "cursor"])
+    );
+    let startup_files = value["startup_files"].as_object().unwrap();
+    assert!(startup_files.contains_key("claude_code"));
+    assert!(startup_files.contains_key("cursor_rules"));
+    assert!(startup_files.contains_key("cursor_mcp"));
+    assert!(!startup_files.contains_key("github_copilot"));
 }
 
 #[test]

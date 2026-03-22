@@ -71,13 +71,16 @@ Turn a CLI into startup-facing AI artifacts:
 ```bash
 sxmc doctor
 sxmc doctor --human
+sxmc doctor --check --only claude-code,cursor
 sxmc inspect cli gh --format toon
 sxmc inspect cli curl --compact --format json-pretty
 sxmc inspect cli cargo --depth 1 --format json-pretty
 sxmc inspect cli gh --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
+sxmc inspect batch --from-file tools.txt --compact --format json-pretty
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
+sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
 sxmc inspect cache-clear --format json-pretty
 sxmc init ai --from-cli gh --coverage full --mode preview
 sxmc init ai --from-cli gh --coverage full --host claude-code,cursor,github-copilot --mode apply
@@ -98,6 +101,11 @@ sxmc scan --paths <dir>
 `inspect cli` executes a real command via subprocess spawn. It can inspect
 installed binaries or explicit executable paths, but it does not see shell-only
 aliases or functions from your interactive shell.
+
+`inspect batch --from-file` reads one command spec per line. Blank lines and
+lines beginning with `#` are ignored, trailing whitespace is trimmed, and inline
+arguments are preserved, so lines like `git status` or `"cargo" build` work as
+full command specs.
 
 Recent inspection hardening:
 
