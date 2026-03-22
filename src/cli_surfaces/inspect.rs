@@ -201,7 +201,16 @@ fn merge_man_page_profile(
     man_profile: &CliSurfaceProfile,
     command_name: &str,
 ) {
-    if should_prefer_man_summary(&profile.summary, &man_profile.summary, command_name) {
+    let force_man_summary = !man_profile.summary.trim().is_empty()
+        && (is_version_banner(&profile.summary)
+            || profile
+                .summary
+                .to_ascii_lowercase()
+                .starts_with("please report bugs"));
+
+    if force_man_summary
+        || should_prefer_man_summary(&profile.summary, &man_profile.summary, command_name)
+    {
         profile.summary = man_profile.summary.clone();
     }
 
@@ -947,17 +956,10 @@ fn is_command_section_heading(line: &str, man_page: bool) -> bool {
         return false;
     }
 
-    matches!(
-        normalized.as_str(),
-        "commands"
-            | "subcommands"
-            | "available commands"
-            | "available subcommands"
-            | "core commands"
-            | "additional commands"
-            | "all commands"
-            | "essential commands"
-    )
+    normalized == "commands"
+        || normalized == "subcommands"
+        || normalized.ends_with(" commands")
+        || normalized.ends_with(" subcommands")
 }
 
 fn looks_like_usage_line(line: &str, command_name: &str) -> bool {
@@ -1038,8 +1040,10 @@ fn is_version_banner(line: &str) -> bool {
     let lowered = line.to_ascii_lowercase();
     let versiony_number = Regex::new(r"\b\d+\.\d+(?:\.\d+)?\b").unwrap();
     let trailing_integer_version = Regex::new(r"\b\d{2,}\b$").unwrap();
+    let leading_version_banner = Regex::new(r"^\S+\s+\d+(?:\.\d+)+(?:\s+of\b.*)?(?:,|$)").unwrap();
     (lowered.contains("version")
         || lowered.contains("(rev ")
+        || leading_version_banner.is_match(line)
         || trailing_integer_version.is_match(line)
         || (versiony_number.is_match(line) && line.split_whitespace().count() <= 8))
         && !lowered.contains("command")
@@ -1813,6 +1817,35 @@ EXAMPLES
     }
 
     #[test]
+    fn parse_gh_multi_section_command_headings() {
+        let help = r#"Work seamlessly with GitHub from the command line.
+
+GITHUB ACTIONS COMMANDS
+  cache:         Manage GitHub Actions caches
+  run:           View details about workflow runs
+
+ALIAS COMMANDS
+  co:            Alias for "pr checkout"
+
+ADDITIONAL COMMANDS
+  api:           Make an authenticated GitHub API request
+  config:        Manage configuration for gh
+"#;
+        let profile = parse_help_text("gh", "gh", help);
+        assert!(profile
+            .subcommands
+            .iter()
+            .any(|entry| entry.name == "cache"));
+        assert!(profile.subcommands.iter().any(|entry| entry.name == "run"));
+        assert!(profile.subcommands.iter().any(|entry| entry.name == "co"));
+        assert!(profile.subcommands.iter().any(|entry| entry.name == "api"));
+        assert!(profile
+            .subcommands
+            .iter()
+            .any(|entry| entry.name == "config"));
+    }
+
+    #[test]
     fn parse_git_style_common_commands() {
         let help = r#"usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]
            [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
@@ -2036,6 +2069,25 @@ EXAMPLES
             profile.summary,
             "arbitrary-precision decimal reverse-Polish notation calculator"
         );
+    }
+
+    #[test]
+    fn parse_unzip_man_name_prefers_description_over_version_banner() {
+        let help = r#"NAME
+       unzip - list, test and extract compressed files in a ZIP archive
+"#;
+        let profile = parse_help_text("unzip", "unzip", help);
+        assert_eq!(
+            profile.summary,
+            "list, test and extract compressed files in a ZIP archive"
+        );
+    }
+
+    #[test]
+    fn unzip_style_version_banner_is_treated_as_banner() {
+        assert!(super::is_version_banner(
+            "UnZip 6.00 of 20 April 2009, by Info-ZIP, with modifications by Apple Inc."
+        ));
     }
 
     #[test]
