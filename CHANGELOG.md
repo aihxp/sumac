@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.21] - 2026-03-22
+
+### Changed
+
+- `sxmc inspect diff --watch` now flushes each rendered frame immediately so
+  piped and other non-interactive consumers can observe updates without waiting
+  for process exit
+- validation coverage now explicitly includes `inspect diff --watch` with
+  NDJSON output and piped stdout behavior
+
 ## [0.2.20] - 2026-03-22
+
+### Changed
 
 ### Added
 

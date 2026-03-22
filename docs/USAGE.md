@@ -215,6 +215,13 @@ Notes:
   has not changed since the given Unix-seconds or RFC3339 timestamp.
 - `sxmc inspect diff <tool> --before before.json` compares a live CLI against a
   previously saved profile and reports added/removed options and subcommands.
+- `sxmc inspect diff --before old.json --after new.json` compares two saved
+  profiles without needing the live tool on `PATH`.
+- `sxmc inspect diff --watch 3` re-runs the diff every three seconds, and each
+  frame is flushed immediately so piped/non-interactive consumers can observe
+  updates without waiting for process exit.
+- `sxmc inspect diff --watch 3 --format ndjson` emits one JSON object per
+  change frame, which is useful for scripted monitoring.
 - `sxmc inspect diff` expects a full saved profile, not a compact one. If you
   want to diff later, save with `sxmc inspect cli <tool> --format json-pretty`
   and omit `--compact`.

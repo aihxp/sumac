@@ -910,6 +910,90 @@ fn test_inspect_diff_exit_code_succeeds_when_identical() {
 }
 
 #[test]
+#[cfg(not(windows))]
+fn test_inspect_diff_watch_flushes_first_frame_for_piped_stdout() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = command_stdout(&["inspect", "cli", "cargo", "--pretty"]);
+    let before_path = temp.path().join("before.json");
+    fs::write(&before_path, before).unwrap();
+
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "inspect",
+            "diff",
+            "cargo",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--watch",
+            "3",
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let _ = reader.read_line(&mut line);
+        let _ = sender.send(line);
+    });
+
+    let first_line = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("timed out waiting for watch output");
+    child.kill().ok();
+    let _ = child.wait();
+
+    assert!(first_line.contains("\"summary_changed\""));
+}
+
+#[test]
+#[cfg(not(windows))]
+fn test_inspect_diff_watch_ndjson_flushes_first_frame_for_piped_stdout() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = command_stdout(&["inspect", "cli", "cargo", "--pretty"]);
+    let before_path = temp.path().join("before.json");
+    fs::write(&before_path, before).unwrap();
+
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "inspect",
+            "diff",
+            "cargo",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--watch",
+            "3",
+            "--format",
+            "ndjson",
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let _ = reader.read_line(&mut line);
+        let _ = sender.send(line);
+    });
+
+    let first_line = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("timed out waiting for watch ndjson output");
+    child.kill().ok();
+    let _ = child.wait();
+
+    assert!(first_line.contains("\"summary_changed\""));
+    let parsed: Value = serde_json::from_str(first_line.trim()).unwrap();
+    assert!(parsed.get("command").is_some());
+}
+
+#[test]
 fn test_inspect_cli_compact_output_reduces_profile_shape() {
     let value = command_json(&["inspect", "cli", "cargo", "--compact"]);
     assert_eq!(value["command"], "cargo");

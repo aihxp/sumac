@@ -1074,6 +1074,39 @@ else
   fail "inspect diff migration note" "${legacy_version_diff:0:160}"
 fi
 
+watch_ndjson=$(
+python3 - <<'PY' "$SXMC" "$before_profile"
+import subprocess, sys, time
+sxmc, before = sys.argv[1], sys.argv[2]
+p = subprocess.Popen(
+    [sxmc, "inspect", "diff", "git", "--before", before, "--watch", "3", "--format", "ndjson"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+)
+try:
+    deadline = time.time() + 2.0
+    line = ""
+    while time.time() < deadline and not line:
+        line = p.stdout.readline()
+        if not line:
+            time.sleep(0.05)
+    print(line.strip())
+finally:
+    p.terminate()
+    try:
+        p.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+PY
+)
+if json_check "$watch_ndjson" "d.get('command') == 'git' and 'summary_changed' in d"; then
+  pass "inspect diff --watch flushes ndjson frames for piped output"
+else
+  fail "inspect diff --watch ndjson flush" "${watch_ndjson:0:160}"
+fi
+
 # ============================================================================
 # SECTION 16: Error Message Quality
 # ============================================================================

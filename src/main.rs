@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::BufRead;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -2872,6 +2873,7 @@ async fn main() -> Result<()> {
                         if last_rendered.as_ref() != Some(&rendered) {
                             println!("{rendered}");
                             println!();
+                            std::io::stdout().flush()?;
                             last_rendered = Some(rendered);
                         }
                         std::thread::sleep(interval);
