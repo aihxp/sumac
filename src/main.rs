@@ -1259,11 +1259,13 @@ fn print_doctor_report(value: &Value) {
 
 fn print_batch_inspect_report(value: &Value, compact: bool) {
     let count = value["count"].as_u64().unwrap_or(0);
+    let inspected_count = value["inspected_count"].as_u64().unwrap_or(count);
     let success_count = value["success_count"].as_u64().unwrap_or(0);
     let failed_count = value["failed_count"].as_u64().unwrap_or(0);
+    let skipped_count = value["skipped_count"].as_u64().unwrap_or(0);
     println!(
-        "Inspected {} command(s): {} succeeded, {} failed",
-        count, success_count, failed_count
+        "Inspected {} of {} command(s): {} succeeded, {} failed, {} skipped",
+        inspected_count, count, success_count, failed_count, skipped_count
     );
 
     if let Some(profiles) = value["profiles"].as_array() {
@@ -1307,11 +1309,31 @@ fn print_batch_inspect_report(value: &Value, compact: bool) {
             }
         }
     }
+
+    if let Some(skipped) = value["skipped"].as_array() {
+        if !skipped.is_empty() {
+            println!();
+            println!("Skipped:");
+            for entry in skipped {
+                println!(
+                    "- {}: {}",
+                    entry["command"].as_str().unwrap_or("<unknown>"),
+                    entry["reason"].as_str().unwrap_or("skipped")
+                );
+            }
+        }
+    }
 }
 
 fn format_batch_toon(value: &Value, compact: bool) -> String {
     let mut lines = Vec::new();
     lines.push(format!("count: {}", value["count"].as_u64().unwrap_or(0)));
+    lines.push(format!(
+        "inspected_count: {}",
+        value["inspected_count"]
+            .as_u64()
+            .unwrap_or_else(|| value["count"].as_u64().unwrap_or(0))
+    ));
     lines.push(format!(
         "parallelism: {}",
         value["parallelism"].as_u64().unwrap_or(0)
@@ -1323,6 +1345,10 @@ fn format_batch_toon(value: &Value, compact: bool) -> String {
     lines.push(format!(
         "failed_count: {}",
         value["failed_count"].as_u64().unwrap_or(0)
+    ));
+    lines.push(format!(
+        "skipped_count: {}",
+        value["skipped_count"].as_u64().unwrap_or(0)
     ));
     lines.push(String::new());
     lines.push("profiles:".into());
@@ -1370,6 +1396,20 @@ fn format_batch_toon(value: &Value, compact: bool) -> String {
         }
     }
 
+    if let Some(skipped) = value["skipped"].as_array() {
+        if !skipped.is_empty() {
+            lines.push(String::new());
+            lines.push("skipped:".into());
+            for entry in skipped {
+                lines.push(format!(
+                    "- {}: {}",
+                    entry["command"].as_str().unwrap_or("<unknown>"),
+                    entry["reason"].as_str().unwrap_or("skipped")
+                ));
+            }
+        }
+    }
+
     lines.join("\n")
 }
 
@@ -1381,6 +1421,16 @@ fn print_cache_stats_report(value: &Value) {
     println!(
         "Default TTL: {} seconds",
         value["default_ttl_secs"].as_u64().unwrap_or(0)
+    );
+}
+
+fn print_cache_warm_report(value: &Value) {
+    println!(
+        "Warmed {} CLI profile(s) with parallelism {} ({} failures, {} skipped)",
+        value["warmed_count"].as_u64().unwrap_or(0),
+        value["parallelism"].as_u64().unwrap_or(0),
+        value["failed_count"].as_u64().unwrap_or(0),
+        value["skipped_count"].as_u64().unwrap_or(0)
     );
 }
 
@@ -1629,6 +1679,39 @@ fn ensure_profile_ready_for_agent_docs(
         "Refusing to generate startup-facing agent docs from a low-confidence CLI profile.\n{}\nUse --allow-low-confidence to force generation or inspect with --depth 1 for a richer profile.",
         reasons
     )))
+}
+
+fn repair_doctor_startup_files(
+    root: &std::path::Path,
+    only_hosts: &[AiClientProfile],
+    from_cli: &str,
+    depth: usize,
+    skills_path: &std::path::Path,
+    allow_low_confidence: bool,
+) -> Result<Vec<cli_surfaces::WriteOutcome>> {
+    if only_hosts.is_empty() {
+        return Err(sxmc::error::SxmcError::Other(
+            "`sxmc doctor --fix` requires at least one `--only <host>` selection".into(),
+        ));
+    }
+
+    let profile = cli_surfaces::inspect_cli_with_depth(from_cli, true, depth)?;
+    ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
+    let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
+        &profile,
+        AiCoverage::Full,
+        None,
+        only_hosts,
+        root,
+        skills_path,
+        ArtifactMode::Apply,
+    )?;
+    cli_surfaces::materialize_artifacts_with_apply_selection(
+        &artifacts,
+        ArtifactMode::Apply,
+        root,
+        &selected_hosts,
+    )
 }
 
 fn require_cli_ai_client(
@@ -2333,6 +2416,7 @@ async fn main() -> Result<()> {
                 commands,
                 from_file,
                 depth,
+                since,
                 parallel,
                 progress,
                 compact,
@@ -2340,20 +2424,29 @@ async fn main() -> Result<()> {
                 format,
                 allow_self,
             } => {
-                let command_specs =
-                    cli_surfaces::load_batch_command_specs(&commands, from_file.as_deref())?;
-                if command_specs.is_empty() {
+                let mut requests =
+                    cli_surfaces::load_batch_requests(&commands, from_file.as_deref())?;
+                for request in &mut requests {
+                    if request.depth == 0 {
+                        request.depth = depth;
+                    }
+                }
+                if requests.is_empty() {
                     return Err(sxmc::error::SxmcError::Other(
                         "inspect batch requires at least one command spec or --from-file input"
                             .into(),
                     ));
                 }
+                let since_filter = since
+                    .as_deref()
+                    .map(cli_surfaces::parse_batch_since_filter)
+                    .transpose()?;
                 let value = cli_surfaces::inspect_cli_batch(
-                    &command_specs,
+                    &requests,
                     allow_self,
-                    depth,
                     parallel,
                     progress,
+                    since_filter.as_ref(),
                 );
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
                     if matches!(format, output::StructuredOutputFormat::Toon) {
@@ -2378,8 +2471,10 @@ async fn main() -> Result<()> {
                             "parallelism": value["parallelism"],
                             "success_count": value["success_count"],
                             "failed_count": value["failed_count"],
+                            "skipped_count": value["skipped_count"],
                             "profiles": compact_profiles,
                             "failures": value["failures"],
+                            "skipped": value["skipped"],
                         });
                         output::format_structured_value(&compact_value, format)
                     } else {
@@ -2388,6 +2483,25 @@ async fn main() -> Result<()> {
                     println!("{rendered}");
                 } else {
                     print_batch_inspect_report(&value, compact);
+                }
+            }
+            InspectAction::Diff {
+                command,
+                before,
+                depth,
+                pretty,
+                format,
+                allow_self,
+            } => {
+                let before_profile = cli_surfaces::load_profile(&before)?;
+                let after_profile =
+                    cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
+                let value = cli_surfaces::diff_profile_value(&before_profile, &after_profile);
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    let format = output::resolve_structured_format(format, pretty);
+                    println!("{}", output::format_structured_value(&value, format));
                 }
             }
             InspectAction::Profile {
@@ -2455,6 +2569,47 @@ async fn main() -> Result<()> {
                             value["remaining_entries"].as_u64().unwrap_or(0)
                         );
                     }
+                }
+            }
+            InspectAction::CacheWarm {
+                commands,
+                from_file,
+                depth,
+                since,
+                parallel,
+                progress,
+                pretty,
+                format,
+                allow_self,
+            } => {
+                let mut requests =
+                    cli_surfaces::load_batch_requests(&commands, from_file.as_deref())?;
+                for request in &mut requests {
+                    if request.depth == 0 {
+                        request.depth = depth;
+                    }
+                }
+                if requests.is_empty() {
+                    return Err(sxmc::error::SxmcError::Other(
+                        "inspect cache-warm requires at least one command spec or --from-file input"
+                            .into(),
+                    ));
+                }
+                let since_filter = since
+                    .as_deref()
+                    .map(cli_surfaces::parse_batch_since_filter)
+                    .transpose()?;
+                let value = cli_surfaces::warm_profile_cache(
+                    &requests,
+                    allow_self,
+                    parallel,
+                    progress,
+                    since_filter.as_ref(),
+                );
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    print_cache_warm_report(&value);
                 }
             }
         },
@@ -2736,11 +2891,32 @@ async fn main() -> Result<()> {
             root,
             check,
             only_hosts,
+            fix,
+            from_cli,
+            depth,
+            skills_path,
+            allow_low_confidence,
             human,
             pretty,
             format,
         } => {
             let root = resolve_generation_root(root)?;
+            if fix {
+                let from_cli = from_cli.as_deref().ok_or_else(|| {
+                    sxmc::error::SxmcError::Other(
+                        "`sxmc doctor --fix` requires `--from-cli <tool>`".into(),
+                    )
+                })?;
+                let outcomes = repair_doctor_startup_files(
+                    &root,
+                    &only_hosts,
+                    from_cli,
+                    depth,
+                    &skills_path,
+                    allow_low_confidence,
+                )?;
+                print_write_outcomes(&outcomes);
+            }
             let value = doctor_value(&root, &only_hosts)?;
             if should_render_doctor_human(human, format, pretty, std::io::stdout().is_terminal()) {
                 print_doctor_report(&value);

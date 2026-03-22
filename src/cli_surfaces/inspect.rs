@@ -6,7 +6,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use chrono::{DateTime, Utc};
 use regex::Regex;
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::cache::Cache;
@@ -21,6 +23,36 @@ const CLI_PROFILE_CACHE_TTL_SECS: u64 = 60 * 60 * 24 * 14;
 const CLI_PROFILE_CACHE_SCHEMA_VERSION: u32 = 3;
 const COMPACT_SUBCOMMAND_LIMIT: usize = 12;
 const COMPACT_OPTION_LIMIT: usize = 15;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchInspectRequest {
+    pub command_spec: String,
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchSinceFilter {
+    pub raw: String,
+    pub unix_seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum BatchFileSpec {
+    List(Vec<BatchEntrySpec>),
+    Map { tools: Vec<BatchEntrySpec> },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum BatchEntrySpec {
+    Command(String),
+    Detailed {
+        command: String,
+        #[serde(default)]
+        depth: Option<usize>,
+    },
+}
 
 pub fn parse_command_spec(command: &str) -> Result<Vec<String>> {
     let trimmed = command.trim();
@@ -84,25 +116,56 @@ pub fn inspect_cli(command_spec: &str, allow_self: bool) -> Result<CliSurfacePro
 }
 
 pub fn inspect_cli_batch(
-    command_specs: &[String],
+    requests: &[BatchInspectRequest],
     allow_self: bool,
-    depth: usize,
     parallelism: usize,
     progress: bool,
+    since: Option<&BatchSinceFilter>,
 ) -> Value {
     let requested_parallelism = parallelism.max(1);
-    let worker_count = requested_parallelism.min(command_specs.len().max(1));
-    let progress = should_enable_batch_progress(command_specs.len(), progress);
+    let command_specs: Vec<String> = requests
+        .iter()
+        .map(|item| item.command_spec.clone())
+        .collect();
+    let mut skipped = Vec::new();
+    let filtered_requests: Vec<BatchInspectRequest> = if let Some(filter) = since {
+        requests
+            .iter()
+            .filter_map(
+                |request| match should_inspect_request_since(request, filter) {
+                    Ok(true) => Some(request.clone()),
+                    Ok(false) => {
+                        skipped.push(json!({
+                            "command": request.command_spec,
+                            "reason": format!("unchanged since {}", filter.raw),
+                        }));
+                        None
+                    }
+                    Err(error) => {
+                        skipped.push(json!({
+                            "command": request.command_spec,
+                            "reason": error.to_string(),
+                        }));
+                        None
+                    }
+                },
+            )
+            .collect()
+    } else {
+        requests.to_vec()
+    };
+    let worker_count = requested_parallelism.min(filtered_requests.len().max(1));
+    let progress = should_enable_batch_progress(filtered_requests.len(), progress);
     maybe_print_progress_mode(
         &format!(
             "Batch inspecting {} command(s) with parallelism {}",
-            command_specs.len(),
+            filtered_requests.len(),
             worker_count
         ),
         progress,
     );
 
-    let (job_sender, job_receiver) = mpsc::channel::<(usize, String)>();
+    let (job_sender, job_receiver) = mpsc::channel::<(usize, BatchInspectRequest)>();
     let (result_sender, result_receiver) =
         mpsc::channel::<(usize, String, Result<CliSurfaceProfile>)>();
     let shared_receiver = std::sync::Arc::new(std::sync::Mutex::new(job_receiver));
@@ -116,25 +179,26 @@ pub fn inspect_cli_batch(
                     let lock = receiver.lock().ok();
                     lock.and_then(|rx| rx.recv().ok())
                 };
-                let Some((index, command_spec)) = message else {
+                let Some((index, request)) = message else {
                     break;
                 };
-                let result = inspect_cli_with_depth(&command_spec, allow_self, depth);
-                let _ = sender.send((index, command_spec, result));
+                let result =
+                    inspect_cli_with_depth(&request.command_spec, allow_self, request.depth);
+                let _ = sender.send((index, request.command_spec, result));
             });
         }
 
-        for (index, command_spec) in command_specs.iter().cloned().enumerate() {
-            let _ = job_sender.send((index, command_spec));
+        for (index, request) in filtered_requests.iter().cloned().enumerate() {
+            let _ = job_sender.send((index, request));
         }
         drop(job_sender);
         drop(result_sender);
     });
 
-    let mut profile_slots = vec![None; command_specs.len()];
-    let mut failure_slots = vec![None; command_specs.len()];
+    let mut profile_slots = vec![None; filtered_requests.len()];
+    let mut failure_slots = vec![None; filtered_requests.len()];
 
-    for _ in 0..command_specs.len() {
+    for _ in 0..filtered_requests.len() {
         let Ok((index, command_spec, result)) = result_receiver.recv() else {
             break;
         };
@@ -143,7 +207,7 @@ pub fn inspect_cli_batch(
                 "Batch inspection finished for `{}` ({}/{})",
                 command_spec,
                 index + 1,
-                command_specs.len()
+                filtered_requests.len()
             ),
             progress,
         );
@@ -159,15 +223,39 @@ pub fn inspect_cli_batch(
     }
 
     let profiles: Vec<_> = profile_slots.into_iter().flatten().collect();
+    let skipped_count = skipped.len();
     let failures: Vec<_> = failure_slots.into_iter().flatten().collect();
 
     json!({
         "count": command_specs.len(),
+        "inspected_count": filtered_requests.len(),
+        "skipped_count": skipped_count,
         "parallelism": worker_count,
         "success_count": profiles.len(),
         "failed_count": failures.len(),
         "profiles": profiles,
         "failures": failures,
+        "skipped": skipped,
+    })
+}
+
+pub fn warm_profile_cache(
+    requests: &[BatchInspectRequest],
+    allow_self: bool,
+    parallelism: usize,
+    progress: bool,
+    since: Option<&BatchSinceFilter>,
+) -> Value {
+    let batch = inspect_cli_batch(requests, allow_self, parallelism, progress, since);
+    json!({
+        "count": batch["count"],
+        "inspected_count": batch["inspected_count"],
+        "skipped_count": batch["skipped_count"],
+        "parallelism": batch["parallelism"],
+        "warmed_count": batch["success_count"],
+        "failed_count": batch["failed_count"],
+        "failures": batch["failures"],
+        "skipped": batch["skipped"],
     })
 }
 
@@ -258,11 +346,17 @@ pub fn invalidate_profile_cache_value(command_spec: &str, dry_run: bool) -> Resu
     }))
 }
 
-pub fn load_batch_command_specs(
+pub fn load_batch_requests(
     commands: &[String],
     from_file: Option<&Path>,
-) -> Result<Vec<String>> {
-    let mut specs = commands.to_vec();
+) -> Result<Vec<BatchInspectRequest>> {
+    let mut specs = commands
+        .iter()
+        .map(|command_spec| BatchInspectRequest {
+            command_spec: command_spec.clone(),
+            depth: 0,
+        })
+        .collect::<Vec<_>>();
     if let Some(path) = from_file {
         let raw = fs::read_to_string(path).map_err(|error| {
             SxmcError::Other(format!(
@@ -271,15 +365,67 @@ pub fn load_batch_command_specs(
                 error
             ))
         })?;
-        for line in raw.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
+        match path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+        {
+            "yaml" | "yml" => specs.extend(parse_batch_structured_spec(
+                serde_yaml::from_str(&raw).map_err(|error| {
+                    SxmcError::Other(format!(
+                        "Failed to parse YAML batch command file '{}': {}",
+                        path.display(),
+                        error
+                    ))
+                })?,
+            )),
+            "toml" => specs.extend(parse_batch_structured_spec(toml::from_str(&raw).map_err(
+                |error| {
+                    SxmcError::Other(format!(
+                        "Failed to parse TOML batch command file '{}': {}",
+                        path.display(),
+                        error
+                    ))
+                },
+            )?)),
+            _ => {
+                for line in raw.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
+                    }
+                    specs.push(BatchInspectRequest {
+                        command_spec: trimmed.to_string(),
+                        depth: 0,
+                    });
+                }
             }
-            specs.push(trimmed.to_string());
         }
     }
     Ok(specs)
+}
+
+pub fn parse_batch_since_filter(raw: &str) -> Result<BatchSinceFilter> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(SxmcError::Other("Empty --since timestamp".into()));
+    }
+    if let Ok(unix_seconds) = trimmed.parse::<u64>() {
+        return Ok(BatchSinceFilter {
+            raw: trimmed.to_string(),
+            unix_seconds,
+        });
+    }
+    let parsed = DateTime::parse_from_rfc3339(trimmed).map_err(|error| {
+        SxmcError::Other(format!(
+            "Invalid --since timestamp '{}'. Use Unix seconds or RFC3339: {}",
+            trimmed, error
+        ))
+    })?;
+    Ok(BatchSinceFilter {
+        raw: trimmed.to_string(),
+        unix_seconds: parsed.with_timezone(&Utc).timestamp() as u64,
+    })
 }
 
 pub fn inspect_cli_with_depth(
@@ -368,6 +514,58 @@ pub fn load_profile(path: &Path) -> Result<CliSurfaceProfile> {
             path.display(),
             error
         ))
+    })
+}
+
+pub fn diff_profile_value(before: &CliSurfaceProfile, after: &CliSurfaceProfile) -> Value {
+    let before_subcommands = before
+        .subcommands
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let after_subcommands = after
+        .subcommands
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let before_options = before
+        .options
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let after_options = after
+        .options
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let before_env = before
+        .environment
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let after_env = after
+        .environment
+        .iter()
+        .map(|item| item.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    json!({
+        "command": after.command,
+        "before_command": before.command,
+        "summary_changed": before.summary != after.summary,
+        "before_summary": before.summary,
+        "after_summary": after.summary,
+        "description_changed": before.description != after.description,
+        "subcommands_added": after_subcommands.difference(&before_subcommands).cloned().collect::<Vec<_>>(),
+        "subcommands_removed": before_subcommands.difference(&after_subcommands).cloned().collect::<Vec<_>>(),
+        "options_added": after_options.difference(&before_options).cloned().collect::<Vec<_>>(),
+        "options_removed": before_options.difference(&after_options).cloned().collect::<Vec<_>>(),
+        "environment_added": after_env.difference(&before_env).cloned().collect::<Vec<_>>(),
+        "environment_removed": before_env.difference(&after_env).cloned().collect::<Vec<_>>(),
+        "before_generation_depth": before.provenance.generation_depth,
+        "after_generation_depth": after.provenance.generation_depth,
+        "before_nested_profile_count": before.subcommand_profiles.len(),
+        "after_nested_profile_count": after.subcommand_profiles.len(),
     })
 }
 
@@ -494,6 +692,52 @@ fn resolve_executable_path(executable: &str) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn executable_modified_at(executable: &str) -> Option<u64> {
+    let path = resolve_executable_path(executable)?;
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+fn parse_batch_structured_spec(spec: BatchFileSpec) -> Vec<BatchInspectRequest> {
+    let entries = match spec {
+        BatchFileSpec::List(entries) => entries,
+        BatchFileSpec::Map { tools } => tools,
+    };
+
+    entries
+        .into_iter()
+        .map(|entry| match entry {
+            BatchEntrySpec::Command(command_spec) => BatchInspectRequest {
+                command_spec,
+                depth: 0,
+            },
+            BatchEntrySpec::Detailed { command, depth } => BatchInspectRequest {
+                command_spec: command,
+                depth: depth.unwrap_or(0),
+            },
+        })
+        .collect()
+}
+
+fn should_inspect_request_since(
+    request: &BatchInspectRequest,
+    filter: &BatchSinceFilter,
+) -> Result<bool> {
+    let parts = parse_command_spec(&request.command_spec)?;
+    let Some(executable) = parts.first() else {
+        return Ok(false);
+    };
+    let Some(modified) = executable_modified_at(executable) else {
+        return Ok(true);
+    };
+    Ok(modified > filter.unix_seconds)
 }
 
 fn is_self_command(command_name: &str) -> bool {

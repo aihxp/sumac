@@ -381,6 +381,26 @@ pub enum Commands {
         #[arg(long = "only", value_enum, value_delimiter = ',')]
         only_hosts: Vec<AiClientProfile>,
 
+        /// Repair missing startup-facing files for the selected hosts
+        #[arg(long)]
+        fix: bool,
+
+        /// CLI to inspect when repairing startup-facing files
+        #[arg(long = "from-cli")]
+        from_cli: Option<String>,
+
+        /// Inspection depth to use when repairing startup-facing files
+        #[arg(long, default_value_t = 0)]
+        depth: usize,
+
+        /// Skill path to embed into generated client configs when repairing
+        #[arg(long, default_value = ".claude/skills")]
+        skills_path: PathBuf,
+
+        /// Allow low-confidence startup-doc generation while repairing
+        #[arg(long)]
+        allow_low_confidence: bool,
+
         /// Force the human-readable report even when stdout is not a TTY
         #[arg(long)]
         human: bool,
@@ -466,12 +486,27 @@ pub enum InspectAction {
         from_file: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]
         depth: usize,
+        #[arg(long, value_name = "TIMESTAMP")]
+        since: Option<String>,
         #[arg(long, default_value_t = 4)]
         parallel: usize,
         #[arg(long)]
         progress: bool,
         #[arg(long)]
         compact: bool,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+        #[arg(long)]
+        allow_self: bool,
+    },
+    Diff {
+        command: String,
+        #[arg(long = "before")]
+        before: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        depth: usize,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]
@@ -508,6 +543,25 @@ pub enum InspectAction {
         pretty: bool,
         #[arg(long, value_enum)]
         format: Option<output::StructuredOutputFormat>,
+    },
+    CacheWarm {
+        commands: Vec<String>,
+        #[arg(long)]
+        from_file: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        depth: usize,
+        #[arg(long, value_name = "TIMESTAMP")]
+        since: Option<String>,
+        #[arg(long, default_value_t = 4)]
+        parallel: usize,
+        #[arg(long)]
+        progress: bool,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+        #[arg(long)]
+        allow_self: bool,
     },
 }
 

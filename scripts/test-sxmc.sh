@@ -167,6 +167,22 @@ for shell_name in bash zsh fish; do
   fi
 done
 
+TMP_COMPLETIONS="$TMPDIR_TEST/_sxmc.bash"
+"$SXMC" completions bash > "$TMP_COMPLETIONS"
+bash_completion_subcmd=$(bash -lc 'source "$1"; COMP_WORDS=(sxmc ins); COMP_CWORD=1; _sxmc sxmc ins sxmc; printf "%s\n" "${COMPREPLY[@]}"' bash "$TMP_COMPLETIONS" 2>/dev/null)
+if echo "$bash_completion_subcmd" | grep -qx "inspect"; then
+  pass "bash completion completes top-level subcommands"
+else
+  fail "bash completion should complete inspect" "${bash_completion_subcmd:0:80}"
+fi
+
+bash_completion_option=$(bash -lc 'source "$1"; COMP_WORDS=(sxmc inspect batch --fr); COMP_CWORD=3; _sxmc sxmc --fr batch; printf "%s\n" "${COMPREPLY[@]}"' bash "$TMP_COMPLETIONS" 2>/dev/null)
+if echo "$bash_completion_option" | grep -qx -- "--from-file"; then
+  pass "bash completion completes nested inspect batch options"
+else
+  fail "bash completion should complete --from-file" "${bash_completion_option:0:80}"
+fi
+
 # ============================================================================
 # SECTION 3: CLI Inspection Matrix
 # ============================================================================
@@ -731,6 +747,33 @@ else
   fail "doctor --check --only should pass when selected host files are present"
 fi
 
+cat > "$TMPDIR_TEST/doctor-fix-cli" <<'EOF'
+#!/bin/sh
+cat <<'HELP'
+doctor-fix-cli
+
+A CLI suitable for doctor repair flows.
+
+Usage:
+  doctor-fix-cli [OPTIONS]
+
+Options:
+  --json  Emit json
+HELP
+EOF
+chmod +x "$TMPDIR_TEST/doctor-fix-cli"
+TMP_DOCTOR_FIX_ROOT="$TMPDIR_TEST/doctor-fix-root"
+mkdir -p "$TMP_DOCTOR_FIX_ROOT"
+if "$SXMC" doctor --check --fix --allow-low-confidence --only claude-code,cursor --from-cli "$TMPDIR_TEST/doctor-fix-cli" --root "$TMP_DOCTOR_FIX_ROOT" >/dev/null 2>&1; then
+  if [ -f "$TMP_DOCTOR_FIX_ROOT/CLAUDE.md" ] && [ -f "$TMP_DOCTOR_FIX_ROOT/.cursor/rules/sxmc-cli-ai.md" ]; then
+    pass "doctor --fix repairs selected startup files"
+  else
+    fail "doctor --fix should create selected startup files"
+  fi
+else
+  fail "doctor --fix should repair selected hosts"
+fi
+
 # ============================================================================
 # SECTION 14: Self-Dogfooding
 # ============================================================================
@@ -813,6 +856,32 @@ else
   fail "inspect batch --from-file comments" "${batch_from_file_comments:0:100}"
 fi
 
+cat > "$TMPDIR_TEST/tools.yaml" <<EOF
+tools:
+  - command: cargo
+    depth: 1
+  - command: git
+EOF
+batch_from_yaml=$("$SXMC" inspect batch --from-file "$TMPDIR_TEST/tools.yaml" --parallel 2 2>/dev/null)
+if json_check "$batch_from_yaml" "d.get('count', 0) == 2 and d.get('failed_count', 0) == 0"; then
+  pass "inspect batch --from-file supports YAML"
+else
+  fail "inspect batch --from-file YAML" "${batch_from_yaml:0:120}"
+fi
+
+cat > "$TMPDIR_TEST/tools.toml" <<EOF
+tools = [
+  { command = "cargo", depth = 1 },
+  { command = "git" }
+]
+EOF
+batch_from_toml=$("$SXMC" inspect batch --from-file "$TMPDIR_TEST/tools.toml" --parallel 2 2>/dev/null)
+if json_check "$batch_from_toml" "d.get('count', 0) == 2 and d.get('failed_count', 0) == 0"; then
+  pass "inspect batch --from-file supports TOML"
+else
+  fail "inspect batch --from-file TOML" "${batch_from_toml:0:120}"
+fi
+
 cache_stats=$("$SXMC" inspect cache-stats 2>/dev/null)
 if json_check "$cache_stats" "'entry_count' in d and 'total_bytes' in d"; then
   pass "inspect cache-stats returns cache metrics"
@@ -848,6 +917,13 @@ else
   fail "inspect cache-clear" "${cache_clear:0:100}"
 fi
 
+cache_warm=$("$SXMC" inspect cache-warm cargo git --parallel 2 2>/dev/null)
+if json_check "$cache_warm" "d.get('count', 0) == 2 and 'warmed_count' in d"; then
+  pass "inspect cache-warm pre-populates cache"
+else
+  fail "inspect cache-warm" "${cache_warm:0:120}"
+fi
+
 batch_toon=$("$SXMC" inspect batch git cargo --format toon 2>/dev/null)
 if echo "$batch_toon" | grep -q "profiles:" && echo "$batch_toon" | grep -q "parallelism:"; then
   pass "inspect batch --format toon is summary-oriented"
@@ -860,6 +936,19 @@ if echo "$batch_toon_fail" | grep -q "failures:" && echo "$batch_toon_fail" | gr
   pass "inspect batch --format toon includes failure details"
 else
   fail "inspect batch --format toon failure details" "${batch_toon_fail:0:140}"
+fi
+
+if has_cmd git; then
+  before_profile="$TMPDIR_TEST/git-before.json"
+  "$SXMC" inspect cli git --pretty > "$before_profile"
+  diff_out=$("$SXMC" inspect diff git --before "$before_profile" 2>/dev/null)
+  if json_check "$diff_out" "'summary_changed' in d and 'options_added' in d"; then
+    pass "inspect diff compares a saved profile"
+  else
+    fail "inspect diff" "${diff_out:0:120}"
+  fi
+else
+  skip "inspect diff" "git not installed"
 fi
 
 # ============================================================================

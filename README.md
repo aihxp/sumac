@@ -72,16 +72,20 @@ Turn a CLI into startup-facing AI artifacts:
 sxmc doctor
 sxmc doctor --human
 sxmc doctor --check --only claude-code,cursor
+sxmc doctor --check --fix --only claude-code,cursor --from-cli gh
 sxmc inspect cli gh --format toon
 sxmc inspect cli curl --compact --format json-pretty
 sxmc inspect cli cargo --depth 1 --format json-pretty
 sxmc inspect cli gh --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.txt --compact --format json-pretty
+sxmc inspect batch --from-file tools.yaml --since 2026-03-22T00:00:00Z
+sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
 sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
 sxmc inspect cache-clear --format json-pretty
+sxmc inspect cache-warm --from-file tools.toml --parallel 4 --format json-pretty
 sxmc init ai --from-cli gh --coverage full --mode preview
 sxmc init ai --from-cli gh --coverage full --host claude-code,cursor,github-copilot --mode apply
 sxmc init ai --from-cli gh --coverage full --host claude-code --mode apply --remove
@@ -106,6 +110,16 @@ aliases or functions from your interactive shell.
 lines beginning with `#` are ignored, trailing whitespace is trimmed, and inline
 arguments are preserved, so lines like `git status` or `"cargo" build` work as
 full command specs.
+
+For structured batch input, `.yaml` / `.yml` and `.toml` files can define tools
+with per-command depth overrides. Example YAML:
+
+```yaml
+tools:
+  - command: git
+    depth: 1
+  - command: cargo
+```
 
 Recent inspection hardening:
 

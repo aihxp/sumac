@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.17] - 2026-03-22
+
+### Added
+
+- `sxmc doctor --check --fix --only <hosts> --from-cli <tool>` to repair missing startup files for the selected hosts
+- `sxmc inspect diff <tool> --before <profile.json>` to compare a live CLI against a saved profile
+- `sxmc inspect cache-warm ...` to pre-populate cached CLI profiles without printing full profile payloads
+
+### Changed
+
+- `sxmc inspect batch --from-file` now supports YAML/TOML tool lists with per-command depth overrides in addition to plain-text lists
+- `sxmc inspect batch --since <timestamp>` now skips tools whose executable has not changed since the given Unix-seconds or RFC3339 timestamp
+- generated bash completions now have integration coverage for top-level subcommands and nested `inspect batch` options
+
 ## [0.2.16] - 2026-03-22
 
 ### Added

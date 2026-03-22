@@ -141,14 +141,18 @@ If the surface is unknown, start here first:
 sxmc doctor
 sxmc doctor --human
 sxmc doctor --check --only claude-code,cursor
+sxmc doctor --check --fix --only claude-code,cursor --from-cli gh
 sxmc inspect cli <tool> --depth 1 --format json-pretty
 sxmc inspect cli <tool> --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.txt --compact --format json-pretty
+sxmc inspect batch --from-file tools.yaml --since 2026-03-22T00:00:00Z --format json-pretty
+sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
 sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
 sxmc inspect cache-clear --format json-pretty
+sxmc inspect cache-warm --from-file tools.toml --parallel 4 --format json-pretty
 sxmc stdio "<cmd>" --list
 sxmc mcp grep <pattern>
 sxmc api <url-or-spec> --list
@@ -166,10 +170,13 @@ sxmc inspect cli cargo --depth 1 --format json-pretty
 sxmc inspect cli gh --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.txt --parallel 4 --compact --format json-pretty
+sxmc inspect batch --from-file tools.yaml --parallel 4 --since 2026-03-22T00:00:00Z
+sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
 sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
 sxmc inspect cache-clear --format json-pretty
+sxmc inspect cache-warm --from-file tools.toml --parallel 4 --format json-pretty
 ```
 
 Important:
@@ -187,6 +194,9 @@ Notes:
   output off-TTY.
 - `sxmc doctor --check --only claude-code,cursor` turns doctor into a scoped CI
   gate for the specific AI hosts a repo actually uses.
+- `sxmc doctor --check --fix --only claude-code,cursor --from-cli gh` repairs
+  missing startup files for the selected hosts by running the same generation
+  path as `init ai`.
 - `sxmc inspect batch ...` keeps partial failures in a `failures` array instead
   of failing the whole run on the first missing command.
 - `sxmc inspect batch ... --parallel N` bounds concurrency for larger batch jobs.
@@ -195,6 +205,12 @@ Notes:
 - `sxmc inspect batch --from-file tools.txt` reads one command spec per line.
   Blank lines and lines starting with `#` are ignored, trailing whitespace is
   trimmed, and inline arguments like `git status` are preserved.
+- `.yaml` / `.yml` / `.toml` batch files can use structured tool entries with
+  per-command depth overrides.
+- `sxmc inspect batch ... --since <timestamp>` skips commands whose executable
+  has not changed since the given Unix-seconds or RFC3339 timestamp.
+- `sxmc inspect diff <tool> --before before.json` compares a live CLI against a
+  previously saved profile and reports added/removed options and subcommands.
 - `sxmc inspect cache-stats` shows cache path, entry count, size, and default
   TTL so repeated inspection behavior is visible.
 - `sxmc inspect cache-invalidate <tool>` removes cached profiles for one command
@@ -202,6 +218,8 @@ Notes:
 - `sxmc inspect cache-invalidate 'g*' --dry-run` previews exact or glob
   invalidation matches before removing anything.
 - `sxmc inspect cache-clear` wipes all cached CLI profiles.
+- `sxmc inspect cache-warm ...` pre-populates the profile cache without dumping
+  full profile payloads into stdout.
 
 Generate startup-facing artifacts for a host profile:
 

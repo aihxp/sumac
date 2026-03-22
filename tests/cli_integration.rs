@@ -308,6 +308,52 @@ fn test_inspect_batch_from_file_loads_commands() {
 }
 
 #[test]
+#[cfg(not(windows))]
+fn test_inspect_batch_from_yaml_supports_depth_overrides() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_nested_cli(temp.path());
+    let path = temp.path().join("tools.yaml");
+    fs::write(
+        &path,
+        format!(
+            "tools:\n  - command: \"{}\"\n    depth: 1\n",
+            fake.to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let value = command_json(&["inspect", "batch", "--from-file", path.to_str().unwrap()]);
+    assert_eq!(value["count"], Value::from(1));
+    let profiles = value["profiles"].as_array().unwrap();
+    assert_eq!(profiles.len(), 1);
+    assert!(!profiles[0]["subcommand_profiles"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn test_inspect_batch_from_toml_supports_structured_tools() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tools.toml");
+    fs::write(
+        &path,
+        "tools = [\n  { command = \"cargo\", depth = 1 },\n  { command = \"git\" }\n]\n",
+    )
+    .unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "batch",
+        "--from-file",
+        path.to_str().unwrap(),
+        "--compact",
+    ]);
+    assert_eq!(value["count"], Value::from(2));
+    assert_eq!(value["failed_count"], Value::from(0));
+}
+
+#[test]
 fn test_inspect_batch_toon_is_summary_oriented() {
     sxmc()
         .args(["inspect", "batch", "cargo", "--format", "toon"])
@@ -335,6 +381,33 @@ fn test_inspect_batch_toon_includes_failure_details() {
         .stdout(predicate::str::contains(
             "this-command-should-not-exist-xyz",
         ));
+}
+
+#[test]
+#[cfg(not(windows))]
+fn test_inspect_batch_since_skips_unchanged_tools() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_cli(
+        temp.path(),
+        "fake-cli\n\nSummary.\n\nUsage:\n  fake-cli [OPTIONS]\n",
+    );
+    let future = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+
+    let value = command_json(&[
+        "inspect",
+        "batch",
+        fake.to_str().unwrap(),
+        "--since",
+        &future.to_string(),
+    ]);
+    assert_eq!(value["count"], Value::from(1));
+    assert_eq!(value["inspected_count"], Value::from(0));
+    assert_eq!(value["skipped_count"], Value::from(1));
+    assert_eq!(value["failed_count"], Value::from(0));
 }
 
 #[test]
@@ -370,6 +443,14 @@ fn test_inspect_cache_invalidate_and_clear() {
 }
 
 #[test]
+fn test_inspect_cache_warm_returns_summary() {
+    let value = command_json(&["inspect", "cache-warm", "cargo", "git", "--parallel", "2"]);
+    assert_eq!(value["count"], Value::from(2));
+    assert!(value["warmed_count"].as_u64().unwrap_or(0) >= 1);
+    assert_eq!(value["failed_count"], Value::from(0));
+}
+
+#[test]
 fn test_doctor_check_exits_non_zero_when_startup_files_missing() {
     let temp = tempfile::tempdir().unwrap();
     sxmc()
@@ -379,13 +460,50 @@ fn test_doctor_check_exits_non_zero_when_startup_files_missing() {
 }
 
 #[test]
+#[cfg(not(windows))]
+fn test_doctor_fix_repairs_selected_hosts() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_cli(
+        temp.path(),
+        "fake-cli\n\nA repairable CLI.\n\nUsage:\n  fake-cli [OPTIONS]\n\nOptions:\n  --json  Emit json\n",
+    );
+
+    sxmc()
+        .args([
+            "doctor",
+            "--check",
+            "--fix",
+            "--allow-low-confidence",
+            "--only",
+            "claude-code,cursor",
+            "--from-cli",
+            fake.to_str().unwrap(),
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(temp.path().join("CLAUDE.md").exists());
+    assert!(temp
+        .path()
+        .join(".cursor")
+        .join("rules")
+        .join("sxmc-cli-ai.md")
+        .exists());
+}
+
+#[test]
 fn test_doctor_check_only_hosts_limits_scope() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join(".cursor").join("rules")).unwrap();
     fs::create_dir_all(temp.path().join(".sxmc").join("ai")).unwrap();
     fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
     fs::write(
-        temp.path().join(".sxmc").join("ai").join("claude-code-mcp.json"),
+        temp.path()
+            .join(".sxmc")
+            .join("ai")
+            .join("claude-code-mcp.json"),
         "{\"mcpServers\":{}}\n",
     )
     .unwrap();
@@ -431,6 +549,44 @@ fn test_doctor_check_only_hosts_limits_scope() {
     assert!(startup_files.contains_key("cursor_rules"));
     assert!(startup_files.contains_key("cursor_mcp"));
     assert!(!startup_files.contains_key("github_copilot"));
+}
+
+#[test]
+#[cfg(not(windows))]
+fn test_inspect_diff_reports_changes_against_saved_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_cli(
+        temp.path(),
+        "fake-cli\n\nA first summary.\n\nUsage:\n  fake-cli [OPTIONS]\n",
+    );
+    let before = command_stdout(&["inspect", "cli", fake.to_str().unwrap(), "--pretty"]);
+    let before_path = temp.path().join("before.json");
+    fs::write(&before_path, before).unwrap();
+
+    std::thread::sleep(Duration::from_millis(1100));
+    fs::write(
+        &fake,
+        "#!/bin/sh\ncat <<'EOF'\nfake-cli\n\nA second summary.\n\nUsage:\n  fake-cli [OPTIONS]\n\nOptions:\n  --json  Emit json.\nEOF\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&fake).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&fake, perms).unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "diff",
+        fake.to_str().unwrap(),
+        "--before",
+        before_path.to_str().unwrap(),
+    ]);
+    assert_eq!(value["summary_changed"], Value::Bool(true));
+    assert!(value["options_added"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry == "--json"));
 }
 
 #[test]
