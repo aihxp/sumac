@@ -466,12 +466,19 @@ fn test_inspect_cli_git_detects_common_subcommands() {
     let summary = profile["summary"].as_str().unwrap_or_default();
     assert!(!summary.to_ascii_lowercase().starts_with("usage:"));
     assert!(!summary.contains("--exec-path"));
+    assert_ne!(
+        summary,
+        "These are common Git commands used in various situations:"
+    );
 
     let subcommands = profile["subcommands"].as_array().unwrap();
     assert!(subcommands.iter().any(|entry| entry["name"] == "clone"
         && entry["summary"] == "Clone a repository into a new directory"));
     assert!(subcommands.iter().any(|entry| entry["name"] == "fetch"));
     assert!(!subcommands.iter().any(|entry| entry["name"] == "grow"));
+    let options = profile["options"].as_array().unwrap();
+    assert!(!options.is_empty());
+    assert!(options.iter().any(|entry| entry["name"] == "--version"));
 }
 
 #[test]
@@ -490,6 +497,52 @@ fn test_inspect_cli_node_avoids_option_shaped_subcommands() {
     assert!(!subcommands
         .iter()
         .any(|entry| { entry["name"].as_str().unwrap_or_default().starts_with("--") }));
+    let summary = profile["summary"].as_str().unwrap_or_default();
+    assert!(!summary.contains("interactive mode"));
+    assert!(summary.contains("JavaScript") || summary.contains("runtime"));
+}
+
+#[test]
+fn test_inspect_cli_gh_recovers_top_level_flags() {
+    let profile = command_json(&["inspect", "cli", "gh", "--pretty"]);
+    let options = profile["options"].as_array().unwrap();
+    assert!(options.iter().any(|entry| entry["name"] == "--help"));
+    assert!(options.iter().any(|entry| entry["name"] == "--version"));
+}
+
+#[test]
+fn test_inspect_cli_rustup_recovers_top_level_flags() {
+    let profile = command_json(&["inspect", "cli", "rustup", "--pretty"]);
+    let options = profile["options"].as_array().unwrap();
+    assert!(options.iter().any(|entry| entry["name"] == "--verbose"));
+    assert!(options.iter().any(|entry| entry["name"] == "--quiet"));
+    assert!(options.iter().any(|entry| entry["name"] == "--help"));
+}
+
+#[test]
+fn test_inspect_cli_python3_avoids_env_vars_as_subcommands() {
+    let profile = command_json(&["inspect", "cli", "python3", "--pretty"]);
+    let summary = profile["summary"].as_str().unwrap_or_default();
+    assert!(summary.contains("Python") || summary.contains("language"));
+    let subcommands = profile["subcommands"].as_array().unwrap();
+    assert!(!subcommands.iter().any(|entry| {
+        entry["name"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("PYTHON")
+    }));
+    let options = profile["options"].as_array().unwrap();
+    assert!(options.iter().any(|entry| entry["name"] == "--help-all"));
+}
+
+#[test]
+fn test_inspect_cli_npm_uses_better_summary_and_usage_options() {
+    let profile = command_json(&["inspect", "cli", "npm", "--pretty"]);
+    let summary = profile["summary"].as_str().unwrap_or_default();
+    assert!(summary.contains("package manager"));
+    let options = profile["options"].as_array().unwrap();
+    assert!(options.iter().any(|entry| entry["name"] == "-h"));
+    assert!(options.iter().any(|entry| entry["name"] == "-l"));
 }
 
 #[test]
