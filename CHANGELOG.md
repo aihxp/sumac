@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-03-22
+
 ### Changed
 
 - CLI inspection now merges richer help probing with targeted `man`-page supplementation instead of letting sparse manual output replace higher-signal `--help` results
