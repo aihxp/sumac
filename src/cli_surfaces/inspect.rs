@@ -128,6 +128,11 @@ fn inspect_parts(
         let man_profile = parse_help_text(command_name, source_identifier, &man_text);
         merge_man_page_profile(&mut profile, &man_profile, command_name);
     }
+    if let Ok(supplemental_text) = read_supplemental_help_text(parts, command_name) {
+        let supplemental_profile =
+            parse_help_text(command_name, source_identifier, &supplemental_text);
+        merge_supplemental_profile(&mut profile, &supplemental_profile);
+    }
     profile.provenance.generation_depth = generation_depth;
 
     if remaining_depth > 0 {
@@ -211,20 +216,40 @@ fn merge_man_page_profile(
         profile.description = man_profile.description.clone();
     }
 
-    if profile.options.len() < man_profile.options.len() {
+    if command_name != "brew" && profile.options.len() < man_profile.options.len() {
         profile.options = man_profile.options.clone();
     }
 
-    if man_profile.subcommands.len() >= 3 && man_profile.subcommands.len() > profile.subcommands.len() {
+    if man_profile.subcommands.len() >= 3
+        && man_profile.subcommands.len() > profile.subcommands.len()
+    {
         let mut merged = profile.subcommands.clone();
         for candidate in &man_profile.subcommands {
             if looks_like_plausible_subcommand_name(&candidate.name)
-                && !merged.iter().any(|existing| existing.name == candidate.name)
+                && !merged
+                    .iter()
+                    .any(|existing| existing.name == candidate.name)
             {
                 merged.push(candidate.clone());
             }
         }
         profile.subcommands = merged;
+    }
+}
+
+fn merge_supplemental_profile(
+    profile: &mut CliSurfaceProfile,
+    supplemental_profile: &CliSurfaceProfile,
+) {
+    for candidate in &supplemental_profile.subcommands {
+        if looks_like_plausible_subcommand_name(&candidate.name)
+            && !profile
+                .subcommands
+                .iter()
+                .any(|existing| existing.name == candidate.name)
+        {
+            profile.subcommands.push(candidate.clone());
+        }
     }
 }
 
@@ -351,6 +376,37 @@ fn run_help_variant(parts: &[String], extra_args: &[&str]) -> Result<String> {
     }
 
     Ok(text)
+}
+
+fn read_supplemental_help_text(parts: &[String], command_name: &str) -> Result<String> {
+    if command_name == "brew" && parts.len() == 1 {
+        let output = run_help_variant(parts, &["commands"])?;
+        let mut lines = vec!["COMMANDS".to_string()];
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty()
+                || trimmed.starts_with("==>")
+                || trimmed.starts_with("--")
+                || trimmed.starts_with('#')
+            {
+                continue;
+            }
+
+            if looks_like_plausible_subcommand_name(trimmed) {
+                lines.push(format!("{trimmed}  Listed by `brew commands`."));
+            }
+        }
+
+        if lines.len() > 1 {
+            return Ok(lines.join("\n"));
+        }
+    }
+
+    Err(SxmcError::Other(format!(
+        "No supplemental help source for '{}'",
+        command_name
+    )))
 }
 
 fn score_help_text(command_name: &str, source_identifier: &str, help: &str) -> i32 {
@@ -511,6 +567,7 @@ fn parse_description(lines: &[&str], command_name: &str, summary: &str) -> Optio
 }
 
 fn parse_subcommands(lines: &[&str], command_name: &str) -> Vec<ProfileSubcommand> {
+    let man_page = looks_like_man_page(lines);
     let mut subcommands = Vec::new();
     let mut in_command_section = false;
     let mut pending_summary_idx: Option<usize> = None;
@@ -523,7 +580,7 @@ fn parse_subcommands(lines: &[&str], command_name: &str) -> Vec<ProfileSubcomman
             continue;
         }
 
-        if is_command_section_heading(stripped)
+        if is_command_section_heading(stripped, man_page)
             || stripped.starts_with("These are common ")
             || stripped.starts_with("These are available ")
         {
@@ -536,7 +593,7 @@ fn parse_subcommands(lines: &[&str], command_name: &str) -> Vec<ProfileSubcomman
             continue;
         }
 
-        if is_major_section_heading(stripped) && !is_command_section_heading(stripped) {
+        if is_major_section_heading(stripped) && !is_command_section_heading(stripped, man_page) {
             if !subcommands.is_empty() {
                 break;
             }
@@ -597,8 +654,10 @@ fn parse_subcommands(lines: &[&str], command_name: &str) -> Vec<ProfileSubcomman
         push_subcommand(&mut subcommands, inferred);
     }
 
-    for inferred in parse_invocation_subcommands(lines, command_name) {
-        push_subcommand(&mut subcommands, inferred);
+    if !man_page {
+        for inferred in parse_invocation_subcommands(lines, command_name) {
+            push_subcommand(&mut subcommands, inferred);
+        }
     }
 
     subcommands
@@ -858,36 +917,65 @@ fn is_major_section_heading(line: &str) -> bool {
 }
 
 fn looks_like_man_page(lines: &[&str]) -> bool {
-    lines.iter().any(|line| {
+    let mut count = 0;
+    let mut has_name_like = false;
+
+    for line in lines {
         let trimmed = line.trim();
-        trimmed == "NAME"
-            || trimmed == "SYNOPSIS"
-            || trimmed == "DESCRIPTION"
-            || trimmed == "OPTIONS"
-    })
+        if matches_normalized_heading(trimmed, "name")
+            || matches_normalized_heading(trimmed, "synopsis")
+            || matches_normalized_heading(trimmed, "description")
+        {
+            has_name_like = true;
+            count += 1;
+        } else if matches_normalized_heading(trimmed, "options") {
+            count += 1;
+        }
+    }
+
+    has_name_like && count >= 2
 }
 
-fn is_command_section_heading(line: &str) -> bool {
-    let trimmed = line.trim();
-    let lowered = trimmed.trim_end_matches(':').to_ascii_lowercase();
-    let has_keyword = lowered.contains("command") || lowered.contains("subcommand");
-    let word_count = lowered.split_whitespace().count();
-    let all_caps = trimmed.chars().any(|c| c.is_ascii_alphabetic())
-        && trimmed.chars().all(|c| {
-            c.is_ascii_uppercase()
-                || c.is_ascii_digit()
-                || c.is_ascii_whitespace()
-                || matches!(c, '&' | '/' | '-' | '_' | '(' | ')' | ':')
-        });
+fn is_command_section_heading(line: &str, man_page: bool) -> bool {
+    if man_page {
+        return false;
+    }
 
-    has_keyword && (all_caps || (trimmed.ends_with(':') && word_count <= 4))
+    let trimmed = line.trim();
+    let normalized = normalize_heading(trimmed);
+    if normalized.starts_with("the command") || normalized.starts_with("this command") {
+        return false;
+    }
+
+    matches!(
+        normalized.as_str(),
+        "commands"
+            | "subcommands"
+            | "available commands"
+            | "available subcommands"
+            | "core commands"
+            | "additional commands"
+            | "all commands"
+            | "essential commands"
+    )
 }
 
 fn looks_like_usage_line(line: &str, command_name: &str) -> bool {
     let lowered = line.to_ascii_lowercase();
-    lowered.starts_with("usage:")
-        || lowered == "usage"
-        || lowered.starts_with(&format!("{command_name} "))
+    if lowered.starts_with("usage:") || lowered == "usage" {
+        return true;
+    }
+
+    if let Some(rest) = line.strip_prefix(&format!("{command_name} ")) {
+        let rest = rest.trim_start();
+        return rest.starts_with('[')
+            || rest.starts_with('<')
+            || rest.starts_with('-')
+            || rest.starts_with('{')
+            || rest.starts_with('(');
+    }
+
+    false
 }
 
 fn looks_like_man_fallback_candidate(help: &str) -> bool {
@@ -910,11 +998,22 @@ fn is_unhelpful_summary_line(line: &str, command_name: &str) -> bool {
         || !parse_subcommand_list(trimmed).is_empty()
         || lowered.starts_with("error:")
         || lowered.starts_with("copyright")
+        || lowered.starts_with("report bugs at:")
+        || lowered.starts_with("latest revision:")
+        || lowered.starts_with("latest faq:")
+        || lowered.starts_with("latest man page:")
         || lowered.starts_with("please report bugs")
         || lowered.starts_with("project home page:")
         || lowered.starts_with("use -h ")
+        || lowered.starts_with("defaults in parentheses")
+        || lowered.starts_with("apple specific options")
+        || lowered.starts_with("summary of ")
+        || lowered.starts_with("this is free software")
+        || lowered.starts_with("for details, use")
         || lowered.contains('@')
+        || lowered.contains("complete list of options")
         || lowered.contains("unrecognized option")
+        || lowered.contains("illegal option")
         || lowered.contains("unknown option")
         || lowered.contains("invalid option")
         || lowered.starts_with("try '")
@@ -938,28 +1037,39 @@ fn should_prefer_man_summary(summary: &str, man_summary: &str, command_name: &st
 fn is_version_banner(line: &str) -> bool {
     let lowered = line.to_ascii_lowercase();
     let versiony_number = Regex::new(r"\b\d+\.\d+(?:\.\d+)?\b").unwrap();
+    let trailing_integer_version = Regex::new(r"\b\d{2,}\b$").unwrap();
     (lowered.contains("version")
         || lowered.contains("(rev ")
+        || trailing_integer_version.is_match(line)
         || (versiony_number.is_match(line) && line.split_whitespace().count() <= 8))
         && !lowered.contains("command")
         && line.chars().any(|c| c.is_ascii_digit())
 }
 
 fn looks_like_option_line(line: &str) -> bool {
-    line.trim_start().starts_with('-')
+    let trimmed = line.trim_start();
+    trimmed.starts_with('-')
+        || trimmed.starts_with("+|-")
+        || trimmed.starts_with("-?|-")
+        || trimmed.starts_with("-- ")
 }
 
 fn looks_like_cli_example_line(line: &str, command_name: &str) -> bool {
-    let trimmed = line.trim_start_matches("$ ").trim();
-    trimmed.starts_with(&format!("{command_name} "))
+    let trimmed = line.trim_start();
+    trimmed.starts_with("$ ")
+        && trimmed
+            .trim_start_matches("$ ")
+            .trim()
+            .starts_with(&format!("{command_name} "))
 }
 
 fn sanitize_for_profile(text: &str, command_name: &str) -> String {
+    let overstrike_stripped = strip_overstrike(text);
     let unix_path = Regex::new(r"(?P<prefix>^|[\s(])(?P<path>/[^\s:]+)").unwrap();
     let windows_path = Regex::new(r"(?P<prefix>^|[\s(])(?P<path>[A-Za-z]:\\[^\s:]+)").unwrap();
 
     let mut sanitized = unix_path
-        .replace_all(text, |caps: &regex::Captures<'_>| {
+        .replace_all(&overstrike_stripped, |caps: &regex::Captures<'_>| {
             let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or_default();
             let path = caps.name("path").map(|m| m.as_str()).unwrap_or_default();
             let replacement = Path::new(path)
@@ -987,12 +1097,24 @@ fn sanitize_for_profile(text: &str, command_name: &str) -> String {
     sanitized.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn strip_overstrike(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.chars() {
+        if ch == '\u{0008}' {
+            out.pop();
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 fn parse_man_name_summary(lines: &[&str], command_name: &str) -> Option<String> {
     let mut in_name = false;
     let mut collected = Vec::new();
     for line in lines {
         let trimmed = line.trim();
-        if trimmed == "NAME" {
+        if matches_normalized_heading(trimmed, "name") {
             in_name = true;
             continue;
         }
@@ -1036,7 +1158,7 @@ fn parse_man_description(lines: &[&str], command_name: &str) -> Option<String> {
     let mut collected = Vec::new();
     for line in lines {
         let trimmed = line.trim();
-        if trimmed == "DESCRIPTION" {
+        if matches_normalized_heading(trimmed, "description") {
             in_description = true;
             continue;
         }
@@ -1067,7 +1189,9 @@ fn parse_man_options(lines: &[&str]) -> Vec<ProfileOption> {
     for line in lines {
         let trimmed = line.trim_end();
         let stripped = trimmed.trim();
-        if stripped == "DESCRIPTION" || stripped == "OPTIONS" {
+        if matches_normalized_heading(stripped, "description")
+            || matches_normalized_heading(stripped, "options")
+        {
             in_description = true;
             continue;
         }
@@ -1077,7 +1201,9 @@ fn parse_man_options(lines: &[&str]) -> Vec<ProfileOption> {
         if stripped.is_empty() {
             continue;
         }
-        if is_major_section_heading(stripped) && stripped != "DESCRIPTION" && stripped != "OPTIONS"
+        if is_major_section_heading(stripped)
+            && !matches_normalized_heading(stripped, "description")
+            && !matches_normalized_heading(stripped, "options")
         {
             break;
         }
@@ -1108,7 +1234,7 @@ fn parse_man_synopsis_options(lines: &[&str]) -> Vec<ProfileOption> {
 
     for line in lines {
         let trimmed = line.trim();
-        if trimmed == "SYNOPSIS" {
+        if matches_normalized_heading(trimmed, "synopsis") {
             in_synopsis = true;
             continue;
         }
@@ -1121,7 +1247,7 @@ fn parse_man_synopsis_options(lines: &[&str]) -> Vec<ProfileOption> {
             }
             continue;
         }
-        if is_major_section_heading(trimmed) && trimmed != "SYNOPSIS" {
+        if is_major_section_heading(trimmed) && !matches_normalized_heading(trimmed, "synopsis") {
             break;
         }
 
@@ -1258,6 +1384,10 @@ fn parse_indented_command_name(line: &str, command_name: &str) -> Option<String>
         || trimmed_start.starts_with('-')
         || trimmed_start.starts_with(command_name)
     {
+        return None;
+    }
+
+    if trimmed_start.split_whitespace().count() != 1 {
         return None;
     }
 
@@ -1575,12 +1705,28 @@ fn summary_quality(summary: &str, command_name: &str) -> i32 {
     }
     if lowered.starts_with("please report bugs")
         || lowered.starts_with("copyright")
+        || lowered.starts_with("report bugs at:")
+        || lowered.starts_with("latest revision:")
+        || lowered.starts_with("latest faq:")
+        || lowered.starts_with("latest man page:")
         || lowered.starts_with("general options")
         || lowered.starts_with("options")
         || lowered.starts_with("project home page:")
+        || lowered.starts_with("defaults in parentheses")
+        || lowered.starts_with("summary of ")
+        || lowered.starts_with("apple specific options")
+        || lowered.starts_with("this is free software")
+        || lowered.starts_with("use \"")
+        || lowered.starts_with("for details, use")
         || trimmed.starts_with('.')
     {
         score -= 18;
+    }
+    if lowered.contains("complete list of options") {
+        score -= 18;
+    }
+    if trimmed.contains(';') {
+        score -= 10;
     }
     if trimmed.ends_with(':') {
         score -= 10;
@@ -1606,6 +1752,20 @@ fn summary_quality(summary: &str, command_name: &str) -> i32 {
     score
 }
 
+fn normalize_heading(line: &str) -> String {
+    line.trim()
+        .trim_end_matches(':')
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+fn matches_normalized_heading(line: &str, heading: &str) -> bool {
+    normalize_heading(line) == heading
+}
+
 fn now_string() -> String {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1616,7 +1776,7 @@ fn now_string() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_command_spec, parse_help_text};
+    use super::{parse_command_spec, parse_help_text, strip_overstrike};
 
     #[test]
     fn parse_json_array_command_spec() {
@@ -1814,25 +1974,13 @@ INPUT OPTIONS:
     }
 
     #[test]
-    fn parse_brew_command_section_recovers_subcommands() {
-        let help = r#"NAME
-       brew - The Missing Package Manager for macOS (or Linux)
-
-COMMANDS
-   alias [--edit] [alias|alias=command]
-       Show an alias’s command. If no alias is given, print the whole list.
-
-   analytics [subcommand]
-       Control Homebrew’s anonymous aggregate user behaviour analytics.
-
-   autoremove [--dry-run]
-       Uninstall formulae that were only installed as a dependency.
+    fn parse_brew_supplemental_command_list_recovers_subcommands() {
+        let help = r#"COMMANDS
+alias  Listed by `brew commands`.
+analytics  Listed by `brew commands`.
+autoremove  Listed by `brew commands`.
 "#;
         let profile = parse_help_text("brew", "brew", help);
-        assert_eq!(
-            profile.summary,
-            "The Missing Package Manager for macOS (or Linux)"
-        );
         assert!(profile
             .subcommands
             .iter()
@@ -1859,5 +2007,56 @@ SYNOPSIS
         assert!(profile.options.iter().any(|option| option.name == "-F"));
         assert!(profile.options.iter().any(|option| option.name == "-v"));
         assert!(profile.options.iter().any(|option| option.name == "-f"));
+    }
+
+    #[test]
+    fn parse_man_examples_do_not_create_cat_subcommands() {
+        let help = r#"NAME
+     cat – concatenate and print files
+
+EXAMPLES
+     The command:
+
+           cat file1
+
+     will print the contents of file1 to the standard output.
+"#;
+        let profile = parse_help_text("cat", "cat", help);
+        assert_eq!(profile.summary, "concatenate and print files");
+        assert!(profile.subcommands.is_empty());
+    }
+
+    #[test]
+    fn parse_titlecase_man_name_works_for_dc() {
+        let help = r#"Name
+       dc - arbitrary-precision decimal reverse-Polish notation calculator
+"#;
+        let profile = parse_help_text("dc", "dc", help);
+        assert_eq!(
+            profile.summary,
+            "arbitrary-precision decimal reverse-Polish notation calculator"
+        );
+    }
+
+    #[test]
+    fn strip_overstrike_sequences_for_less_style_output() {
+        assert_eq!(
+            strip_overstrike(
+                "S\u{0008}SU\u{0008}UM\u{0008}MM\u{0008}MA\u{0008}AR\u{0008}RY\u{0008}Y"
+            ),
+            "SUMMARY"
+        );
+    }
+
+    #[test]
+    fn descriptive_lines_starting_with_command_name_are_not_treated_as_usage() {
+        let help = r#"bc 7.0.3
+usage: bc [options] [file...]
+
+bc is a command-line, arbitrary-precision calculator with a Turing-complete
+language. For details, use `man bc`.
+"#;
+        let profile = parse_help_text("bc", "bc", help);
+        assert!(profile.summary.starts_with("bc is a command-line"));
     }
 }
