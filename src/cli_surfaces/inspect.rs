@@ -106,6 +106,7 @@ pub fn inspect_cli_with_depth(
 
     let cache_key = profile_cache_key(&parts, depth);
     if let Some(profile) = load_cached_profile(&cache_key) {
+        maybe_print_progress(&format!("Using cached profile for `{}`", parts.join(" ")));
         return Ok(profile);
     }
 
@@ -290,12 +291,13 @@ fn inspect_parts(
     profile.provenance.generation_depth = generation_depth;
 
     if remaining_depth > 0 {
-        let mut subcommand_profiles = Vec::new();
-        for subcommand in profile
+        let candidates: Vec<_> = profile
             .subcommands
             .iter()
             .filter(|subcommand| subcommand.confidence != ConfidenceLevel::Low)
-        {
+            .collect();
+        let mut subcommand_profiles = Vec::new();
+        for (index, subcommand) in candidates.iter().enumerate() {
             if subcommand.name == command_name {
                 continue;
             }
@@ -304,6 +306,12 @@ fn inspect_parts(
             child_parts.push(subcommand.name.clone());
             let child_source = format!("{source_identifier} {}", subcommand.name);
             let child_name = subcommand.name.clone();
+            maybe_print_progress(&format!(
+                "Inspecting nested subcommand {}/{}: `{}`",
+                index + 1,
+                candidates.len(),
+                child_source
+            ));
 
             if let Ok(child_profile) = inspect_parts(
                 &child_parts,
@@ -329,6 +337,19 @@ fn inspect_parts(
         profile.confidence_notes.push(ConfidenceNote {
             level: ConfidenceLevel::Low,
             summary: "Recursive inspection was requested, but nested subcommand help could not be collected for this CLI.".into(),
+        });
+    }
+
+    if remaining_depth == 0
+        && profile.subcommand_profiles.is_empty()
+        && profile.subcommands.len() >= 8
+    {
+        profile.confidence_notes.push(ConfidenceNote {
+            level: ConfidenceLevel::Medium,
+            summary: format!(
+                "This CLI exposes {} top-level subcommands. Re-run with `--depth 2` if you want nested help for multi-layer workflows.",
+                profile.subcommands.len()
+            ),
         });
     }
 

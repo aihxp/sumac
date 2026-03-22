@@ -85,6 +85,10 @@ pub(crate) fn render_agent_doc(profile: &CliSurfaceProfile, client: AiClientProf
             .into(),
     );
     lines.push(
+        "- If the CLI has nested command groups, re-run with `--depth 2` to inspect deeper help without manually drilling into each branch."
+            .into(),
+    );
+    lines.push(
         "- When the MCP surface is unknown, start with `sxmc stdio \"<cmd>\" --list` or `sxmc mcp grep <pattern>` before guessing tool calls."
             .into(),
     );
@@ -125,6 +129,10 @@ pub(crate) fn render_portable_agent_doc(profile: &CliSurfaceProfile) -> String {
     lines.push("Recommended startup guidance:".into());
     lines.push(
         "- When the exact CLI surface is unclear, start with `sxmc inspect cli <tool> --depth 1 --format json-pretty`."
+            .into(),
+    );
+    lines.push(
+        "- For multi-layer CLIs, bump inspection to `--depth 2` before writing detailed agent guidance."
             .into(),
     );
     lines.push(format!(

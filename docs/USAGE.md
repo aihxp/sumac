@@ -140,6 +140,7 @@ If the surface is unknown, start here first:
 ```bash
 sxmc doctor
 sxmc inspect cli <tool> --depth 1 --format json-pretty
+sxmc inspect cli <tool> --depth 2 --compact --format json-pretty
 sxmc stdio "<cmd>" --list
 sxmc mcp grep <pattern>
 sxmc api <url-or-spec> --list
@@ -154,6 +155,7 @@ sxmc inspect cli gh --format json-pretty
 sxmc inspect cli gh --format toon
 sxmc inspect cli curl --compact --format json-pretty
 sxmc inspect cli cargo --depth 1 --format json-pretty
+sxmc inspect cli gh --depth 2 --compact --format json-pretty
 ```
 
 Generate startup-facing artifacts for a host profile:
@@ -221,10 +223,12 @@ Safety rules:
 - `--coverage full --mode apply` requires one or more `--host` values and sidecars the non-selected hosts
 - `sxmc init ai --remove` removes previously applied managed blocks and generated config entries for the selected hosts
 - `sxmc bake create` and `sxmc bake update` validate sources by default; use `--skip-validate` when you intentionally want to persist an offline or placeholder target
+- bake validation errors now include source-type-specific hints for stdio, HTTP MCP, OpenAPI, and GraphQL targets so you can tell whether the problem is install, auth, endpoint shape, or just an intentionally offline target
 
 Deeper inspection:
 
 - `sxmc inspect cli --depth 1` recursively inspects top-level high-confidence subcommands
+- larger values like `--depth 2` keep recursing into nested command groups for multi-layer CLIs such as `gh`
 - `sxmc inspect cli --compact` returns a lower-context summary with counts plus the top subcommands/options instead of the full profile
 - nested subcommand profiles are stored under `subcommand_profiles`
 - macOS and BSD-style tools can fall back to `man` output when `--help` is sparse or unsupported
@@ -233,6 +237,7 @@ Deeper inspection:
 - parser hardening now recovers top-level flags for CLIs like `gh` and `rustup`
 - Python-style environment variables are filtered out of subcommand detection
 - inspected CLI profiles are cached automatically, keyed by command plus executable fingerprint, so repeated agent lookups reuse stable profiles until the binary changes
+- interactive recursive inspections emit lightweight stderr progress notes on cache hits, nested subcommand probes, and slower supplemental lookups such as `brew commands`
 - generated agent docs, skills, and `llms.txt` exports show subcommand counts and overflow hints instead of truncating large CLIs with no indication of what was omitted
 
 Current host profiles:

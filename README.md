@@ -73,6 +73,7 @@ sxmc doctor
 sxmc inspect cli gh --format toon
 sxmc inspect cli curl --compact --format json-pretty
 sxmc inspect cli cargo --depth 1 --format json-pretty
+sxmc inspect cli gh --depth 2 --compact --format json-pretty
 sxmc init ai --from-cli gh --coverage full --mode preview
 sxmc init ai --from-cli gh --coverage full --host claude-code,cursor,github-copilot --mode apply
 sxmc init ai --from-cli gh --coverage full --host claude-code --mode apply --remove
@@ -132,13 +133,16 @@ The current validation docs capture the real-world comparison set, token/turn es
 - low-confidence CLI profiles are blocked from startup-doc generation unless explicitly overridden
 - managed markdown/TOML blocks instead of wholesale overwrites
 - recursive CLI inspection with `sxmc inspect cli --depth 1`
+- deeper recursive CLI exploration is available with larger values like `--depth 2` for multi-layer CLIs such as `gh`
 - compact CLI inspection with `sxmc inspect cli --compact` for lower-context summaries
+- interactive inspections now emit lightweight stderr progress notes on cache misses and slower supplemental probes
 - generated docs and skill scaffolds now surface larger CLI inventories with counts instead of hiding everything after the first few subcommands
 - CLI inspection profiles are cached so repeated agent lookups do not keep reparsing unchanged binaries
 - cleanup support with `sxmc init ai --remove`
 - CLI inspection now supplements sparse help output with `man` pages without clobbering richer `--help` surfaces
 - atomic bake persistence
 - bake create/update now validate sources by default, with `--skip-validate` when you intentionally want to persist a broken or offline target
+- bake validation errors now include source-type-specific guidance for stdio, HTTP MCP, OpenAPI, and GraphQL targets
 - baked stdio configs can pin a base directory for portable relative paths
 - configurable timeouts for networked commands
 - HTTP MCP guardrails for max concurrency and request body size

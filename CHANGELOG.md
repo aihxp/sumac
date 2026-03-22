@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-03-22
+
+### Changed
+
+- recursive CLI inspection now surfaces deeper exploration more clearly, including `--depth 2` guidance for multi-layer CLIs and progress notes while nested subcommand help is collected
+- bake validation errors now include source-type-specific guidance for stdio, HTTP MCP, OpenAPI, and GraphQL targets, plus explicit `--skip-validate` fallback guidance when you intentionally want to save an offline target
+
 ## [0.2.9] - 2026-03-22
 
 ### Changed

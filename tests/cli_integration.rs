@@ -135,6 +135,50 @@ fn write_fake_cli(dir: &Path, help_text: &str) -> std::path::PathBuf {
     script
 }
 
+#[cfg(not(windows))]
+fn write_fake_nested_cli(dir: &Path) -> std::path::PathBuf {
+    let script = dir.join("fake-nested-cli");
+    let body = r#"#!/bin/sh
+if [ "$1" = "alpha" ] && [ "$2" = "beta" ]; then
+    cat <<'EOF'
+fake-nested-cli alpha beta
+
+Deep beta command.
+
+Usage:
+  fake-nested-cli alpha beta [OPTIONS]
+
+Options:
+  --deep  Use the deepest path.
+EOF
+elif [ "$1" = "alpha" ]; then
+    cat <<'EOF'
+fake-nested-cli alpha
+
+Alpha command group.
+
+Commands:
+  beta  Run the beta workflow
+EOF
+else
+    cat <<'EOF'
+fake-nested-cli
+
+Nested demo CLI.
+
+Commands:
+  alpha  Run the alpha workflow
+EOF
+fi
+"#;
+    fs::write(&script, body).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    script
+}
+
 #[test]
 fn test_version() {
     sxmc()
@@ -255,6 +299,24 @@ fn test_inspect_cli_depth_one_collects_nested_profiles() {
     let nested = value["subcommand_profiles"].as_array().unwrap();
     assert!(!nested.is_empty());
     assert!(nested.iter().any(|profile| profile["command"] == "build"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_inspect_cli_depth_two_collects_grandchild_profiles() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_nested_cli(temp.path());
+    let value = command_json(&["inspect", "cli", fake.to_str().unwrap(), "--depth", "2"]);
+
+    let nested = value["subcommand_profiles"].as_array().unwrap();
+    let alpha = nested
+        .iter()
+        .find(|profile| profile["command"] == "alpha")
+        .expect("alpha nested profile");
+    let grandchild = alpha["subcommand_profiles"].as_array().unwrap();
+    assert!(grandchild
+        .iter()
+        .any(|profile| profile["command"] == "beta"));
 }
 
 #[cfg(not(windows))]
@@ -382,7 +444,32 @@ fn test_bake_create_validates_stdio_source_by_default() {
         .failure()
         .stderr(predicate::str::contains(
             "could not connect during validation",
-        ));
+        ))
+        .stderr(predicate::str::contains(
+            "Run the stdio command directly once",
+        ))
+        .stderr(predicate::str::contains("--skip-validate"));
+}
+
+#[test]
+fn test_bake_create_http_validation_includes_guided_hints() {
+    let temp = tempfile::tempdir().unwrap();
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake",
+            "create",
+            "offline-http",
+            "--type",
+            "http",
+            "--source",
+            "http://127.0.0.1:9/mcp",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "points at its streamable MCP endpoint",
+        ))
+        .stderr(predicate::str::contains("--skip-validate"));
 }
 
 #[test]

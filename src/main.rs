@@ -1152,15 +1152,25 @@ async fn validate_bake_config(config: &BakeConfig) -> Result<()> {
     match config.source_type {
         SourceType::Stdio | SourceType::Http => {
             let client = ConnectedMcpClient::connect(config).await.map_err(|error| {
-                sxmc::error::SxmcError::Other(format!(
+                let base = format!(
                     "Bake '{}' could not connect during validation: {}",
                     config.name, error
+                );
+                sxmc::error::SxmcError::Other(augment_bake_validation_message(
+                    config,
+                    &base,
+                    &error.to_string(),
                 ))
             })?;
             let result = client.list_tools().await.map_err(|error| {
-                sxmc::error::SxmcError::Other(format!(
+                let base = format!(
                     "Bake '{}' connected but list_tools failed during validation: {}",
                     config.name, error
+                );
+                sxmc::error::SxmcError::Other(augment_bake_validation_message(
+                    config,
+                    &base,
+                    &error.to_string(),
                 ))
             });
             client.close().await?;
@@ -1176,9 +1186,14 @@ async fn validate_bake_config(config: &BakeConfig) -> Result<()> {
             .await
             .map(|_| ())
             .map_err(|error| {
-                sxmc::error::SxmcError::Other(format!(
+                let base = format!(
                     "Bake '{}' could not validate API source '{}': {}",
                     config.name, config.source, error
+                );
+                sxmc::error::SxmcError::Other(augment_bake_validation_message(
+                    config,
+                    &base,
+                    &error.to_string(),
                 ))
             })
         }
@@ -1192,9 +1207,14 @@ async fn validate_bake_config(config: &BakeConfig) -> Result<()> {
             .await
             .map(|_| ())
             .map_err(|error| {
-                sxmc::error::SxmcError::Other(format!(
+                let base = format!(
                     "Bake '{}' could not validate OpenAPI source '{}': {}",
                     config.name, config.source, error
+                );
+                sxmc::error::SxmcError::Other(augment_bake_validation_message(
+                    config,
+                    &base,
+                    &error.to_string(),
                 ))
             })
         }
@@ -1208,13 +1228,92 @@ async fn validate_bake_config(config: &BakeConfig) -> Result<()> {
             .await
             .map(|_| ())
             .map_err(|error| {
-                sxmc::error::SxmcError::Other(format!(
+                let base = format!(
                     "Bake '{}' could not validate GraphQL source '{}': {}",
                     config.name, config.source, error
+                );
+                sxmc::error::SxmcError::Other(augment_bake_validation_message(
+                    config,
+                    &base,
+                    &error.to_string(),
                 ))
             })
         }
     }
+}
+
+fn augment_bake_validation_message(config: &BakeConfig, base: &str, detail: &str) -> String {
+    let mut hints = Vec::new();
+    let lowered = detail.to_ascii_lowercase();
+
+    match config.source_type {
+        SourceType::Stdio => {
+            hints.push("Run the stdio command directly once to confirm it starts and speaks MCP over stdout.".to_string());
+            if lowered.contains("command not found")
+                || lowered.contains("no such file or directory")
+            {
+                hints.push("The configured executable was not found on PATH. Use a full path, install the tool first, or wrap npm-based servers with `npx`.".to_string());
+            }
+            if config.source.contains("npx") {
+                hints.push("If this is an npm MCP server, verify the package name manually with `npx ... --help` or install it globally before baking it.".to_string());
+            }
+        }
+        SourceType::Http => {
+            hints.push("Check that the HTTP MCP server is already running and that the URL points at its streamable MCP endpoint (often `/mcp`).".to_string());
+            if lowered.contains("401")
+                || lowered.contains("403")
+                || lowered.contains("unauthorized")
+            {
+                hints.push("Validation reached the server but auth failed. Re-check `--auth-header` values or bearer-token setup.".to_string());
+            }
+            if lowered.contains("connection refused")
+                || lowered.contains("timed out")
+                || lowered.contains("dns")
+                || lowered.contains("connect")
+            {
+                hints.push("If the server is intentionally offline right now, re-run with `--skip-validate` and bring it up before calling it later.".to_string());
+            }
+        }
+        SourceType::Api => {
+            hints.push("Verify the API spec URL is reachable and that any auth headers or timeout settings are correct.".to_string());
+            if lowered.contains("401")
+                || lowered.contains("403")
+                || lowered.contains("unauthorized")
+            {
+                hints.push("The API rejected auth during validation. Re-check tokens, headers, and whether the endpoint expects a different auth scheme.".to_string());
+            }
+        }
+        SourceType::Spec => {
+            hints.push("Confirm the OpenAPI document URL/file is valid JSON or YAML and reachable from this machine.".to_string());
+            if lowered.contains("401")
+                || lowered.contains("403")
+                || lowered.contains("unauthorized")
+            {
+                hints.push("The spec endpoint likely needs auth. Re-check `--auth-header` values or fetch the spec once manually first.".to_string());
+            }
+        }
+        SourceType::Graphql => {
+            hints.push("Verify the GraphQL endpoint is reachable and supports the schema/introspection flow expected by `sxmc graphql`.".to_string());
+            if lowered.contains("401")
+                || lowered.contains("403")
+                || lowered.contains("unauthorized")
+            {
+                hints.push("The GraphQL endpoint rejected auth during validation. Re-check tokens and headers.".to_string());
+            }
+        }
+    }
+
+    hints.push("If you intentionally want to save an offline or placeholder target, re-run with `--skip-validate`.".to_string());
+
+    let mut message = base.to_string();
+    if !hints.is_empty() {
+        message.push_str("\nHints:");
+        for hint in hints {
+            message.push_str("\n- ");
+            message.push_str(&hint);
+        }
+    }
+    message
 }
 
 fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
