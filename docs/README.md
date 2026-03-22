@@ -5,6 +5,7 @@ Additional documentation for sxmc developers and maintainers.
 | Document | Description |
 |----------|-------------|
 | [USAGE.md](USAGE.md) | Install, quick start, MCP workflows, client setup, and agent guidance |
+| [SIDE_BY_SIDE.md](SIDE_BY_SIDE.md) | With vs without `sxmc`: OpenAPI, skills, MCP discovery, and full-test status notes |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Module map, pipeline boundaries, extension points, and design decisions |
 | [DEMO.md](DEMO.md) | Short scripted demo path for terminal recordings or GIF capture |
 | [OPERATIONS.md](OPERATIONS.md) | Hosted deployment, release process, and distribution notes |
