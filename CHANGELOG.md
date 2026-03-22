@@ -6,12 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-03-22
+
+### Added
+
+- `sxmc doctor` now reports startup-discovery status plus recommended first commands for unfamiliar CLIs, MCP servers, APIs, startup-doc setup, and skill scans
+
 ### Changed
 
 - CLI inspection now recognizes multi-section Cobra command groups like `GITHUB ACTIONS COMMANDS` and `ALIAS COMMANDS` again, which restores the full top-level `gh` command set
 - version-banner handling is broader for mixed-case tools like `unzip`, so `man`-page `NAME` summaries win over release-banner text more reliably
 - generated CLI-to-AI agent docs now explicitly teach an `sxmc`-first workflow for unknown CLIs, MCP servers, and APIs
-- `sxmc doctor` now reports startup-discovery status plus the recommended first `sxmc` command for unknown surfaces
+- README, usage docs, demo flow, and integration coverage now reinforce the `sxmc`-first onboarding path for unknown surfaces
 
 ## [0.2.7] - 2026-03-22
 
