@@ -122,6 +122,20 @@ pub fn inspect_cli_batch(
     progress: bool,
     since: Option<&BatchSinceFilter>,
 ) -> Value {
+    inspect_cli_batch_with_callback(requests, allow_self, parallelism, progress, since, |_| {})
+}
+
+pub fn inspect_cli_batch_with_callback<F>(
+    requests: &[BatchInspectRequest],
+    allow_self: bool,
+    parallelism: usize,
+    progress: bool,
+    since: Option<&BatchSinceFilter>,
+    mut on_event: F,
+) -> Value
+where
+    F: FnMut(&Value),
+{
     let requested_parallelism = parallelism.max(1);
     let command_specs: Vec<String> = requests
         .iter()
@@ -135,17 +149,23 @@ pub fn inspect_cli_batch(
                 |request| match should_inspect_request_since(request, filter) {
                     Ok(true) => Some(request.clone()),
                     Ok(false) => {
-                        skipped.push(json!({
+                        let event = json!({
+                            "type": "skipped",
                             "command": request.command_spec,
                             "reason": format!("unchanged since {}", filter.raw),
-                        }));
+                        });
+                        on_event(&event);
+                        skipped.push(event);
                         None
                     }
                     Err(error) => {
-                        skipped.push(json!({
+                        let event = json!({
+                            "type": "skipped",
                             "command": request.command_spec,
                             "reason": error.to_string(),
-                        }));
+                        });
+                        on_event(&event);
+                        skipped.push(event);
                         None
                     }
                 },
@@ -212,12 +232,24 @@ pub fn inspect_cli_batch(
             progress,
         );
         match result {
-            Ok(profile) => profile_slots[index] = Some(profile_value(&profile)),
+            Ok(profile) => {
+                let value = profile_value(&profile);
+                let event = json!({
+                    "type": "profile",
+                    "command": command_spec,
+                    "profile": value,
+                });
+                on_event(&event);
+                profile_slots[index] = Some(event["profile"].clone());
+            }
             Err(error) => {
-                failure_slots[index] = Some(json!({
+                let event = json!({
+                    "type": "failure",
                     "command": command_spec,
                     "error": error.to_string(),
-                }))
+                });
+                on_event(&event);
+                failure_slots[index] = Some(event);
             }
         }
     }
@@ -558,6 +590,8 @@ pub fn diff_profile_value(before: &CliSurfaceProfile, after: &CliSurfaceProfile)
         .map(|item| item.name.clone())
         .collect::<std::collections::BTreeSet<_>>();
 
+    let migration_note = diff_migration_note(before, after);
+
     json!({
         "command": after.command,
         "before_command": before.command,
@@ -571,11 +605,46 @@ pub fn diff_profile_value(before: &CliSurfaceProfile, after: &CliSurfaceProfile)
         "options_removed": before_options.difference(&after_options).cloned().collect::<Vec<_>>(),
         "environment_added": after_env.difference(&before_env).cloned().collect::<Vec<_>>(),
         "environment_removed": before_env.difference(&after_env).cloned().collect::<Vec<_>>(),
+        "before_generator_version": before.provenance.generator_version,
+        "after_generator_version": after.provenance.generator_version,
+        "before_profile_schema": before.profile_schema,
+        "after_profile_schema": after.profile_schema,
+        "migration_note": migration_note,
         "before_generation_depth": before.provenance.generation_depth,
         "after_generation_depth": after.provenance.generation_depth,
         "before_nested_profile_count": before.subcommand_profiles.len(),
         "after_nested_profile_count": after.subcommand_profiles.len(),
     })
+}
+
+fn diff_migration_note(before: &CliSurfaceProfile, after: &CliSurfaceProfile) -> Option<String> {
+    let before_version = before.provenance.generator_version.trim();
+    let after_version = after.provenance.generator_version.trim();
+    let before_schema = before.profile_schema.trim();
+    let after_schema = after.profile_schema.trim();
+
+    if before_version.is_empty() && before_schema.is_empty() {
+        return Some(
+            "The saved `--before` profile is missing some provenance fields, so this diff used schema-tolerant decoding. Deltas may include older-profile omissions as well as real CLI changes."
+                .into(),
+        );
+    }
+
+    if !before_version.is_empty() && !after_version.is_empty() && before_version != after_version {
+        return Some(format!(
+            "The saved `--before` profile was generated by sxmc {} and the current profile by sxmc {}. Deltas may include parser evolution as well as CLI changes.",
+            before_version, after_version
+        ));
+    }
+
+    if !before_schema.is_empty() && !after_schema.is_empty() && before_schema != after_schema {
+        return Some(format!(
+            "The saved profile schema ({}) differs from the current profile schema ({}).",
+            before_schema, after_schema
+        ));
+    }
+
+    None
 }
 
 pub fn profile_value(profile: &CliSurfaceProfile) -> Value {

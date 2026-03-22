@@ -282,6 +282,24 @@ pub fn materialize_artifacts(
     Ok(outcomes)
 }
 
+pub fn preview_artifacts(
+    artifacts: &[GeneratedArtifact],
+    mode: ArtifactMode,
+    root: &Path,
+) -> Result<Vec<WriteOutcome>> {
+    let mut outcomes = Vec::new();
+    for artifact in artifacts {
+        let (path, status) = planned_artifact_write(artifact, mode, root)?;
+        outcomes.push(WriteOutcome {
+            label: artifact.label.clone(),
+            path,
+            mode,
+            status,
+        });
+    }
+    Ok(outcomes)
+}
+
 pub fn materialize_artifacts_with_apply_selection(
     artifacts: &[GeneratedArtifact],
     mode: ArtifactMode,
@@ -313,6 +331,45 @@ pub fn materialize_artifacts_with_apply_selection(
         };
 
         outcomes.extend(materialize_artifacts(
+            std::slice::from_ref(artifact),
+            effective_mode,
+            root,
+        )?);
+    }
+    Ok(outcomes)
+}
+
+pub fn preview_artifacts_with_apply_selection(
+    artifacts: &[GeneratedArtifact],
+    mode: ArtifactMode,
+    root: &Path,
+    selected_clients: &[AiClientProfile],
+) -> Result<Vec<WriteOutcome>> {
+    let mut outcomes = Vec::new();
+    for artifact in artifacts {
+        let effective_mode = if mode == ArtifactMode::Apply {
+            match artifact.audience {
+                ArtifactAudience::Shared => ArtifactMode::Apply,
+                ArtifactAudience::Portable => {
+                    if selected_clients.is_empty() {
+                        ArtifactMode::WriteSidecar
+                    } else {
+                        ArtifactMode::Apply
+                    }
+                }
+                ArtifactAudience::Client(client) => {
+                    if selected_clients.contains(&client) {
+                        ArtifactMode::Apply
+                    } else {
+                        ArtifactMode::WriteSidecar
+                    }
+                }
+            }
+        } else {
+            mode
+        };
+
+        outcomes.extend(preview_artifacts(
             std::slice::from_ref(artifact),
             effective_mode,
             root,
@@ -601,6 +658,41 @@ fn apply_artifact(artifact: &GeneratedArtifact, root: &Path) -> Result<(PathBuf,
     }
 }
 
+fn planned_artifact_write(
+    artifact: &GeneratedArtifact,
+    mode: ArtifactMode,
+    root: &Path,
+) -> Result<(PathBuf, WriteStatus)> {
+    match mode {
+        ArtifactMode::Preview | ArtifactMode::Patch => {
+            Ok((artifact.target_path.clone(), WriteStatus::Skipped))
+        }
+        ArtifactMode::WriteSidecar => {
+            let path = sidecar_path(&artifact.sidecar_scope, root, &artifact.target_path);
+            let status = planned_write_status(&path, &artifact.content)?;
+            Ok((path, status))
+        }
+        ArtifactMode::Apply => match artifact.apply_strategy {
+            ApplyStrategy::SidecarOnly => {
+                let path = sidecar_path(&artifact.sidecar_scope, root, &artifact.target_path);
+                let status = planned_write_status(&path, &artifact.content)?;
+                Ok((path, status))
+            }
+            ApplyStrategy::ManagedMarkdownBlock
+            | ApplyStrategy::JsonMcpConfig
+            | ApplyStrategy::TomlManagedBlock => {
+                let proposed = proposed_applied_content(artifact, root)?;
+                let status = planned_write_status(&artifact.target_path, &proposed)?;
+                Ok((artifact.target_path.clone(), status))
+            }
+            ApplyStrategy::DirectWrite => {
+                let status = planned_write_status(&artifact.target_path, &artifact.content)?;
+                Ok((artifact.target_path.clone(), status))
+            }
+        },
+    }
+}
+
 fn remove_artifact(artifact: &GeneratedArtifact, root: &Path) -> Result<PathBuf> {
     match artifact.apply_strategy {
         ApplyStrategy::SidecarOnly => {
@@ -664,6 +756,19 @@ fn write_with_status(path: &Path, content: &str) -> Result<WriteStatus> {
     } else {
         WriteStatus::Created
     })
+}
+
+fn planned_write_status(path: &Path, content: &str) -> Result<WriteStatus> {
+    if path.exists() {
+        let existing = fs::read_to_string(path)?;
+        if existing == content {
+            Ok(WriteStatus::Skipped)
+        } else {
+            Ok(WriteStatus::Updated)
+        }
+    } else {
+        Ok(WriteStatus::Created)
+    }
 }
 
 fn write_or_remove_target(path: &Path, content: &str) -> Result<()> {

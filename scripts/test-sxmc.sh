@@ -775,6 +775,15 @@ else
   fail "doctor --fix should repair selected hosts"
 fi
 
+TMP_DOCTOR_DRY_RUN_ROOT="$TMPDIR_TEST/doctor-fix-dry-run-root"
+mkdir -p "$TMP_DOCTOR_DRY_RUN_ROOT"
+doctor_dry_run=$("$SXMC" doctor --check --fix --dry-run --allow-low-confidence --only claude-code --from-cli "$TMPDIR_TEST/doctor-fix-cli" --root "$TMP_DOCTOR_DRY_RUN_ROOT" --human 2>/dev/null || true)
+if echo "$doctor_dry_run" | grep -q "Summary:" && [ ! -f "$TMP_DOCTOR_DRY_RUN_ROOT/CLAUDE.md" ]; then
+  pass "doctor --fix --dry-run previews without writing files"
+else
+  fail "doctor --fix --dry-run should not write files" "${doctor_dry_run:0:160}"
+fi
+
 # ============================================================================
 # SECTION 14: Self-Dogfooding
 # ============================================================================
@@ -848,6 +857,14 @@ if json_check "$batch_from_file" "d.get('count', 0) == 2 and d.get('failed_count
   pass "inspect batch --from-file loads command specs"
 else
   fail "inspect batch --from-file" "${batch_from_file:0:100}"
+fi
+
+TMP_BATCH_OUT="$TMPDIR_TEST/batch-output"
+batch_output_dir=$("$SXMC" inspect batch git ls --output-dir "$TMP_BATCH_OUT" 2>/dev/null)
+if json_check "$batch_output_dir" "d.get('written_profile_count', 0) == 2 and 'output_dir' in d" && [ -f "$TMP_BATCH_OUT/git.json" ] && [ -f "$TMP_BATCH_OUT/ls.json" ]; then
+  pass "inspect batch --output-dir saves separate profile files"
+else
+  fail "inspect batch --output-dir" "${batch_output_dir:0:140}"
 fi
 
 batch_from_file_comments=$("$SXMC" inspect batch --from-file "$TMPDIR_TEST/tools-with-comments.txt" --parallel 2 2>/dev/null)
@@ -946,6 +963,19 @@ else
   fail "inspect batch --format toon failure details" "${batch_toon_fail:0:140}"
 fi
 
+batch_ndjson=$("$SXMC" inspect batch git this-command-should-not-exist-xyz --format ndjson 2>/dev/null)
+if python3 -c 'import json, sys
+lines = [line for line in sys.stdin.read().splitlines() if line.strip()]
+records = [json.loads(line) for line in lines]
+assert records[-1]["type"] == "summary"
+assert any(r["type"] == "failure" for r in records)
+' <<< "$batch_ndjson"
+then
+  pass "inspect batch --format ndjson streams events plus summary"
+else
+  fail "inspect batch --format ndjson" "${batch_ndjson:0:180}"
+fi
+
 if has_cmd git; then
   before_profile="$TMPDIR_TEST/git-before.json"
   "$SXMC" inspect cli git --pretty > "$before_profile"
@@ -961,6 +991,37 @@ if has_cmd git; then
     pass "inspect diff --format toon is human-oriented"
   else
     fail "inspect diff --format toon" "${diff_toon:0:120}"
+  fi
+
+  tmp_after_profile="$TMPDIR_TEST/git-after.json"
+  python3 - <<'PY' "$before_profile" "$tmp_after_profile"
+import json, sys
+src, dest = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    data = json.load(f)
+data["summary"] = "A changed git summary"
+with open(dest, "w") as f:
+    json.dump(data, f)
+PY
+  diff_saved_saved=$("$SXMC" inspect diff --before "$before_profile" --after "$tmp_after_profile" 2>/dev/null)
+  if json_check "$diff_saved_saved" "d.get('summary_changed') is True and d.get('after_summary') == 'A changed git summary'"; then
+    pass "inspect diff compares two saved profiles"
+  else
+    fail "inspect diff saved-vs-saved" "${diff_saved_saved:0:120}"
+  fi
+
+  diff_exit_fail=$("$SXMC" inspect diff --before "$before_profile" --after "$tmp_after_profile" --exit-code >/dev/null 2>&1; echo $?)
+  if [ "$diff_exit_fail" = "1" ]; then
+    pass "inspect diff --exit-code returns 1 when changed"
+  else
+    fail "inspect diff --exit-code should fail on changes" "$diff_exit_fail"
+  fi
+
+  diff_exit_same=$("$SXMC" inspect diff git --before "$before_profile" --exit-code >/dev/null 2>&1; echo $?)
+  if [ "$diff_exit_same" = "0" ]; then
+    pass "inspect diff --exit-code returns 0 when identical"
+  else
+    fail "inspect diff --exit-code should pass when identical" "$diff_exit_same"
   fi
 else
   skip "inspect diff" "git not installed"
@@ -994,6 +1055,23 @@ if json_check "$legacy_diff_out" "'summary_changed' in d and 'options_added' in 
   pass "inspect diff tolerates older or partially-missing profile fields"
 else
   fail "inspect diff legacy-profile tolerance" "${legacy_diff_out:0:120}"
+fi
+
+legacy_version_before="$TMPDIR_TEST/git-before-old-version.json"
+python3 - <<'PY' "$before_profile" "$legacy_version_before"
+import json, sys
+src, dest = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    data = json.load(f)
+data.setdefault("provenance", {})["generator_version"] = "0.1.0"
+with open(dest, "w") as f:
+    json.dump(data, f)
+PY
+legacy_version_diff=$("$SXMC" inspect diff git --before "$legacy_version_before" 2>/dev/null)
+if json_check "$legacy_version_diff" "'migration_note' in d and '0.1.0' in d.get('migration_note','')"; then
+  pass "inspect diff reports a migration note for older generator versions"
+else
+  fail "inspect diff migration note" "${legacy_version_diff:0:160}"
 fi
 
 # ============================================================================

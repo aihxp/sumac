@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.20] - 2026-03-22
+
+### Added
+
+- `sxmc inspect diff --before <old.json> --after <new.json>` for comparing two saved CLI profiles without a live tool on PATH
+- `sxmc inspect diff --exit-code` for CI-style success/changed signaling
+- `sxmc doctor --fix --dry-run` to preview startup-file repairs without writing them
+- `sxmc inspect batch --output-dir <dir>` to save each successful profile as a separate JSON file
+- `sxmc inspect batch --format ndjson` to emit per-result events plus a final summary record
+- `sxmc inspect diff --watch <seconds>` to re-run diffs on an interval until interrupted
+
+### Changed
+
+- `sxmc inspect diff` now emits migration notes when comparing saved profiles from older or provenance-sparse generators
+- `sxmc inspect diff --format toon` now renders removed deltas as well as added ones
+- the validation suite now covers saved-vs-saved diffing, diff exit codes, doctor dry-runs, batch output directories, and batch NDJSON streaming
+
 ## [0.2.19] - 2026-03-22
 
 ### Changed

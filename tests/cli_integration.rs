@@ -378,6 +378,57 @@ fn test_inspect_batch_toon_is_summary_oriented() {
 }
 
 #[test]
+fn test_inspect_batch_output_dir_writes_profiles() {
+    let temp = tempfile::tempdir().unwrap();
+    let output_dir = temp.path().join("profiles");
+
+    let value = command_json(&[
+        "inspect",
+        "batch",
+        "cargo",
+        "git",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+    assert_eq!(value["written_profile_count"], Value::from(2));
+    assert_eq!(
+        value["output_dir"],
+        Value::from(output_dir.display().to_string())
+    );
+    assert!(output_dir.join("cargo.json").exists());
+    assert!(output_dir.join("git.json").exists());
+}
+
+#[test]
+fn test_inspect_batch_ndjson_streams_events_and_summary() {
+    let output = sxmc()
+        .args([
+            "inspect",
+            "batch",
+            "cargo",
+            "this-command-should-not-exist-xyz",
+            "--format",
+            "ndjson",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    assert!(lines.len() >= 3);
+    let first: Value = serde_json::from_str(lines[0]).unwrap();
+    let last: Value = serde_json::from_str(lines.last().unwrap()).unwrap();
+    assert!(matches!(
+        first["type"].as_str().unwrap_or_default(),
+        "profile" | "failure" | "skipped"
+    ));
+    assert_eq!(last["type"], Value::from("summary"));
+}
+
+#[test]
 fn test_inspect_batch_toon_includes_failure_details() {
     sxmc()
         .args([
@@ -530,6 +581,38 @@ fn test_doctor_fix_repairs_selected_hosts() {
 }
 
 #[test]
+#[cfg(not(windows))]
+fn test_doctor_fix_dry_run_does_not_write_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_cli(
+        temp.path(),
+        "fake-cli\n\nA repairable CLI.\n\nUsage:\n  fake-cli [OPTIONS]\n\nOptions:\n  --json  Emit json\n",
+    );
+
+    sxmc()
+        .args([
+            "doctor",
+            "--check",
+            "--fix",
+            "--dry-run",
+            "--allow-low-confidence",
+            "--only",
+            "claude-code",
+            "--from-cli",
+            fake.to_str().unwrap(),
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--human",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("Created"))
+        .stdout(predicate::str::contains("Summary:"));
+
+    assert!(!temp.path().join("CLAUDE.md").exists());
+}
+
+#[test]
 fn test_doctor_check_only_hosts_limits_scope() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join(".cursor").join("rules")).unwrap();
@@ -626,6 +709,33 @@ fn test_inspect_diff_reports_changes_against_saved_profile() {
 }
 
 #[test]
+fn test_inspect_diff_can_compare_two_saved_profiles() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    let mut after = before.clone();
+    after["summary"] = Value::from("A changed cargo summary");
+
+    let before_path = temp.path().join("before.json");
+    let after_path = temp.path().join("after.json");
+    fs::write(&before_path, serde_json::to_string_pretty(&before).unwrap()).unwrap();
+    fs::write(&after_path, serde_json::to_string_pretty(&after).unwrap()).unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "diff",
+        "--before",
+        before_path.to_str().unwrap(),
+        "--after",
+        after_path.to_str().unwrap(),
+    ]);
+    assert_eq!(value["summary_changed"], Value::Bool(true));
+    assert_eq!(
+        value["after_summary"],
+        Value::from("A changed cargo summary")
+    );
+}
+
+#[test]
 fn test_inspect_diff_rejects_compact_profiles_with_specific_guidance() {
     let temp = tempfile::tempdir().unwrap();
     let before = command_stdout(&["inspect", "cli", "cargo", "--compact"]);
@@ -672,6 +782,36 @@ fn test_inspect_diff_toon_is_human_oriented() {
 }
 
 #[test]
+fn test_inspect_diff_toon_includes_removed_deltas() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    let mut after = before.clone();
+    after["subcommands"].as_array_mut().unwrap().remove(0);
+    after["options"].as_array_mut().unwrap().remove(0);
+
+    let before_path = temp.path().join("before.json");
+    let after_path = temp.path().join("after.json");
+    fs::write(&before_path, serde_json::to_string_pretty(&before).unwrap()).unwrap();
+    fs::write(&after_path, serde_json::to_string_pretty(&after).unwrap()).unwrap();
+
+    sxmc()
+        .args([
+            "inspect",
+            "diff",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--after",
+            after_path.to_str().unwrap(),
+            "--format",
+            "toon",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("subcommands_removed:"))
+        .stdout(predicate::str::contains("options_removed:"));
+}
+
+#[test]
 fn test_inspect_diff_tolerates_missing_legacy_fields_in_saved_profile() {
     let temp = tempfile::tempdir().unwrap();
     let mut before = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
@@ -705,6 +845,68 @@ fn test_inspect_diff_tolerates_missing_legacy_fields_in_saved_profile() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"summary_changed\""));
+}
+
+#[test]
+fn test_inspect_diff_reports_migration_note_for_version_mismatch() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut before = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    before["provenance"]["generator_version"] = Value::from("0.1.0");
+    let before_path = temp.path().join("before-old-version.json");
+    fs::write(&before_path, serde_json::to_string_pretty(&before).unwrap()).unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "diff",
+        "cargo",
+        "--before",
+        before_path.to_str().unwrap(),
+    ]);
+    assert!(value["migration_note"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("generated by sxmc 0.1.0"));
+}
+
+#[test]
+fn test_inspect_diff_exit_code_fails_when_changed() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut before = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    before["summary"] = Value::from("An older cargo summary");
+    let before_path = temp.path().join("before-old.json");
+    fs::write(&before_path, serde_json::to_string_pretty(&before).unwrap()).unwrap();
+
+    sxmc()
+        .args([
+            "inspect",
+            "diff",
+            "cargo",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--exit-code",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_inspect_diff_exit_code_succeeds_when_identical() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = command_stdout(&["inspect", "cli", "cargo", "--pretty"]);
+    let before_path = temp.path().join("before.json");
+    fs::write(&before_path, before).unwrap();
+
+    sxmc()
+        .args([
+            "inspect",
+            "diff",
+            "cargo",
+            "--before",
+            before_path.to_str().unwrap(),
+            "--exit-code",
+        ])
+        .assert()
+        .success();
 }
 
 #[test]

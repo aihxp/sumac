@@ -385,6 +385,10 @@ pub enum Commands {
         #[arg(long)]
         fix: bool,
 
+        /// Preview doctor repair writes without modifying files
+        #[arg(long)]
+        dry_run: bool,
+
         /// CLI to inspect when repairing startup-facing files
         #[arg(long = "from-cli")]
         from_cli: Option<String>,
@@ -484,6 +488,8 @@ pub enum InspectAction {
         commands: Vec<String>,
         #[arg(long)]
         from_file: Option<PathBuf>,
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]
         depth: usize,
         #[arg(long, value_name = "TIMESTAMP")]
@@ -502,11 +508,17 @@ pub enum InspectAction {
         allow_self: bool,
     },
     Diff {
-        command: String,
+        command: Option<String>,
         #[arg(long = "before")]
         before: PathBuf,
+        #[arg(long = "after", conflicts_with = "command")]
+        after: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]
         depth: usize,
+        #[arg(long)]
+        exit_code: bool,
+        #[arg(long, value_name = "SECONDS")]
+        watch: Option<u64>,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]

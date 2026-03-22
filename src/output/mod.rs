@@ -11,6 +11,7 @@ pub enum StructuredOutputFormat {
     Json,
     JsonPretty,
     Toon,
+    Ndjson,
 }
 
 pub fn resolve_structured_format(
@@ -42,6 +43,14 @@ pub fn format_structured_value(value: &Value, format: StructuredOutputFormat) ->
             serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
         }
         StructuredOutputFormat::Toon => encode_toon(value),
+        StructuredOutputFormat::Ndjson => match value {
+            Value::Array(items) => items
+                .iter()
+                .map(|item| item.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            _ => value.to_string(),
+        },
     }
 }
 
