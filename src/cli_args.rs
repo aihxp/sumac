@@ -373,6 +373,10 @@ pub enum Commands {
         #[arg(long)]
         root: Option<PathBuf>,
 
+        /// Exit non-zero if startup-facing AI files are missing
+        #[arg(long)]
+        check: bool,
+
         /// Force the human-readable report even when stdout is not a TTY
         #[arg(long)]
         human: bool,
@@ -454,10 +458,14 @@ pub enum InspectAction {
     },
     Batch {
         commands: Vec<String>,
+        #[arg(long)]
+        from_file: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]
         depth: usize,
         #[arg(long, default_value_t = 4)]
         parallel: usize,
+        #[arg(long)]
+        progress: bool,
         #[arg(long)]
         compact: bool,
         #[arg(long)]

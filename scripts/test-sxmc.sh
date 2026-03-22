@@ -711,6 +711,14 @@ else
   fail "doctor --human should mention cache stats"
 fi
 
+TMP_DOCTOR_ROOT="$TMPDIR_TEST/doctor-empty"
+mkdir -p "$TMP_DOCTOR_ROOT"
+if "$SXMC" doctor --check --root "$TMP_DOCTOR_ROOT" >/dev/null 2>&1; then
+  fail "doctor --check should fail when startup files are missing"
+else
+  pass "doctor --check fails when startup files are missing"
+fi
+
 # ============================================================================
 # SECTION 14: Self-Dogfooding
 # ============================================================================
@@ -757,7 +765,9 @@ else
   skip "depth expansion tests" "git not installed"
 fi
 
-batch_out=$("$SXMC" inspect batch git cargo this-command-should-not-exist-xyz --parallel 4 2>/dev/null)
+printf 'git\ncargo\n' > "$TMPDIR_TEST/tools.txt"
+
+batch_out=$("$SXMC" inspect batch git cargo this-command-should-not-exist-xyz --parallel 4 --progress 2>/dev/null)
 if json_check "$batch_out" "d.get('count', 0) == 3"; then
   pass "inspect batch reports requested command count"
 else
@@ -776,6 +786,13 @@ else
   fail "inspect batch should report parallelism"
 fi
 
+batch_from_file=$("$SXMC" inspect batch --from-file "$TMPDIR_TEST/tools.txt" --parallel 2 2>/dev/null)
+if json_check "$batch_from_file" "d.get('count', 0) == 2 and d.get('failed_count', 0) == 0"; then
+  pass "inspect batch --from-file loads command specs"
+else
+  fail "inspect batch --from-file" "${batch_from_file:0:100}"
+fi
+
 cache_stats=$("$SXMC" inspect cache-stats 2>/dev/null)
 if json_check "$cache_stats" "'entry_count' in d and 'total_bytes' in d"; then
   pass "inspect cache-stats returns cache metrics"
@@ -784,10 +801,17 @@ else
 fi
 
 cache_invalidate=$("$SXMC" inspect cache-invalidate git 2>/dev/null)
-if json_check "$cache_invalidate" "'removed_entries' in d"; then
-  pass "inspect cache-invalidate returns removal metrics"
+if json_check "$cache_invalidate" "'removed_entries' in d and d.get('match_mode') == 'exact'"; then
+  pass "inspect cache-invalidate returns exact-match removal metrics"
 else
   fail "inspect cache-invalidate" "${cache_invalidate:0:100}"
+fi
+
+cache_pattern=$("$SXMC" inspect cache-invalidate 'c*' 2>/dev/null)
+if json_check "$cache_pattern" "'removed_entries' in d and d.get('match_mode') == 'pattern'"; then
+  pass "inspect cache-invalidate supports glob patterns"
+else
+  fail "inspect cache-invalidate pattern mode" "${cache_pattern:0:100}"
 fi
 
 cache_clear=$("$SXMC" inspect cache-clear 2>/dev/null)

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-03-22
+
+### Added
+
+- `sxmc inspect batch --from-file <path>` to load larger command lists from a file
+- `sxmc doctor --check` for CI-style startup-file validation
+
+### Changed
+
+- `sxmc inspect cache-invalidate` now preserves non-targeted cache entries and reports before/after cache metrics accurately
+- `sxmc inspect cache-invalidate` now supports glob-style patterns such as `git*` or `c*`
+- `sxmc inspect batch --progress` now forces stderr progress notes for larger batch runs
+- the comprehensive `scripts/test-sxmc.sh` gate now covers doctor check mode, file-driven batch inspection, exact vs pattern cache invalidation, and the fixed invalidate semantics
+
 ## [0.2.14] - 2026-03-22
 
 ### Added

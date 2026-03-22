@@ -2252,19 +2252,30 @@ async fn main() -> Result<()> {
             }
             InspectAction::Batch {
                 commands,
+                from_file,
                 depth,
                 parallel,
+                progress,
                 compact,
                 pretty,
                 format,
                 allow_self,
             } => {
-                if commands.is_empty() {
+                let command_specs =
+                    cli_surfaces::load_batch_command_specs(&commands, from_file.as_deref())?;
+                if command_specs.is_empty() {
                     return Err(sxmc::error::SxmcError::Other(
-                        "inspect batch requires at least one command spec".into(),
+                        "inspect batch requires at least one command spec or --from-file input"
+                            .into(),
                     ));
                 }
-                let value = cli_surfaces::inspect_cli_batch(&commands, allow_self, depth, parallel);
+                let value = cli_surfaces::inspect_cli_batch(
+                    &command_specs,
+                    allow_self,
+                    depth,
+                    parallel,
+                    progress,
+                );
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
                     if matches!(format, output::StructuredOutputFormat::Toon) {
                         println!("{}", format_batch_toon(&value, compact));
@@ -2633,6 +2644,7 @@ async fn main() -> Result<()> {
         }
         Commands::Doctor {
             root,
+            check,
             human,
             pretty,
             format,
@@ -2646,6 +2658,19 @@ async fn main() -> Result<()> {
             } else {
                 let format = output::resolve_structured_format(format, pretty);
                 println!("{}", output::format_structured_value(&value, format));
+            }
+            if check {
+                let startup_files = value["startup_files"].as_object();
+                let has_missing = startup_files
+                    .map(|files| {
+                        files
+                            .values()
+                            .any(|details| !details["present"].as_bool().unwrap_or(false))
+                    })
+                    .unwrap_or(false);
+                if has_missing {
+                    std::process::exit(1);
+                }
             }
         }
     }

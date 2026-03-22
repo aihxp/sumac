@@ -291,6 +291,23 @@ fn test_inspect_batch_returns_profiles_and_failures() {
 }
 
 #[test]
+fn test_inspect_batch_from_file_loads_commands() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("tools.txt");
+    fs::write(&path, "cargo\n# comment\n git \n").unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "batch",
+        "--from-file",
+        path.to_str().unwrap(),
+        "--compact",
+    ]);
+    assert_eq!(value["count"], Value::from(2));
+    assert_eq!(value["failed_count"], Value::from(0));
+}
+
+#[test]
 fn test_inspect_batch_toon_is_summary_oriented() {
     sxmc()
         .args(["inspect", "batch", "cargo", "--format", "toon"])
@@ -304,14 +321,35 @@ fn test_inspect_batch_toon_is_summary_oriented() {
 #[test]
 fn test_inspect_cache_invalidate_and_clear() {
     let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
+    let _ = command_json(&["inspect", "cli", "git", "--compact"]);
+
+    let before = command_json(&["inspect", "cache-stats"]);
+    let before_entries = before["entry_count"].as_u64().unwrap_or(0);
+    assert!(before_entries >= 2);
 
     let invalidate = command_json(&["inspect", "cache-invalidate", "cargo"]);
     assert_eq!(invalidate["command"], "cargo");
+    assert_eq!(invalidate["match_mode"], "exact");
     assert!(invalidate["removed_entries"].as_u64().unwrap_or(0) >= 1);
+    assert!(invalidate["remaining_entries"].as_u64().unwrap_or(0) >= 1);
 
     let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
+    let wildcard = command_json(&["inspect", "cache-invalidate", "g*"]);
+    assert_eq!(wildcard["match_mode"], "pattern");
+    assert!(wildcard["removed_entries"].as_u64().unwrap_or(0) >= 1);
+
     let cleared = command_json(&["inspect", "cache-clear"]);
     assert_eq!(cleared["cleared"], Value::Bool(true));
+    assert_eq!(cleared["entry_count"], Value::from(0));
+}
+
+#[test]
+fn test_doctor_check_exits_non_zero_when_startup_files_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    sxmc()
+        .args(["doctor", "--check", "--root", temp.path().to_str().unwrap()])
+        .assert()
+        .failure();
 }
 
 #[test]

@@ -13,6 +13,13 @@ pub struct CacheStats {
     pub default_ttl_secs: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CacheRecord {
+    pub key: String,
+    pub path: PathBuf,
+    pub data: String,
+}
+
 /// A file-based cache with TTL support.
 /// Stores entries in ~/.cache/sxmc/
 pub struct Cache {
@@ -147,6 +154,38 @@ impl Cache {
             }
         }
         Ok(removed)
+    }
+
+    pub fn records(&self) -> Result<Vec<CacheRecord>> {
+        let mut records = Vec::new();
+        if self.dir.exists() {
+            for entry in std::fs::read_dir(&self.dir)
+                .map_err(|e| SxmcError::Other(format!("Failed to read cache dir: {}", e)))?
+                .flatten()
+            {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) else {
+                    continue;
+                };
+                let key = if cache_entry.key.is_empty() {
+                    String::new()
+                } else {
+                    cache_entry.key
+                };
+                records.push(CacheRecord {
+                    key,
+                    path,
+                    data: cache_entry.data,
+                });
+            }
+        }
+        Ok(records)
     }
 
     /// Return summary information about the cache directory.

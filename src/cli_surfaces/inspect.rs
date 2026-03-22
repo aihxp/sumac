@@ -88,14 +88,18 @@ pub fn inspect_cli_batch(
     allow_self: bool,
     depth: usize,
     parallelism: usize,
+    progress: bool,
 ) -> Value {
     let requested_parallelism = parallelism.max(1);
     let worker_count = requested_parallelism.min(command_specs.len().max(1));
-    maybe_print_progress(&format!(
-        "Batch inspecting {} command(s) with parallelism {}",
-        command_specs.len(),
-        worker_count
-    ));
+    maybe_print_progress_mode(
+        &format!(
+            "Batch inspecting {} command(s) with parallelism {}",
+            command_specs.len(),
+            worker_count
+        ),
+        progress,
+    );
 
     let (job_sender, job_receiver) = mpsc::channel::<(usize, String)>();
     let (result_sender, result_receiver) =
@@ -133,12 +137,15 @@ pub fn inspect_cli_batch(
         let Ok((index, command_spec, result)) = result_receiver.recv() else {
             break;
         };
-        maybe_print_progress(&format!(
-            "Batch inspection finished for `{}` ({}/{})",
-            command_spec,
-            index + 1,
-            command_specs.len()
-        ));
+        maybe_print_progress_mode(
+            &format!(
+                "Batch inspection finished for `{}` ({}/{})",
+                command_spec,
+                index + 1,
+                command_specs.len()
+            ),
+            progress,
+        );
         match result {
             Ok(profile) => profile_slots[index] = Some(profile_value(&profile)),
             Err(error) => {
@@ -189,29 +196,81 @@ pub fn clear_profile_cache_value() -> Result<Value> {
 }
 
 pub fn invalidate_profile_cache_value(command_spec: &str) -> Result<Value> {
-    let parts = parse_command_spec(command_spec)?;
-    if parts.is_empty() {
+    let cache = Cache::new(CLI_PROFILE_CACHE_TTL_SECS)?;
+    let before = cache.stats()?;
+    let trimmed = command_spec.trim();
+    if trimmed.is_empty() {
         return Err(SxmcError::Other("Empty command spec".into()));
     }
+    let glob_like = contains_glob_syntax(trimmed);
+    let parts = if glob_like {
+        None
+    } else {
+        Some(parse_command_spec(trimmed)?)
+    };
+    let pattern = if glob_like {
+        Some(glob::Pattern::new(trimmed).map_err(|error| {
+            SxmcError::Other(format!(
+                "Invalid glob pattern for cache invalidation '{}': {}",
+                trimmed, error
+            ))
+        })?)
+    } else {
+        None
+    };
 
-    let executable = &parts[0];
-    let fingerprint = executable_fingerprint(executable);
-    let parts_suffix = parts.join("\u{1f}");
-    let cache = Cache::new(CLI_PROFILE_CACHE_TTL_SECS)?;
-    let removed = cache.remove_matching(|key| {
-        key.starts_with("cli-profile:v")
-            && key.contains(&fingerprint)
-            && key.ends_with(&parts_suffix)
-    })?;
+    let records = cache.records()?;
+    let mut removed = 0usize;
+    for record in records {
+        let Ok(profile) = serde_json::from_str::<CliSurfaceProfile>(&record.data) else {
+            continue;
+        };
+        if should_invalidate_profile_cache_entry(
+            &profile,
+            trimmed,
+            parts.as_deref(),
+            pattern.as_ref(),
+        ) && std::fs::remove_file(&record.path).is_ok()
+        {
+            removed += 1;
+        }
+    }
     let stats = cache.stats()?;
     Ok(json!({
         "cleared": removed > 0,
         "removed_entries": removed,
         "command": command_spec,
+        "match_mode": if glob_like { "pattern" } else { "exact" },
+        "before_entries": before.entry_count,
+        "before_bytes": before.total_bytes,
         "path": stats.path.display().to_string(),
         "remaining_entries": stats.entry_count,
         "remaining_bytes": stats.total_bytes,
     }))
+}
+
+pub fn load_batch_command_specs(
+    commands: &[String],
+    from_file: Option<&Path>,
+) -> Result<Vec<String>> {
+    let mut specs = commands.to_vec();
+    if let Some(path) = from_file {
+        let raw = fs::read_to_string(path).map_err(|error| {
+            SxmcError::Other(format!(
+                "Failed to read batch command file '{}': {}",
+                path.display(),
+                error
+            ))
+        })?;
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            specs.push(trimmed.to_string());
+        }
+    }
+    Ok(specs)
 }
 
 pub fn inspect_cli_with_depth(
@@ -2201,9 +2260,53 @@ fn now_string() -> String {
 }
 
 fn maybe_print_progress(message: &str) {
-    if std::io::stderr().is_terminal() && std::env::var_os("SXMC_NO_PROGRESS").is_none() {
+    if (std::io::stderr().is_terminal() || std::env::var_os("SXMC_FORCE_PROGRESS").is_some())
+        && std::env::var_os("SXMC_NO_PROGRESS").is_none()
+    {
         eprintln!("[sxmc] {message}");
     }
+}
+
+fn maybe_print_progress_mode(message: &str, force: bool) {
+    if force && std::env::var_os("SXMC_FORCE_PROGRESS").is_none() {
+        std::env::set_var("SXMC_FORCE_PROGRESS", "1");
+        maybe_print_progress(message);
+        std::env::remove_var("SXMC_FORCE_PROGRESS");
+    } else {
+        maybe_print_progress(message);
+    }
+}
+
+fn contains_glob_syntax(value: &str) -> bool {
+    value.contains('*') || value.contains('?') || value.contains('[')
+}
+
+fn should_invalidate_profile_cache_entry(
+    profile: &CliSurfaceProfile,
+    raw_target: &str,
+    exact_parts: Option<&[String]>,
+    pattern: Option<&glob::Pattern>,
+) -> bool {
+    if let Some(pattern) = pattern {
+        return pattern.matches(&profile.command)
+            || pattern.matches(&profile.source.identifier)
+            || pattern
+                .matches(format!("{} {}", profile.source.identifier, profile.command).trim());
+    }
+
+    let Some(parts) = exact_parts else {
+        return false;
+    };
+    if parts.is_empty() {
+        return false;
+    }
+    let executable = &parts[0];
+    let joined = parts.join(" ");
+    profile.source.identifier == raw_target
+        || profile.source.identifier == executable.as_str()
+        || profile.command == raw_target
+        || profile.command == executable.as_str()
+        || format!("{} {}", profile.source.identifier, profile.command).trim() == joined
 }
 
 #[cfg(test)]
