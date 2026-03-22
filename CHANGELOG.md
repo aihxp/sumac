@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.18] - 2026-03-22
+
+### Changed
+
+- `sxmc inspect diff` now gives an explicit compact-profile error telling you to save a full profile without `--compact`
+- `sxmc inspect diff --format toon` now renders a human-oriented diff summary
+- docs now clarify that YAML/TOML batch depth overrides populate `subcommand_profiles` in full output and only summary counts in compact output
+- RFC3339 `--since` support is now covered in the validation suite
+- `sxmc doctor --fix` now distinguishes created, updated, and skipped-unchanged outputs
+
 ## [0.2.17] - 2026-03-22
 
 ### Added
