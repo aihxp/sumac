@@ -1230,6 +1230,70 @@ fn print_batch_inspect_report(value: &Value, compact: bool) {
     }
 }
 
+fn format_batch_toon(value: &Value, compact: bool) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!("count: {}", value["count"].as_u64().unwrap_or(0)));
+    lines.push(format!(
+        "parallelism: {}",
+        value["parallelism"].as_u64().unwrap_or(0)
+    ));
+    lines.push(format!(
+        "success_count: {}",
+        value["success_count"].as_u64().unwrap_or(0)
+    ));
+    lines.push(format!(
+        "failed_count: {}",
+        value["failed_count"].as_u64().unwrap_or(0)
+    ));
+    lines.push(String::new());
+    lines.push("profiles:".into());
+
+    if let Some(profiles) = value["profiles"].as_array() {
+        for profile in profiles {
+            let command = profile["command"].as_str().unwrap_or("<unknown>");
+            let summary = profile["summary"].as_str().unwrap_or_default();
+            if compact {
+                lines.push(format!(
+                    "- {}: {} ({} subcommands, {} options)",
+                    command,
+                    summary,
+                    profile["subcommand_count"].as_u64().unwrap_or(0),
+                    profile["option_count"].as_u64().unwrap_or(0)
+                ));
+            } else {
+                let subcommand_count = profile["subcommands"]
+                    .as_array()
+                    .map(|items| items.len())
+                    .unwrap_or(0);
+                let option_count = profile["options"]
+                    .as_array()
+                    .map(|items| items.len())
+                    .unwrap_or(0);
+                lines.push(format!(
+                    "- {}: {} ({} subcommands, {} options)",
+                    command, summary, subcommand_count, option_count
+                ));
+            }
+        }
+    }
+
+    if let Some(failures) = value["failures"].as_array() {
+        if !failures.is_empty() {
+            lines.push(String::new());
+            lines.push("failures:".into());
+            for failure in failures {
+                lines.push(format!(
+                    "- {}: {}",
+                    failure["command"].as_str().unwrap_or("<unknown>"),
+                    failure["error"].as_str().unwrap_or("unknown error")
+                ));
+            }
+        }
+    }
+
+    lines.join("\n")
+}
+
 fn print_cache_stats_report(value: &Value) {
     println!("CLI profile cache");
     println!("Path: {}", value["path"].as_str().unwrap_or("<unknown>"));
@@ -2189,6 +2253,7 @@ async fn main() -> Result<()> {
             InspectAction::Batch {
                 commands,
                 depth,
+                parallel,
                 compact,
                 pretty,
                 format,
@@ -2199,8 +2264,12 @@ async fn main() -> Result<()> {
                         "inspect batch requires at least one command spec".into(),
                     ));
                 }
-                let value = cli_surfaces::inspect_cli_batch(&commands, allow_self, depth);
+                let value = cli_surfaces::inspect_cli_batch(&commands, allow_self, depth, parallel);
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    if matches!(format, output::StructuredOutputFormat::Toon) {
+                        println!("{}", format_batch_toon(&value, compact));
+                        return Ok(());
+                    }
                     let rendered = if compact {
                         let compact_profiles = value["profiles"]
                             .as_array()
@@ -2255,6 +2324,36 @@ async fn main() -> Result<()> {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
                     print_cache_stats_report(&value);
+                }
+            }
+            InspectAction::CacheClear { pretty, format } => {
+                let value = cli_surfaces::clear_profile_cache_value()?;
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    println!(
+                        "Cleared CLI profile cache at {} ({} entries remain, {} bytes)",
+                        value["path"].as_str().unwrap_or("<unknown>"),
+                        value["entry_count"].as_u64().unwrap_or(0),
+                        value["total_bytes"].as_u64().unwrap_or(0)
+                    );
+                }
+            }
+            InspectAction::CacheInvalidate {
+                command,
+                pretty,
+                format,
+            } => {
+                let value = cli_surfaces::invalidate_profile_cache_value(&command)?;
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    println!(
+                        "Invalidated {} cached profile entries for `{}` ({} entries remain)",
+                        value["removed_entries"].as_u64().unwrap_or(0),
+                        value["command"].as_str().unwrap_or("<unknown>"),
+                        value["remaining_entries"].as_u64().unwrap_or(0)
+                    );
                 }
             }
         },

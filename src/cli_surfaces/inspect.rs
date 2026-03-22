@@ -2,6 +2,8 @@ use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
@@ -81,22 +83,79 @@ pub fn inspect_cli(command_spec: &str, allow_self: bool) -> Result<CliSurfacePro
     inspect_cli_with_depth(command_spec, allow_self, 0)
 }
 
-pub fn inspect_cli_batch(command_specs: &[String], allow_self: bool, depth: usize) -> Value {
-    let mut profiles = Vec::new();
-    let mut failures = Vec::new();
+pub fn inspect_cli_batch(
+    command_specs: &[String],
+    allow_self: bool,
+    depth: usize,
+    parallelism: usize,
+) -> Value {
+    let requested_parallelism = parallelism.max(1);
+    let worker_count = requested_parallelism.min(command_specs.len().max(1));
+    maybe_print_progress(&format!(
+        "Batch inspecting {} command(s) with parallelism {}",
+        command_specs.len(),
+        worker_count
+    ));
 
-    for command_spec in command_specs {
-        match inspect_cli_with_depth(command_spec, allow_self, depth) {
-            Ok(profile) => profiles.push(profile_value(&profile)),
-            Err(error) => failures.push(json!({
-                "command": command_spec,
-                "error": error.to_string(),
-            })),
+    let (job_sender, job_receiver) = mpsc::channel::<(usize, String)>();
+    let (result_sender, result_receiver) =
+        mpsc::channel::<(usize, String, Result<CliSurfaceProfile>)>();
+    let shared_receiver = std::sync::Arc::new(std::sync::Mutex::new(job_receiver));
+
+    thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let receiver = std::sync::Arc::clone(&shared_receiver);
+            let sender = result_sender.clone();
+            scope.spawn(move || loop {
+                let message = {
+                    let lock = receiver.lock().ok();
+                    lock.and_then(|rx| rx.recv().ok())
+                };
+                let Some((index, command_spec)) = message else {
+                    break;
+                };
+                let result = inspect_cli_with_depth(&command_spec, allow_self, depth);
+                let _ = sender.send((index, command_spec, result));
+            });
+        }
+
+        for (index, command_spec) in command_specs.iter().cloned().enumerate() {
+            let _ = job_sender.send((index, command_spec));
+        }
+        drop(job_sender);
+        drop(result_sender);
+    });
+
+    let mut profile_slots = vec![None; command_specs.len()];
+    let mut failure_slots = vec![None; command_specs.len()];
+
+    for _ in 0..command_specs.len() {
+        let Ok((index, command_spec, result)) = result_receiver.recv() else {
+            break;
+        };
+        maybe_print_progress(&format!(
+            "Batch inspection finished for `{}` ({}/{})",
+            command_spec,
+            index + 1,
+            command_specs.len()
+        ));
+        match result {
+            Ok(profile) => profile_slots[index] = Some(profile_value(&profile)),
+            Err(error) => {
+                failure_slots[index] = Some(json!({
+                    "command": command_spec,
+                    "error": error.to_string(),
+                }))
+            }
         }
     }
 
+    let profiles: Vec<_> = profile_slots.into_iter().flatten().collect();
+    let failures: Vec<_> = failure_slots.into_iter().flatten().collect();
+
     json!({
         "count": command_specs.len(),
+        "parallelism": worker_count,
         "success_count": profiles.len(),
         "failed_count": failures.len(),
         "profiles": profiles,
@@ -112,6 +171,46 @@ pub fn cache_stats_value() -> Result<Value> {
         "entry_count": stats.entry_count,
         "total_bytes": stats.total_bytes,
         "default_ttl_secs": stats.default_ttl_secs,
+    }))
+}
+
+pub fn clear_profile_cache_value() -> Result<Value> {
+    let cache = Cache::new(CLI_PROFILE_CACHE_TTL_SECS)?;
+    let before = cache.stats()?;
+    cache.clear()?;
+    let after = cache.stats()?;
+    Ok(json!({
+        "cleared": true,
+        "removed_entries_estimate": before.entry_count.saturating_sub(after.entry_count),
+        "path": after.path.display().to_string(),
+        "entry_count": after.entry_count,
+        "total_bytes": after.total_bytes,
+    }))
+}
+
+pub fn invalidate_profile_cache_value(command_spec: &str) -> Result<Value> {
+    let parts = parse_command_spec(command_spec)?;
+    if parts.is_empty() {
+        return Err(SxmcError::Other("Empty command spec".into()));
+    }
+
+    let executable = &parts[0];
+    let fingerprint = executable_fingerprint(executable);
+    let parts_suffix = parts.join("\u{1f}");
+    let cache = Cache::new(CLI_PROFILE_CACHE_TTL_SECS)?;
+    let removed = cache.remove_matching(|key| {
+        key.starts_with("cli-profile:v")
+            && key.contains(&fingerprint)
+            && key.ends_with(&parts_suffix)
+    })?;
+    let stats = cache.stats()?;
+    Ok(json!({
+        "cleared": removed > 0,
+        "removed_entries": removed,
+        "command": command_spec,
+        "path": stats.path.display().to_string(),
+        "remaining_entries": stats.entry_count,
+        "remaining_bytes": stats.total_bytes,
     }))
 }
 

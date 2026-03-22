@@ -142,8 +142,10 @@ sxmc doctor
 sxmc doctor --human
 sxmc inspect cli <tool> --depth 1 --format json-pretty
 sxmc inspect cli <tool> --depth 2 --compact --format json-pretty
-sxmc inspect batch git cargo brew --compact --format json-pretty
+sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect cache-stats --format json-pretty
+sxmc inspect cache-invalidate cargo --format json-pretty
+sxmc inspect cache-clear --format json-pretty
 sxmc stdio "<cmd>" --list
 sxmc mcp grep <pattern>
 sxmc api <url-or-spec> --list
@@ -159,8 +161,10 @@ sxmc inspect cli gh --format toon
 sxmc inspect cli curl --compact --format json-pretty
 sxmc inspect cli cargo --depth 1 --format json-pretty
 sxmc inspect cli gh --depth 2 --compact --format json-pretty
-sxmc inspect batch git cargo brew --compact --format json-pretty
+sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect cache-stats --format json-pretty
+sxmc inspect cache-invalidate cargo --format json-pretty
+sxmc inspect cache-clear --format json-pretty
 ```
 
 Important:
@@ -178,8 +182,12 @@ Notes:
   output off-TTY.
 - `sxmc inspect batch ...` keeps partial failures in a `failures` array instead
   of failing the whole run on the first missing command.
+- `sxmc inspect batch ... --parallel N` bounds concurrency for larger batch jobs.
 - `sxmc inspect cache-stats` shows cache path, entry count, size, and default
   TTL so repeated inspection behavior is visible.
+- `sxmc inspect cache-invalidate <tool>` removes cached profiles for one command
+  without flushing the entire cache.
+- `sxmc inspect cache-clear` wipes all cached CLI profiles.
 
 Generate startup-facing artifacts for a host profile:
 

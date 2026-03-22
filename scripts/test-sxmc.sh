@@ -745,24 +745,19 @@ if has_cmd git; then
     skip "depth-2 guidance in compact" "hint text may vary"
   fi
 
-  # --depth 1 should produce nested profiles
+  # --depth 1 should produce subcommand_profiles (top-level list of nested profiles)
   depth1=$("$SXMC" inspect cli git --depth 1 2>/dev/null)
-  nested=$(json_field "$depth1" "len([s for s in d.get('subcommands',[]) if s.get('nested_profile')])" 2>/dev/null)
+  nested=$(json_field "$depth1" "len(d.get('subcommand_profiles',[]))")
   if [ "${nested:-0}" -gt 0 ]; then
-    pass "depth 1 produces $nested nested profiles"
+    pass "depth 1 produces $nested subcommand_profiles"
   else
-    # nested_profile may be a different key name
-    if json_check "$depth1" "d.get('provenance',{}).get('generation_depth',0) == 0"; then
-      pass "depth 1 profile generated (generation_depth=0)"
-    else
-      skip "depth 1 nested profiles" "nested format may differ"
-    fi
+    skip "depth 1 subcommand_profiles" "key may differ"
   fi
 else
   skip "depth expansion tests" "git not installed"
 fi
 
-batch_out=$("$SXMC" inspect batch git cargo this-command-should-not-exist-xyz 2>/dev/null)
+batch_out=$("$SXMC" inspect batch git cargo this-command-should-not-exist-xyz --parallel 4 2>/dev/null)
 if json_check "$batch_out" "d.get('count', 0) == 3"; then
   pass "inspect batch reports requested command count"
 else
@@ -775,11 +770,38 @@ else
   fail "inspect batch should report failures"
 fi
 
+if json_check "$batch_out" "d.get('parallelism', 0) >= 1"; then
+  pass "inspect batch reports parallelism"
+else
+  fail "inspect batch should report parallelism"
+fi
+
 cache_stats=$("$SXMC" inspect cache-stats 2>/dev/null)
 if json_check "$cache_stats" "'entry_count' in d and 'total_bytes' in d"; then
   pass "inspect cache-stats returns cache metrics"
 else
   fail "inspect cache-stats" "${cache_stats:0:100}"
+fi
+
+cache_invalidate=$("$SXMC" inspect cache-invalidate git 2>/dev/null)
+if json_check "$cache_invalidate" "'removed_entries' in d"; then
+  pass "inspect cache-invalidate returns removal metrics"
+else
+  fail "inspect cache-invalidate" "${cache_invalidate:0:100}"
+fi
+
+cache_clear=$("$SXMC" inspect cache-clear 2>/dev/null)
+if json_check "$cache_clear" "d.get('cleared', False) is True"; then
+  pass "inspect cache-clear clears cache"
+else
+  fail "inspect cache-clear" "${cache_clear:0:100}"
+fi
+
+batch_toon=$("$SXMC" inspect batch git cargo --format toon 2>/dev/null)
+if echo "$batch_toon" | grep -q "profiles:" && echo "$batch_toon" | grep -q "parallelism:"; then
+  pass "inspect batch --format toon is summary-oriented"
+else
+  fail "inspect batch --format toon should be summary-oriented" "${batch_toon:0:100}"
 fi
 
 # ============================================================================

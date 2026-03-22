@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.14] - 2026-03-22
+
+### Added
+
+- `sxmc inspect cache-clear` to wipe cached CLI profiles without manually deleting cache files
+- `sxmc inspect cache-invalidate <tool>` to selectively invalidate cached CLI profiles for one command
+
+### Changed
+
+- `sxmc inspect batch` now supports `--parallel <N>` and runs bounded parallel worker threads instead of always inspecting sequentially
+- batch inspection now emits summary-oriented `--format toon` output instead of dumping nested raw JSON inside a TOON envelope
+- the comprehensive `scripts/test-sxmc.sh` gate now covers batch parallelism, cache invalidation/clear, and batch TOON rendering
+
 ## [0.2.13] - 2026-03-22
 
 ### Added

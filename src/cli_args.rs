@@ -456,6 +456,8 @@ pub enum InspectAction {
         commands: Vec<String>,
         #[arg(long, default_value_t = 0)]
         depth: usize,
+        #[arg(long, default_value_t = 4)]
+        parallel: usize,
         #[arg(long)]
         compact: bool,
         #[arg(long)]
@@ -475,6 +477,19 @@ pub enum InspectAction {
         format: Option<output::StructuredOutputFormat>,
     },
     CacheStats {
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    CacheClear {
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    CacheInvalidate {
+        command: String,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]

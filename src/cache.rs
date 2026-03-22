@@ -22,6 +22,8 @@ pub struct Cache {
 
 #[derive(Serialize, Deserialize)]
 struct CacheEntry {
+    #[serde(default)]
+    key: String,
     data: String,
     created_at: u64,
     ttl_secs: u64,
@@ -47,7 +49,7 @@ impl Cache {
     pub fn get(&self, key: &str) -> Option<String> {
         let path = self.key_path(key);
         let content = std::fs::read_to_string(&path).ok()?;
-        let entry: CacheEntry = serde_json::from_str(&content).ok()?;
+        let mut entry: CacheEntry = serde_json::from_str(&content).ok()?;
 
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -58,6 +60,13 @@ impl Cache {
             // Expired — clean up
             let _ = std::fs::remove_file(&path);
             return None;
+        }
+
+        if entry.key.is_empty() {
+            entry.key = key.to_string();
+            if let Ok(json) = serde_json::to_string(&entry) {
+                let _ = std::fs::write(&path, json);
+            }
         }
 
         Some(entry.data)
@@ -76,6 +85,7 @@ impl Cache {
             .as_secs();
 
         let entry = CacheEntry {
+            key: key.to_string(),
             data: data.to_string(),
             created_at: now,
             ttl_secs,
@@ -105,6 +115,38 @@ impl Cache {
             }
         }
         Ok(())
+    }
+
+    /// Remove cached entries whose original logical key matches the predicate.
+    pub fn remove_matching<F>(&self, mut predicate: F) -> Result<usize>
+    where
+        F: FnMut(&str) -> bool,
+    {
+        let mut removed = 0usize;
+        if self.dir.exists() {
+            for entry in std::fs::read_dir(&self.dir)
+                .map_err(|e| SxmcError::Other(format!("Failed to read cache dir: {}", e)))?
+                .flatten()
+            {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(cache_entry) = serde_json::from_str::<CacheEntry>(&content) else {
+                    continue;
+                };
+                if cache_entry.key.is_empty() {
+                    continue;
+                }
+                if predicate(&cache_entry.key) && std::fs::remove_file(&path).is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        Ok(removed)
     }
 
     /// Return summary information about the cache directory.
@@ -189,5 +231,21 @@ mod tests {
         assert_eq!(stats.default_ttl_secs, 3600);
 
         cache.remove(key);
+    }
+
+    #[test]
+    fn test_cache_remove_matching_removes_selected_entries() {
+        let cache = Cache::new(3600).unwrap();
+        let first = "cli-profile:first";
+        let second = "cli-profile:second";
+        cache.set(first, "hello").unwrap();
+        cache.set(second, "world").unwrap();
+
+        let removed = cache.remove_matching(|key| key.contains("first")).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(cache.get(first), None);
+        assert_eq!(cache.get(second), Some("world".to_string()));
+
+        cache.remove(second);
     }
 }

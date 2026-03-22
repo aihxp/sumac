@@ -287,6 +287,31 @@ fn test_inspect_batch_returns_profiles_and_failures() {
         .unwrap()
         .iter()
         .any(|profile| profile["command"] == "cargo"));
+    assert!(value["parallelism"].as_u64().unwrap_or(0) >= 1);
+}
+
+#[test]
+fn test_inspect_batch_toon_is_summary_oriented() {
+    sxmc()
+        .args(["inspect", "batch", "cargo", "--format", "toon"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("profiles:"))
+        .stdout(predicate::str::contains("- cargo:"))
+        .stdout(predicate::str::contains("parallelism:"));
+}
+
+#[test]
+fn test_inspect_cache_invalidate_and_clear() {
+    let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
+
+    let invalidate = command_json(&["inspect", "cache-invalidate", "cargo"]);
+    assert_eq!(invalidate["command"], "cargo");
+    assert!(invalidate["removed_entries"].as_u64().unwrap_or(0) >= 1);
+
+    let _ = command_json(&["inspect", "cli", "cargo", "--compact"]);
+    let cleared = command_json(&["inspect", "cache-clear"]);
+    assert_eq!(cleared["cleared"], Value::Bool(true));
 }
 
 #[test]

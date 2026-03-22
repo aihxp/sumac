@@ -49,7 +49,7 @@ High-value scenarios covered in this stack include:
 - zero-argument tool interoperability
 - CLI inspection, startup artifact preview, managed doc apply, and Cursor config merge coverage
 - doctor JSON and human-mode coverage
-- cache statistics and batch CLI inspection coverage
+- cache statistics, cache invalidation, and batch CLI inspection coverage
 
 ## CI Matrix
 
