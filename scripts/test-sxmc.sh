@@ -794,6 +794,24 @@ else
   fail "doctor --remove should clean selected startup files" "${doctor_remove:0:180}"
 fi
 
+mkdir -p "$TMPDIR_TEST/status-root/.sxmc/ai/profiles"
+"$SXMC" inspect cli cargo --pretty > "$TMPDIR_TEST/status-root/.sxmc/ai/profiles/cargo.json"
+python3 - <<'PY' "$TMPDIR_TEST/status-root/.sxmc/ai/profiles/cargo.json"
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data["summary"] = "An older cargo summary"
+with open(path, "w") as f:
+    json.dump(data, f)
+PY
+status_out=$("$SXMC" status --root "$TMPDIR_TEST/status-root" 2>/dev/null)
+if json_check "$status_out" "d.get('saved_profiles',{}).get('drift',{}).get('changed_count',0) == 1"; then
+  pass "status reports saved-profile drift"
+else
+  fail "status should report saved-profile drift" "${status_out:0:180}"
+fi
+
 # ============================================================================
 # SECTION 14: Self-Dogfooding
 # ============================================================================
@@ -1080,6 +1098,13 @@ if json_check "$legacy_diff_out" "'summary_changed' in d and 'options_added' in 
   pass "inspect diff tolerates older or partially-missing profile fields"
 else
   fail "inspect diff legacy-profile tolerance" "${legacy_diff_out:0:120}"
+fi
+
+drift_out=$("$SXMC" inspect drift "$tmp_after_profile" 2>/dev/null)
+if json_check "$drift_out" "d.get('count',0) == 1 and d.get('changed_count',0) == 1"; then
+  pass "inspect drift detects changed saved profiles"
+else
+  fail "inspect drift should detect changed saved profiles" "${drift_out:0:160}"
 fi
 
 migrated_profile="$TMPDIR_TEST/git-migrated.json"

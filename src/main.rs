@@ -1143,6 +1143,128 @@ fn doctor_value(root: &std::path::Path, only_hosts: &[AiClientProfile]) -> Resul
     }))
 }
 
+fn default_saved_profiles_dir(root: &std::path::Path) -> PathBuf {
+    root.join(".sxmc").join("ai").join("profiles")
+}
+
+fn collect_profile_paths(paths: &[PathBuf], recursive: bool) -> Result<Vec<PathBuf>> {
+    fn visit_dir(dir: &Path, recursive: bool, results: &mut Vec<PathBuf>) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                if recursive {
+                    visit_dir(&path, recursive, results)?;
+                }
+            } else if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("json"))
+                .unwrap_or(false)
+            {
+                results.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut results = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            visit_dir(path, recursive, &mut results)?;
+        } else if path.is_file() {
+            results.push(path.clone());
+        }
+    }
+    results.sort();
+    results.dedup();
+    Ok(results)
+}
+
+fn drift_entry_for_profile(path: &Path, allow_self: bool) -> Value {
+    match cli_surfaces::load_profile(path) {
+        Ok(saved) => match cli_surfaces::inspect_cli_with_depth(
+            &saved.command,
+            allow_self,
+            saved.provenance.generation_depth as usize,
+        ) {
+            Ok(live) => {
+                let diff = cli_surfaces::diff_profile_value(&saved, &live);
+                json!({
+                    "path": path.display().to_string(),
+                    "command": saved.command,
+                    "changed": diff_value_has_changes(&diff),
+                    "error": Value::Null,
+                    "diff": diff,
+                })
+            }
+            Err(error) => json!({
+                "path": path.display().to_string(),
+                "command": saved.command,
+                "changed": false,
+                "error": error.to_string(),
+            }),
+        },
+        Err(error) => json!({
+            "path": path.display().to_string(),
+            "command": Value::Null,
+            "changed": false,
+            "error": error.to_string(),
+        }),
+    }
+}
+
+fn drift_value(profile_paths: &[PathBuf], allow_self: bool) -> Value {
+    let entries: Vec<Value> = profile_paths
+        .iter()
+        .map(|path| drift_entry_for_profile(path, allow_self))
+        .collect();
+    let changed_count = entries
+        .iter()
+        .filter(|entry| entry["changed"].as_bool().unwrap_or(false))
+        .count();
+    let error_count = entries
+        .iter()
+        .filter(|entry| !entry["error"].is_null())
+        .count();
+    json!({
+        "count": entries.len(),
+        "changed_count": changed_count,
+        "unchanged_count": entries.len().saturating_sub(changed_count + error_count),
+        "error_count": error_count,
+        "entries": entries,
+    })
+}
+
+fn status_value(root: &std::path::Path, only_hosts: &[AiClientProfile]) -> Result<Value> {
+    let mut value = doctor_value(root, only_hosts)?;
+    let profile_dir = default_saved_profiles_dir(root);
+    let drift = if profile_dir.exists() {
+        let paths = collect_profile_paths(std::slice::from_ref(&profile_dir), true)?;
+        drift_value(&paths, true)
+    } else {
+        json!({
+            "count": 0,
+            "changed_count": 0,
+            "unchanged_count": 0,
+            "error_count": 0,
+            "entries": [],
+        })
+    };
+
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "saved_profiles".into(),
+            json!({
+                "path": profile_dir.display().to_string(),
+                "present": profile_dir.exists(),
+                "drift": drift,
+            }),
+        );
+    }
+    Ok(value)
+}
+
 fn should_render_doctor_human(
     human: bool,
     format: Option<output::StructuredOutputFormat>,
@@ -1255,6 +1377,73 @@ fn print_doctor_report(value: &Value) {
                 command
             );
             println!("   {}", why);
+        }
+    }
+}
+
+fn print_status_report(value: &Value) {
+    print_doctor_report(value);
+    let saved_profiles = &value["saved_profiles"];
+    println!();
+    println!("Saved CLI profiles");
+    println!(
+        "Path: {}",
+        saved_profiles["path"].as_str().unwrap_or("<unknown>")
+    );
+    let drift = &saved_profiles["drift"];
+    println!(
+        "Profiles: {} total, {} changed, {} unchanged, {} errors",
+        drift["count"].as_u64().unwrap_or(0),
+        drift["changed_count"].as_u64().unwrap_or(0),
+        drift["unchanged_count"].as_u64().unwrap_or(0),
+        drift["error_count"].as_u64().unwrap_or(0)
+    );
+    if let Some(entries) = drift["entries"].as_array() {
+        let changed = entries
+            .iter()
+            .filter(|entry| entry["changed"].as_bool().unwrap_or(false))
+            .take(5)
+            .collect::<Vec<_>>();
+        if !changed.is_empty() {
+            println!("Changed profiles:");
+            for entry in changed {
+                println!(
+                    "- {} ({})",
+                    entry["command"].as_str().unwrap_or("<unknown>"),
+                    entry["path"].as_str().unwrap_or("<unknown>")
+                );
+            }
+        }
+    }
+}
+
+fn print_drift_report(value: &Value) {
+    println!(
+        "Saved CLI profile drift: {} changed, {} unchanged, {} errors ({} total)",
+        value["changed_count"].as_u64().unwrap_or(0),
+        value["unchanged_count"].as_u64().unwrap_or(0),
+        value["error_count"].as_u64().unwrap_or(0),
+        value["count"].as_u64().unwrap_or(0)
+    );
+    if let Some(entries) = value["entries"].as_array() {
+        for entry in entries {
+            if let Some(error) = entry["error"].as_str() {
+                println!(
+                    "- {}: error: {}",
+                    entry["path"].as_str().unwrap_or("<unknown>"),
+                    error
+                );
+            } else {
+                println!(
+                    "- {}: {}",
+                    entry["command"].as_str().unwrap_or("<unknown>"),
+                    if entry["changed"].as_bool().unwrap_or(false) {
+                        "changed"
+                    } else {
+                        "unchanged"
+                    }
+                );
+            }
         }
     }
 }
@@ -3117,6 +3306,43 @@ async fn main() -> Result<()> {
                     println!("{}", output::format_structured_value(&value, format));
                 }
             }
+            InspectAction::Drift {
+                inputs,
+                root,
+                recursive,
+                exit_code,
+                pretty,
+                format,
+                allow_self,
+            } => {
+                let root = resolve_generation_root(root)?;
+                let use_default_recursive = inputs.is_empty();
+                let profile_inputs = if use_default_recursive {
+                    vec![default_saved_profiles_dir(&root)]
+                } else {
+                    inputs
+                        .into_iter()
+                        .map(|path| {
+                            if path.is_absolute() {
+                                path
+                            } else {
+                                root.join(path)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let profile_paths =
+                    collect_profile_paths(&profile_inputs, recursive || use_default_recursive)?;
+                let value = drift_value(&profile_paths, allow_self);
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    print_drift_report(&value);
+                }
+                if exit_code && value["changed_count"].as_u64().unwrap_or(0) > 0 {
+                    std::process::exit(1);
+                }
+            }
             InspectAction::CacheStats { pretty, format } => {
                 let value = cli_surfaces::cache_stats_value()?;
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
@@ -3538,6 +3764,24 @@ async fn main() -> Result<()> {
                 if has_missing {
                     std::process::exit(1);
                 }
+            }
+        }
+        Commands::Status {
+            root,
+            only_hosts,
+            human,
+            pretty,
+            format,
+        } => {
+            let root = resolve_generation_root(root)?;
+            let value = status_value(&root, &only_hosts)?;
+            if should_render_doctor_human(human, format, pretty, std::io::stdout().is_terminal()) {
+                print_status_report(&value);
+            } else if let Some(format) = output::prefer_structured_output(format, pretty) {
+                println!("{}", output::format_structured_value(&value, format));
+            } else {
+                let format = output::resolve_structured_format(format, pretty);
+                println!("{}", output::format_structured_value(&value, format));
             }
         }
     }

@@ -265,6 +265,33 @@ fn test_doctor_human_flag_renders_report() {
 }
 
 #[test]
+fn test_status_reports_saved_profile_drift() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let mut profile = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    profile["summary"] = Value::from("An older cargo summary");
+    fs::write(
+        profiles_dir.join("cargo.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json(&[
+        "status",
+        "--root",
+        temp.path().to_str().unwrap(),
+        "--format",
+        "json-pretty",
+    ]);
+    assert_eq!(value["saved_profiles"]["drift"]["count"], Value::from(1));
+    assert_eq!(
+        value["saved_profiles"]["drift"]["changed_count"],
+        Value::from(1)
+    );
+}
+
+#[test]
 fn test_inspect_cache_stats_reports_entries() {
     let value = command_json(&["inspect", "cache-stats"]);
     assert!(value["path"].as_str().unwrap_or_default().contains("sxmc"));
@@ -288,6 +315,26 @@ fn test_inspect_batch_returns_profiles_and_failures() {
         .iter()
         .any(|profile| profile["command"] == "cargo"));
     assert!(value["parallelism"].as_u64().unwrap_or(0) >= 1);
+}
+
+#[test]
+fn test_inspect_drift_detects_changed_saved_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("cargo-before.json");
+    let mut profile = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    profile["summary"] = Value::from("An older cargo summary");
+    fs::write(&path, serde_json::to_string_pretty(&profile).unwrap()).unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "drift",
+        path.to_str().unwrap(),
+        "--format",
+        "json-pretty",
+    ]);
+    assert_eq!(value["count"], Value::from(1));
+    assert_eq!(value["changed_count"], Value::from(1));
+    assert_eq!(value["entries"][0]["command"], Value::from("cargo"));
 }
 
 #[test]

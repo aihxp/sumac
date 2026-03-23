@@ -442,6 +442,29 @@ pub enum Commands {
         #[arg(long, value_enum)]
         format: Option<output::StructuredOutputFormat>,
     },
+
+    /// Unified status for startup files, cache, baked MCP servers, and saved CLI profiles
+    Status {
+        /// Project root to inspect for startup-facing AI files and saved profiles
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Limit startup-file checks to specific AI hosts
+        #[arg(long = "only", value_enum, value_delimiter = ',')]
+        only_hosts: Vec<AiClientProfile>,
+
+        /// Force the human-readable report even when stdout is not a TTY
+        #[arg(long)]
+        human: bool,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -574,6 +597,21 @@ pub enum InspectAction {
         pretty: bool,
         #[arg(long, value_enum)]
         format: Option<output::StructuredOutputFormat>,
+    },
+    Drift {
+        inputs: Vec<PathBuf>,
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        recursive: bool,
+        #[arg(long)]
+        exit_code: bool,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+        #[arg(long)]
+        allow_self: bool,
     },
     CacheStats {
         #[arg(long)]

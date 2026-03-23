@@ -143,12 +143,14 @@ sxmc doctor --human
 sxmc doctor --check --only claude-code,cursor
 sxmc doctor --check --fix --only claude-code,cursor --from-cli gh
 sxmc doctor --remove --only claude-code --from-cli gh
+sxmc status --human
 sxmc inspect cli <tool> --depth 1 --format json-pretty
 sxmc inspect cli <tool> --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.txt --compact --format json-pretty
 sxmc inspect batch --from-file tools.yaml --since 2026-03-22T00:00:00Z --format json-pretty
 sxmc inspect batch --retry-failed previous-batch.json --parallel 4
+sxmc inspect drift .sxmc/ai/profiles --recursive --format json-pretty
 sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff --before before.json --after after.json --format markdown
 sxmc inspect migrate-profile legacy-profile.json --output migrated-profile.json
@@ -206,6 +208,8 @@ Notes:
   path as `init ai`.
 - `sxmc doctor --remove --only claude-code --from-cli gh` removes generated
   startup files or managed snippets for the selected hosts.
+- `sxmc status` extends doctor with saved-profile drift so you can see whether
+  `.sxmc/ai/profiles` still matches the currently installed tools.
 - `sxmc inspect batch ...` keeps partial failures in a `failures` array instead
   of failing the whole run on the first missing command.
 - `sxmc inspect batch ... --parallel N` bounds concurrency for larger batch jobs.
@@ -227,6 +231,8 @@ Notes:
   previously saved profile and reports added/removed options and subcommands.
 - `sxmc inspect diff --before old.json --after new.json` compares two saved
   profiles without needing the live tool on `PATH`.
+- `sxmc inspect drift .sxmc/ai/profiles --recursive` checks saved profile files
+  against the currently installed commands and reports which ones changed.
 - `sxmc inspect migrate-profile legacy-profile.json --output migrated.json`
   rewrites a saved profile through the current schema-tolerant loader and emits
   canonical current-schema JSON.

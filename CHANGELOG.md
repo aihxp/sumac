@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.23] - 2026-03-22
+
+### Added
+
+- `sxmc status` for a unified view of startup files, baked MCP servers, cache
+  health, and saved-profile drift under `.sxmc/ai/profiles`
+- `sxmc inspect drift [paths...]` for checking saved CLI profiles against the
+  currently installed tools
+
 ### Fixed
 
 - `scripts/test-sxmc.sh`: CLI inspection “bad summary” heuristic no longer
