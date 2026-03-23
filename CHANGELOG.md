@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.29] - 2026-03-23
+
 ### Added
 
 - top-level `sxmc watch` for polling status/drift/health over time with
