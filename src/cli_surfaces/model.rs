@@ -139,33 +139,52 @@ pub struct ConfidenceNote {
 #[derive(Debug, Clone)]
 pub struct ProfileQualityReport {
     pub ready_for_agent_docs: bool,
+    pub score: u8,
+    pub level: String,
     pub reasons: Vec<String>,
 }
 
 impl CliSurfaceProfile {
     pub fn quality_report(&self) -> ProfileQualityReport {
         let mut reasons = Vec::new();
+        let mut score: i32 = 100;
         let generic_summary = self.summary.trim()
             == format!("{} command-line interface", self.command)
             || self.summary.trim().eq_ignore_ascii_case(&self.command)
             || self.summary.trim().len() < 24;
         if generic_summary {
+            score -= 25;
             reasons.push(
                 "Summary stayed generic, so generated startup docs may be less useful than a hand-written snippet."
                     .into(),
             );
         }
         if self.examples.is_empty() {
+            score -= 15;
             reasons.push(
                 "No usage examples were detected, so generated guidance may not show the best first command."
                     .into(),
             );
         }
         if self.subcommands.is_empty() && self.options.len() < 2 {
+            score -= 25;
             reasons.push(
                 "The inspected CLI surface is sparse; sxmc could not confidently extract subcommands or enough options."
                     .into(),
             );
+        }
+        if self.subcommand_profiles.is_empty() && self.subcommands.len() >= 3 {
+            score -= 10;
+            reasons.push(
+                "Only top-level subcommands were captured; deeper nested help may still need a higher inspection depth."
+                    .into(),
+            );
+        }
+        if self.output_behavior.machine_friendly {
+            score += 5;
+        }
+        if self.options.len() >= 8 {
+            score += 5;
         }
 
         let rich_surface = !self.examples.is_empty()
@@ -173,9 +192,20 @@ impl CliSurfaceProfile {
             || self.subcommands.len() >= 3
             || self.options.len() >= 5;
 
+        let score = score.clamp(0, 100) as u8;
+        let level = if score >= 80 {
+            "high"
+        } else if score >= 55 {
+            "medium"
+        } else {
+            "low"
+        };
+
         ProfileQualityReport {
             ready_for_agent_docs: rich_surface
                 && !(generic_summary && self.subcommands.is_empty() && self.options.len() < 3),
+            score,
+            level: level.into(),
             reasons,
         }
     }

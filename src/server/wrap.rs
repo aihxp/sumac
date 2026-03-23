@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::DefaultBodyLimit,
@@ -35,10 +37,25 @@ pub struct WrappedCliServer {
     wrapped_command: String,
     executable: String,
     fixed_args: Vec<String>,
+    working_dir: Option<String>,
     timeout_secs: u64,
+    progress_secs: u64,
+    max_stdout_bytes: usize,
+    max_stderr_bytes: usize,
     summary: String,
     tools: Vec<WrappedCliTool>,
     tool_index: HashMap<String, usize>,
+}
+
+#[derive(Clone, Default)]
+pub struct WrappedCliOptions {
+    pub timeout_secs: u64,
+    pub progress_secs: u64,
+    pub working_dir: Option<String>,
+    pub max_stdout_bytes: usize,
+    pub max_stderr_bytes: usize,
+    pub allow_tools: Vec<String>,
+    pub deny_tools: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -69,7 +86,7 @@ struct WrappedPositionalBinding {
 pub fn build_wrapped_cli_server(
     command_spec: &str,
     profile: &CliSurfaceProfile,
-    timeout_secs: u64,
+    options: WrappedCliOptions,
 ) -> Result<WrappedCliServer> {
     let parts = parse_command_spec(command_spec)?;
     if parts.is_empty() {
@@ -78,7 +95,7 @@ pub fn build_wrapped_cli_server(
         ));
     }
 
-    let tools = build_wrapped_tools(profile, &parts);
+    let tools = build_wrapped_tools(profile, &parts, &options.allow_tools, &options.deny_tools);
     if tools.is_empty() {
         return Err(SxmcError::Other(format!(
             "sxmc wrap could not derive any MCP tools from '{}'. Re-run with `sxmc inspect cli <tool> --depth 1` to confirm the CLI surface is discoverable.",
@@ -96,7 +113,11 @@ pub fn build_wrapped_cli_server(
         wrapped_command: profile.command.clone(),
         executable: parts[0].clone(),
         fixed_args: parts[1..].to_vec(),
-        timeout_secs,
+        working_dir: options.working_dir,
+        timeout_secs: options.timeout_secs,
+        progress_secs: options.progress_secs,
+        max_stdout_bytes: options.max_stdout_bytes,
+        max_stderr_bytes: options.max_stderr_bytes,
         summary: profile.summary.clone(),
         tools,
         tool_index,
@@ -110,6 +131,10 @@ impl WrappedCliServer {
 
     pub fn wrapped_command(&self) -> &str {
         &self.wrapped_command
+    }
+
+    pub fn working_dir(&self) -> Option<&str> {
+        self.working_dir.as_deref()
     }
 }
 
@@ -158,11 +183,51 @@ impl ServerHandler for WrappedCliServer {
         let mut args = self.fixed_args.clone();
         args.extend(tool.build_cli_args(request.arguments.as_ref())?);
 
-        match executor::execute_command(&self.executable, &args, None, self.timeout_secs).await {
+        let progress_task = if self.progress_secs > 0 {
+            let command = self.wrapped_command.clone();
+            let tool_name = tool.name.clone();
+            let progress_secs = self.progress_secs;
+            let done = Arc::new(AtomicBool::new(false));
+            let done_for_task = done.clone();
+            let task = tokio::spawn(async move {
+                let mut elapsed = progress_secs;
+                while !done_for_task.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_secs(progress_secs)).await;
+                    if done_for_task.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    eprintln!(
+                        "[sxmc] Wrapped tool '{}' for '{}' still running after {}s",
+                        tool_name, command, elapsed
+                    );
+                    elapsed += progress_secs;
+                }
+            });
+            Some((done, task))
+        } else {
+            None
+        };
+        let started_at = std::time::Instant::now();
+        let execution = executor::execute_command(
+            &self.executable,
+            &args,
+            self.working_dir.as_deref().map(Path::new),
+            self.timeout_secs,
+        )
+        .await;
+        if let Some((done, task)) = progress_task {
+            done.store(true, Ordering::Relaxed);
+            let _ = task.await;
+        }
+        match execution {
             Ok(result) => {
-                let stdout_json = serde_json::from_str::<Value>(&result.stdout).ok();
+                let (stdout, stdout_truncated) =
+                    truncate_output(&result.stdout, self.max_stdout_bytes);
+                let (stderr, stderr_truncated) =
+                    truncate_output(&result.stderr, self.max_stderr_bytes);
+                let stdout_json = serde_json::from_str::<Value>(&stdout).ok();
                 let machine_friendly_stdout = stdout_json.is_some();
-                let stderr_nonempty = !result.stderr.trim().is_empty();
+                let stderr_nonempty = !stderr.trim().is_empty();
                 let payload = json!({
                     "wrapped_command": self.wrapped_command,
                     "tool": tool.name,
@@ -170,12 +235,19 @@ impl ServerHandler for WrappedCliServer {
                     "argv": std::iter::once(self.executable.clone())
                         .chain(args.clone())
                         .collect::<Vec<_>>(),
-                    "stdout": result.stdout,
+                    "working_dir": self.working_dir,
+                    "stdout": stdout,
+                    "stdout_bytes": result.stdout.len(),
+                    "stdout_truncated": stdout_truncated,
                     "stdout_json": stdout_json,
                     "machine_friendly_stdout": machine_friendly_stdout,
-                    "stderr": result.stderr,
+                    "stderr": stderr,
+                    "stderr_bytes": result.stderr.len(),
+                    "stderr_truncated": stderr_truncated,
                     "stderr_nonempty": stderr_nonempty,
                     "exit_code": result.exit_code,
+                    "elapsed_ms": started_at.elapsed().as_millis() as u64,
+                    "timeout_seconds": self.timeout_secs,
                 });
                 let text = serde_json::to_string_pretty(&payload)
                     .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -382,7 +454,14 @@ fn build_wrapped_http_router(
         "wrapped_command": server.wrapped_command(),
         "inventory": {
             "tools": server.tool_count(),
-        }
+        },
+        "execution": {
+            "working_dir": server.working_dir(),
+            "timeout_seconds": server.timeout_secs,
+            "progress_seconds": server.progress_secs,
+            "max_stdout_bytes": server.max_stdout_bytes,
+            "max_stderr_bytes": server.max_stderr_bytes,
+        },
     }));
     let mcp_router = Router::new().nest_service("/mcp", service);
     let mcp_router = if auth.is_empty() {
@@ -409,7 +488,12 @@ fn build_wrapped_http_router(
         .layer(ConcurrencyLimitLayer::new(limits.max_concurrency))
 }
 
-fn build_wrapped_tools(profile: &CliSurfaceProfile, base_parts: &[String]) -> Vec<WrappedCliTool> {
+fn build_wrapped_tools(
+    profile: &CliSurfaceProfile,
+    base_parts: &[String],
+    allow_tools: &[String],
+    deny_tools: &[String],
+) -> Vec<WrappedCliTool> {
     let mut tools = Vec::new();
     let mut used_tool_names = HashSet::new();
 
@@ -449,7 +533,23 @@ fn build_wrapped_tools(profile: &CliSurfaceProfile, base_parts: &[String]) -> Ve
         ));
     }
 
+    let allow_tools = allow_tools
+        .iter()
+        .map(|item| sanitize_property_name(item))
+        .collect::<HashSet<_>>();
+    let deny_tools = deny_tools
+        .iter()
+        .map(|item| sanitize_property_name(item))
+        .collect::<HashSet<_>>();
+
     tools
+        .into_iter()
+        .filter(|tool| {
+            let normalized = sanitize_property_name(&tool.name);
+            (allow_tools.is_empty() || allow_tools.contains(&normalized))
+                && !deny_tools.contains(&normalized)
+        })
+        .collect()
 }
 
 fn build_wrapped_tool(
@@ -474,7 +574,11 @@ fn build_wrapped_tool(
         props.insert(
             property.clone(),
             json!({
-                "type": "string",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "number"},
+                    {"type": "boolean"}
+                ],
                 "description": positional.summary.clone().unwrap_or_else(|| format!("Value for positional `{}`.", positional.name)),
             }),
         );
@@ -567,7 +671,21 @@ fn option_property_name(option: &ProfileOption, used: &HashSet<String>) -> Strin
 fn option_schema(option: &ProfileOption) -> Value {
     if option.value_name.is_some() {
         json!({
-            "type": "string",
+            "oneOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {"type": "boolean"},
+                {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "number"},
+                            {"type": "boolean"}
+                        ]
+                    }
+                }
+            ],
             "description": option.summary.clone().unwrap_or_else(|| format!("Value for `{}`.", option.name)),
         })
     } else {
@@ -577,6 +695,17 @@ fn option_schema(option: &ProfileOption) -> Value {
             "default": false,
         })
     }
+}
+
+fn truncate_output(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_string(), false);
+    }
+    let mut end = max_bytes.min(value.len());
+    while !value.is_char_boundary(end) && end > 0 {
+        end -= 1;
+    }
+    (value[..end].to_string(), true)
 }
 
 fn append_option_arg(

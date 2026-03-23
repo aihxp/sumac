@@ -1651,6 +1651,8 @@ fn saved_profile_inventory_value(profile_paths: &[PathBuf]) -> Value {
                     "option_count": profile.options.len(),
                     "quality": {
                         "ready_for_agent_docs": quality.ready_for_agent_docs,
+                        "score": quality.score,
+                        "level": quality.level,
                         "reasons": quality.reasons,
                     },
                     "freshness": freshness,
@@ -1782,6 +1784,8 @@ fn export_profile_corpus_value(profile_paths: &[PathBuf]) -> Value {
                     "summary": profile.summary,
                     "quality": {
                         "ready_for_agent_docs": quality.ready_for_agent_docs,
+                        "score": quality.score,
+                        "level": quality.level,
                         "reasons": quality.reasons,
                     },
                     "freshness": freshness,
@@ -1812,6 +1816,110 @@ fn export_profile_corpus_value(profile_paths: &[PathBuf]) -> Value {
         "unknown_freshness_count": total.saturating_sub(freshness_known_count + error_count),
         "error_count": error_count,
         "stale_after_days": PROFILE_STALE_DAYS,
+        "entries": entries,
+    })
+}
+
+fn load_corpus_value(path: &Path) -> Result<Value> {
+    let value: Value = serde_json::from_slice(&fs::read(path)?)?;
+    let schema = value
+        .get("corpus_schema")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if schema != PROFILE_CORPUS_SCHEMA {
+        return Err(sxmc::error::SxmcError::Other(format!(
+            "Corpus file '{}' is not a valid sxmc profile corpus. Expected `corpus_schema: {}`.",
+            path.display(),
+            PROFILE_CORPUS_SCHEMA
+        )));
+    }
+    Ok(value)
+}
+
+fn corpus_stats_value(value: &Value) -> Value {
+    let entries = value["entries"].as_array().cloned().unwrap_or_default();
+    let profile_entries = entries
+        .iter()
+        .filter(|entry| entry["type"] == "profile")
+        .cloned()
+        .collect::<Vec<_>>();
+    let command_count = profile_entries
+        .iter()
+        .filter_map(|entry| entry["command"].as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let ready_count = profile_entries
+        .iter()
+        .filter(|entry| {
+            entry["quality"]["ready_for_agent_docs"]
+                .as_bool()
+                .unwrap_or(false)
+        })
+        .count();
+    let stale_count = profile_entries
+        .iter()
+        .filter(|entry| entry["freshness"]["stale"].as_bool().unwrap_or(false))
+        .count();
+    let average_quality_score = if profile_entries.is_empty() {
+        0.0
+    } else {
+        profile_entries
+            .iter()
+            .map(|entry| entry["quality"]["score"].as_u64().unwrap_or(0) as f64)
+            .sum::<f64>()
+            / profile_entries.len() as f64
+    };
+    json!({
+        "corpus_schema": value["corpus_schema"],
+        "generated_at": value["generated_at"],
+        "count": value["count"],
+        "profile_count": profile_entries.len(),
+        "error_count": value["error_count"],
+        "command_count": command_count,
+        "ready_count": ready_count,
+        "stale_count": stale_count,
+        "average_quality_score": average_quality_score,
+    })
+}
+
+fn corpus_query_value(
+    value: &Value,
+    command: Option<&str>,
+    search: Option<&str>,
+    limit: usize,
+) -> Value {
+    let search = search.map(|item| item.to_lowercase());
+    let mut entries = value["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| entry["type"] == "profile")
+        .filter(|entry| {
+            command.is_none_or(|needle| entry["command"].as_str() == Some(needle))
+                && search.as_ref().is_none_or(|needle| {
+                    let command = entry["command"].as_str().unwrap_or_default().to_lowercase();
+                    let summary = entry["summary"].as_str().unwrap_or_default().to_lowercase();
+                    command.contains(needle) || summary.contains(needle)
+                })
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| {
+        b["quality"]["score"]
+            .as_u64()
+            .unwrap_or(0)
+            .cmp(&a["quality"]["score"].as_u64().unwrap_or(0))
+    });
+    let total_matches = entries.len();
+    entries.truncate(limit);
+    json!({
+        "corpus_schema": value["corpus_schema"],
+        "query": {
+            "command": command,
+            "search": search,
+            "limit": limit,
+        },
+        "match_count": total_matches,
         "entries": entries,
     })
 }
@@ -1892,11 +2000,18 @@ async fn baked_health_value() -> Result<Value> {
     let store = BakeStore::load()?;
     let mut entries = Vec::new();
     let mut by_source_type = serde_json::Map::new();
+    let mut panels = serde_json::Map::new();
     let configs = store.list();
     for config in configs {
         let check = validate_bake_config(config).await;
         let source_type = format!("{:?}", config.source_type).to_lowercase();
         let healthy = check.is_ok();
+        let panel_name = match config.source_type {
+            SourceType::Stdio | SourceType::Http => "mcp",
+            SourceType::Api => "api",
+            SourceType::Spec => "spec",
+            SourceType::Graphql => "graphql",
+        };
         let entry = by_source_type
             .entry(source_type.clone())
             .or_insert_with(|| {
@@ -1917,23 +2032,54 @@ async fn baked_health_value() -> Result<Value> {
             let current = object.get(key).and_then(Value::as_u64).unwrap_or(0) + 1;
             object.insert(key.into(), Value::from(current));
         }
-        entries.push(json!({
+        let panel_entry = json!({
             "name": config.name,
             "source_type": source_type,
             "source": config.source,
             "healthy": healthy,
             "error": check.err().map(|error| error.to_string()),
-        }));
+        });
+        if let Some(object) = panels
+            .entry(panel_name)
+            .or_insert_with(|| {
+                json!({
+                    "count": 0,
+                    "healthy_count": 0,
+                    "unhealthy_count": 0,
+                    "entries": [],
+                })
+            })
+            .as_object_mut()
+        {
+            let count = object.get("count").and_then(Value::as_u64).unwrap_or(0) + 1;
+            object.insert("count".into(), Value::from(count));
+            let key = if healthy {
+                "healthy_count"
+            } else {
+                "unhealthy_count"
+            };
+            let current = object.get(key).and_then(Value::as_u64).unwrap_or(0) + 1;
+            object.insert(key.into(), Value::from(current));
+            object
+                .entry("entries")
+                .or_insert_with(|| Value::Array(Vec::new()));
+            if let Some(items) = object.get_mut("entries").and_then(Value::as_array_mut) {
+                items.push(panel_entry.clone());
+            }
+        }
+        entries.push(panel_entry);
     }
     let healthy_count = entries
         .iter()
         .filter(|entry| entry["healthy"].as_bool().unwrap_or(false))
         .count();
     Ok(json!({
+        "checked_at": Utc::now().to_rfc3339(),
         "count": entries.len(),
         "healthy_count": healthy_count,
         "unhealthy_count": entries.len().saturating_sub(healthy_count),
         "by_source_type": by_source_type,
+        "panels": panels,
         "entries": entries,
     }))
 }
@@ -2210,6 +2356,9 @@ fn format_status_report(value: &Value) -> String {
             health["unhealthy_count"].as_u64().unwrap_or(0),
             health["count"].as_u64().unwrap_or(0)
         ));
+        if let Some(checked_at) = health["checked_at"].as_str() {
+            lines.push(format!("Checked at: {}", checked_at));
+        }
         if let Some(by_type) = health["by_source_type"].as_object() {
             let mut entries = by_type.iter().collect::<Vec<_>>();
             entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -2217,6 +2366,19 @@ fn format_status_report(value: &Value) -> String {
                 lines.push(format!(
                     "- {}: {} healthy, {} unhealthy ({} total)",
                     source_type,
+                    details["healthy_count"].as_u64().unwrap_or(0),
+                    details["unhealthy_count"].as_u64().unwrap_or(0),
+                    details["count"].as_u64().unwrap_or(0)
+                ));
+            }
+        }
+        if let Some(panels) = health["panels"].as_object() {
+            let mut entries = panels.iter().collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (panel, details) in entries {
+                lines.push(format!(
+                    "- panel {}: {} healthy, {} unhealthy ({} total)",
+                    panel,
                     details["healthy_count"].as_u64().unwrap_or(0),
                     details["unhealthy_count"].as_u64().unwrap_or(0),
                     details["count"].as_u64().unwrap_or(0)
@@ -2802,6 +2964,41 @@ fn print_migrated_profile_report(value: &Value) {
     );
 }
 
+fn print_corpus_stats_report(value: &Value) {
+    println!("Profile corpus");
+    println!(
+        "Entries: {} (profiles: {}, errors: {})",
+        value["count"].as_u64().unwrap_or(0),
+        value["profile_count"].as_u64().unwrap_or(0),
+        value["error_count"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "Commands: {} | Ready: {} | Stale: {} | Avg quality: {:.1}",
+        value["command_count"].as_u64().unwrap_or(0),
+        value["ready_count"].as_u64().unwrap_or(0),
+        value["stale_count"].as_u64().unwrap_or(0),
+        value["average_quality_score"].as_f64().unwrap_or(0.0)
+    );
+}
+
+fn print_corpus_query_report(value: &Value) {
+    println!(
+        "Corpus query: {} match(es)",
+        value["match_count"].as_u64().unwrap_or(0)
+    );
+    if let Some(entries) = value["entries"].as_array() {
+        for entry in entries {
+            println!(
+                "- {}: {} [quality={} stale={}]",
+                entry["command"].as_str().unwrap_or("<unknown>"),
+                entry["summary"].as_str().unwrap_or_default(),
+                entry["quality"]["score"].as_u64().unwrap_or(0),
+                entry["freshness"]["stale"].as_bool().unwrap_or(false)
+            );
+        }
+    }
+}
+
 async fn validate_bake_config(config: &BakeConfig) -> Result<()> {
     match config.source_type {
         SourceType::Stdio | SourceType::Http => {
@@ -3364,6 +3561,12 @@ async fn main() -> Result<()> {
             port,
             host,
             timeout_seconds,
+            progress_seconds,
+            working_dir,
+            max_stdout_bytes,
+            max_stderr_bytes,
+            allow_tools,
+            deny_tools,
             require_headers,
             bearer_token,
             max_concurrency,
@@ -3371,7 +3574,28 @@ async fn main() -> Result<()> {
             allow_self,
         } => {
             let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
-            let server = server::build_wrapped_cli_server(&command, &profile, timeout_seconds)?;
+            let working_dir = working_dir.map(|path| {
+                if path.is_absolute() {
+                    path
+                } else {
+                    std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join(path)
+                }
+            });
+            let server = server::build_wrapped_cli_server(
+                &command,
+                &profile,
+                server::WrappedCliOptions {
+                    timeout_secs: timeout_seconds,
+                    progress_secs: progress_seconds,
+                    working_dir: working_dir.map(|path| path.display().to_string()),
+                    max_stdout_bytes,
+                    max_stderr_bytes,
+                    allow_tools,
+                    deny_tools,
+                },
+            )?;
             let required_headers = parse_headers(&require_headers)?;
             let bearer_token = parse_optional_secret(bearer_token)?;
             let limits = HttpServeLimits {
@@ -4430,6 +4654,36 @@ async fn main() -> Result<()> {
                     }
                 } else {
                     println!("{rendered}");
+                }
+            }
+            InspectAction::CorpusStats {
+                input,
+                pretty,
+                format,
+            } => {
+                let value = load_corpus_value(&input)?;
+                let stats = corpus_stats_value(&value);
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&stats, format));
+                } else {
+                    print_corpus_stats_report(&stats);
+                }
+            }
+            InspectAction::CorpusQuery {
+                input,
+                command,
+                search,
+                limit,
+                pretty,
+                format,
+            } => {
+                let value = load_corpus_value(&input)?;
+                let query =
+                    corpus_query_value(&value, command.as_deref(), search.as_deref(), limit);
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&query, format));
+                } else {
+                    print_corpus_query_report(&query);
                 }
             }
             InspectAction::CacheStats { pretty, format } => {

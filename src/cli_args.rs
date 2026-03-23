@@ -100,6 +100,30 @@ pub enum Commands {
         #[arg(long, default_value_t = 30)]
         timeout_seconds: u64,
 
+        /// Emit periodic stderr progress notes for long-running wrapped tool calls
+        #[arg(long, default_value_t = 0)]
+        progress_seconds: u64,
+
+        /// Working directory used when executing wrapped tools
+        #[arg(long)]
+        working_dir: Option<PathBuf>,
+
+        /// Maximum stdout bytes to keep from a wrapped tool call
+        #[arg(long, default_value_t = 256 * 1024)]
+        max_stdout_bytes: usize,
+
+        /// Maximum stderr bytes to keep from a wrapped tool call
+        #[arg(long, default_value_t = 128 * 1024)]
+        max_stderr_bytes: usize,
+
+        /// Only expose these generated MCP tool names
+        #[arg(long = "allow-tool", value_delimiter = ',')]
+        allow_tools: Vec<String>,
+
+        /// Hide these generated MCP tool names
+        #[arg(long = "deny-tool", value_delimiter = ',')]
+        deny_tools: Vec<String>,
+
         /// Require HTTP header(s) for remote MCP access (Key:Value)
         #[arg(long = "require-header", value_name = "K:V")]
         require_headers: Vec<String>,
@@ -851,6 +875,26 @@ pub enum InspectAction {
         recursive: bool,
         #[arg(long)]
         output: Option<PathBuf>,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    CorpusStats {
+        input: PathBuf,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    CorpusQuery {
+        input: PathBuf,
+        #[arg(long)]
+        command: Option<String>,
+        #[arg(long)]
+        search: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]

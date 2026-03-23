@@ -42,7 +42,9 @@ use crate::skills::discovery;
 use crate::skills::parser;
 
 use self::handler::SkillsServer;
-pub use self::wrap::{build_wrapped_cli_server, serve_wrapped_cli_http, serve_wrapped_cli_stdio};
+pub use self::wrap::{
+    build_wrapped_cli_server, serve_wrapped_cli_http, serve_wrapped_cli_stdio, WrappedCliOptions,
+};
 
 #[derive(Clone, Debug)]
 pub struct HttpAuth {

@@ -208,6 +208,27 @@ Usage:
 Options:
   --name <NAME>     Person to say goodbye to.
 EOF
+elif [ "$1" = "pwd" ] && [ "$2" = "--help" ]; then
+    cat <<'EOF'
+fake-wrap-cli pwd
+
+Report the current working directory.
+
+Usage:
+  fake-wrap-cli pwd
+EOF
+elif [ "$1" = "spam" ] && [ "$2" = "--help" ]; then
+    cat <<'EOF'
+fake-wrap-cli spam
+
+Emit repeated output.
+
+Usage:
+  fake-wrap-cli spam [OPTIONS]
+
+Options:
+  --count <COUNT>   Number of characters to emit.
+EOF
 elif [ "$1" = "hello" ]; then
     shift
     target=""
@@ -257,6 +278,27 @@ elif [ "$1" = "goodbye" ]; then
         esac
     done
     printf '{"message":"goodbye %s"}\n' "$target"
+elif [ "$1" = "pwd" ]; then
+    printf '{"cwd":"%s"}\n' "$PWD"
+elif [ "$1" = "spam" ]; then
+    shift
+    count="2048"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --count)
+                count="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    python3 - <<'PY' "$count"
+import sys
+count = int(sys.argv[1])
+print("x" * count)
+PY
 else
     cat <<'EOF'
 fake-wrap-cli
@@ -266,6 +308,8 @@ CLI wrapping fixture.
 Commands:
   hello    Say hello
   goodbye  Say goodbye
+  pwd      Report the current working directory
+  spam     Emit repeated output
 EOF
 fi
 "#;
@@ -351,6 +395,66 @@ fn test_wrap_stdio_describe_and_call_work_for_fake_cli() {
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["tool"], "hello");
     assert_eq!(value["stdout"], "{\"message\":\"hello Sam!\"}\n");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_wrap_respects_allow_tool_and_output_limits() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_wrappable_cli(temp.path());
+    let spec = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "wrap".to_string(),
+        fake.to_string_lossy().into_owned(),
+        "--allow-tool".to_string(),
+        "hello,spam".to_string(),
+        "--max-stdout-bytes".to_string(),
+        "64".to_string(),
+    ])
+    .unwrap();
+
+    let tools = command_stdout(&["stdio", &spec, "--list-tools"]);
+    assert!(tools.contains("hello"));
+    assert!(tools.contains("spam"));
+    assert!(!tools.contains("goodbye"));
+
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args(["stdio", &spec, "spam", "count=512", "--pretty"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["tool"], "spam");
+    assert_eq!(value["stdout_truncated"], Value::Bool(true));
+    assert!(value["stdout_bytes"].as_u64().unwrap_or(0) > 64);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_wrap_respects_working_dir() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_wrappable_cli(temp.path());
+    let spec = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "wrap".to_string(),
+        fake.to_string_lossy().into_owned(),
+        "--allow-tool".to_string(),
+        "pwd".to_string(),
+        "--working-dir".to_string(),
+        temp.path().to_string_lossy().into_owned(),
+    ])
+    .unwrap();
+
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args(["stdio", &spec, "pwd", "--pretty"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["tool"], "pwd");
+    let expected = fs::canonicalize(temp.path()).unwrap();
+    let actual = fs::canonicalize(value["stdout_json"]["cwd"].as_str().unwrap()).unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -727,6 +831,74 @@ fn test_inspect_export_corpus_round_trips_saved_profiles() {
         value["entries"][0]["profile"]["command"],
         Value::from("git")
     );
+    assert!(
+        value["entries"][0]["quality"]["score"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+}
+
+#[test]
+fn test_inspect_corpus_stats_and_query() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let profiles_dir = root.join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+
+    let git = command_json(&["inspect", "cli", "git", "--pretty"]);
+    let cargo = command_json(&["inspect", "cli", "cargo", "--pretty"]);
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&git).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        profiles_dir.join("cargo.json"),
+        serde_json::to_string_pretty(&cargo).unwrap(),
+    )
+    .unwrap();
+
+    let corpus_path = root.join("corpus.json");
+    let _ = command_json(&[
+        "inspect",
+        "export-corpus",
+        "--root",
+        root.to_str().unwrap(),
+        "--output",
+        corpus_path.to_str().unwrap(),
+        "--pretty",
+    ]);
+
+    let stats = command_json(&[
+        "inspect",
+        "corpus-stats",
+        corpus_path.to_str().unwrap(),
+        "--pretty",
+    ]);
+    assert_eq!(stats["profile_count"], Value::from(2));
+    assert_eq!(stats["command_count"], Value::from(2));
+    assert!(stats["average_quality_score"].as_f64().unwrap_or(0.0) > 0.0);
+
+    let query = command_json(&[
+        "inspect",
+        "corpus-query",
+        corpus_path.to_str().unwrap(),
+        "--search",
+        "content",
+        "--limit",
+        "5",
+        "--pretty",
+    ]);
+    assert!(query["match_count"].as_u64().unwrap_or(0) >= 1);
+    assert!(query["entries"].as_array().unwrap().iter().any(|entry| {
+        entry["command"].as_str().unwrap_or_default() == "git"
+            || entry["summary"]
+                .as_str()
+                .unwrap_or_default()
+                .to_lowercase()
+                .contains("content")
+    }));
 }
 
 #[test]

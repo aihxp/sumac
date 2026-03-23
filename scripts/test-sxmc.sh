@@ -839,7 +839,7 @@ env HOME="$STATUS_BAKE_HOME" USERPROFILE="$STATUS_BAKE_HOME" XDG_CONFIG_HOME="$S
   "$SXMC" bake create status-health --type stdio --source "$status_bake_source" >/dev/null 2>&1
 status_health_out=$(env HOME="$STATUS_BAKE_HOME" USERPROFILE="$STATUS_BAKE_HOME" XDG_CONFIG_HOME="$STATUS_BAKE_HOME/.config" APPDATA="$STATUS_BAKE_HOME/AppData/Roaming" LOCALAPPDATA="$STATUS_BAKE_HOME/AppData/Local" \
   "$SXMC" status --health 2>/dev/null)
-if json_check "$status_health_out" "d.get('baked_health',{}).get('healthy_count',0) >= 1 and d.get('baked_health',{}).get('by_source_type',{}).get('stdio',{}).get('count',0) >= 1 and 'host_capabilities' in d"; then
+if json_check "$status_health_out" "d.get('baked_health',{}).get('healthy_count',0) >= 1 and d.get('baked_health',{}).get('by_source_type',{}).get('stdio',{}).get('count',0) >= 1 and d.get('baked_health',{}).get('panels',{}).get('mcp',{}).get('count',0) >= 1 and 'host_capabilities' in d"; then
   pass "status --health reports baked connection health and host capabilities"
 else
   fail "status --health should report baked health" "${status_health_out:0:220}"
@@ -1216,6 +1216,22 @@ else
   fail "inspect export-corpus" "${corpus_out:0:220}"
 fi
 
+corpus_file="$TMPDIR_TEST/corpus.json"
+"$SXMC" inspect export-corpus --root "$bundle_root" --output "$corpus_file" >/dev/null 2>&1
+corpus_stats=$("$SXMC" inspect corpus-stats "$corpus_file" 2>/dev/null)
+if json_check "$corpus_stats" "d.get('profile_count',0) == 2 and d.get('average_quality_score',0) > 0"; then
+  pass "inspect corpus-stats summarizes exported corpora"
+else
+  fail "inspect corpus-stats" "${corpus_stats:0:220}"
+fi
+
+corpus_query=$("$SXMC" inspect corpus-query "$corpus_file" --command git 2>/dev/null)
+if json_check "$corpus_query" "d.get('match_count',0) >= 1 and d.get('entries',[{}])[0].get('command') == 'git'"; then
+  pass "inspect corpus-query filters exported corpora"
+else
+  fail "inspect corpus-query" "${corpus_query:0:220}"
+fi
+
 publish_bundle_file="$TMPDIR_TEST/published.bundle.json"
 publish_out=$("$SXMC" publish "$publish_bundle_file" --root "$bundle_root" --bundle-name "Team Bundle" --role platform 2>/dev/null)
 publish_sha=$(json_field "$publish_out" "d.get('sha256','')")
@@ -1383,6 +1399,12 @@ if echo "$wrap_help" | grep -q "timeout-seconds"; then
   pass "wrap --help mentions timeout"
 else
   fail "wrap --help should mention timeout"
+fi
+
+if echo "$wrap_help" | grep -q "allow-tool" && echo "$wrap_help" | grep -q "working-dir"; then
+  pass "wrap --help mentions safety and execution controls"
+else
+  fail "wrap --help should mention allow-tool and working-dir"
 fi
 
 fake_wrap_cli="$TMPDIR_TEST/fake-wrap-cli"

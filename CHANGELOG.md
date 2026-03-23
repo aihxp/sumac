@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- `sxmc inspect corpus-stats` and `sxmc inspect corpus-query` for local
+  profile-corpus intelligence workflows
+
+### Changed
+
+- `sxmc wrap` now supports safer execution controls such as `--allow-tool`,
+  `--deny-tool`, `--working-dir`, bounded stdout/stderr capture, and optional
+  progress heartbeats for long-running wrapped commands
+- wrapped CLI schemas now better reflect accepted scalar and repeated values
+- `sxmc status --health` now groups checks into MCP/API/spec/graphql panels
+- saved-profile inventory and corpus export now include scored quality metadata
+
 ## [0.2.29] - 2026-03-23
 
 ### Added

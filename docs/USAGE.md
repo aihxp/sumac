@@ -139,6 +139,9 @@ Notes:
 - wrapped tool calls execute the real CLI directly, with argument validation
   driven by the generated MCP schema and a default per-call timeout of 30
   seconds.
+- `sxmc wrap` also supports `--allow-tool`, `--deny-tool`, `--working-dir`,
+  bounded stdout/stderr capture, and optional stderr heartbeat progress notes
+  for long-running wrapped commands.
 
 ## Use APIs As CLIs
 
@@ -190,6 +193,8 @@ sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff --before before.json --after after.json --format markdown
 sxmc inspect migrate-profile legacy-profile.json --output migrated-profile.json
 sxmc inspect export-corpus --root . --format json-pretty
+sxmc inspect corpus-stats corpus.json --format json-pretty
+sxmc inspect corpus-query corpus.json --command git --format json-pretty
 sxmc inspect bundle-export --output team-profiles.bundle.json
 sxmc inspect bundle-import team-profiles.bundle.json --output-dir .sxmc/ai/profiles
 sxmc inspect cache-stats --format json-pretty
@@ -220,6 +225,8 @@ sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff git --before before.json --format toon
 sxmc inspect diff --before before.json --after after.json --format markdown
 sxmc inspect export-corpus --root . --output corpus.ndjson --format ndjson
+sxmc inspect corpus-stats corpus.json --format json-pretty
+sxmc inspect corpus-query corpus.json --search content --limit 10 --format json-pretty
 sxmc inspect bundle-export --bundle-name "Platform Bundle" --role platform --hosts claude-code,cursor --output team-profiles.bundle.json
 sxmc inspect bundle-verify team-profiles.bundle.json --format json-pretty
 sxmc publish team-profiles.bundle.json --bundle-name "Platform Bundle" --role platform
@@ -256,8 +263,12 @@ Notes:
 - `sxmc status` also includes saved-profile inventory metadata so you can spot
   stale profiles, freshness gaps, and profiles that are not yet ready for
   startup-doc generation.
+- saved-profile inventory and exported corpus entries now include a quality
+  score/level in addition to the boolean ready/not-ready signal.
 - `sxmc status --health` also validates baked MCP/API connections and adds a
   `baked_health` summary plus per-host readiness under `host_capabilities`.
+- `sxmc status --health` also groups checks into MCP/API/spec/graphql panels so
+  you can read operational health by surface instead of only by raw bake type.
 - `sxmc status --compare-hosts claude-code,cursor` highlights readiness,
   doc-presence, and config-presence differences across selected AI hosts.
 - `sxmc watch` polls the same status surface over time, flushes the first frame
@@ -292,6 +303,10 @@ Notes:
 - `sxmc inspect export-corpus` packages saved profiles plus readiness and
   freshness metadata into a corpus-friendly JSON envelope. Use
   `--format ndjson` for one-record-per-line export.
+- `sxmc inspect corpus-stats corpus.json` summarizes command coverage, stale
+  profiles, and average quality across an exported corpus.
+- `sxmc inspect corpus-query corpus.json --search <term>` lets you query an
+  exported corpus by command or summary without loading the whole file by hand.
 - `sxmc inspect bundle-export --output profiles.bundle.json` packages saved
   profiles from `.sxmc/ai/profiles` into one portable bundle file.
 - bundle export also accepts optional team metadata via `--bundle-name`,
