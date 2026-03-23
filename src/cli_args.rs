@@ -74,6 +74,53 @@ pub enum Commands {
         max_request_bytes: usize,
     },
 
+    /// Wrap a CLI as a focused MCP server
+    Wrap {
+        /// Command spec to wrap as MCP tools.
+        /// Supports shell-style quoting or a JSON array like ["git"].
+        command: String,
+
+        /// Inspection depth used to derive tool schemas
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
+
+        /// Transport: stdio, http, or sse (alias for http)
+        #[arg(long, default_value = "stdio")]
+        transport: String,
+
+        /// Port for HTTP transport
+        #[arg(long, default_value = "8001")]
+        port: u16,
+
+        /// Host for HTTP transport
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Per-tool execution timeout in seconds
+        #[arg(long, default_value_t = 30)]
+        timeout_seconds: u64,
+
+        /// Require HTTP header(s) for remote MCP access (Key:Value)
+        #[arg(long = "require-header", value_name = "K:V")]
+        require_headers: Vec<String>,
+
+        /// Require a Bearer token for remote MCP access
+        #[arg(long, value_name = "TOKEN")]
+        bearer_token: Option<String>,
+
+        /// Maximum concurrent HTTP requests to serve
+        #[arg(long, default_value_t = 64)]
+        max_concurrency: usize,
+
+        /// Maximum HTTP request body size in bytes
+        #[arg(long, default_value_t = 1024 * 1024)]
+        max_request_bytes: usize,
+
+        /// Allow wrapping sxmc itself
+        #[arg(long)]
+        allow_self: bool,
+    },
+
     /// Manage skills
     Skills {
         #[command(subcommand)]

@@ -39,3 +39,29 @@ pub async fn execute_script(
         exit_code: result.status.code().unwrap_or(-1),
     })
 }
+
+/// Execute an arbitrary command with arguments, capturing output.
+pub async fn execute_command(
+    executable: &str,
+    args: &[String],
+    working_dir: Option<&Path>,
+    timeout_secs: u64,
+) -> Result<ExecResult> {
+    let mut cmd = Command::new(executable);
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    if let Some(working_dir) = working_dir {
+        cmd.current_dir(working_dir);
+    }
+
+    let result = timeout(Duration::from_secs(timeout_secs), cmd.output())
+        .await
+        .map_err(|_| SxmcError::TimeoutError(timeout_secs))?
+        .map_err(|e| SxmcError::ExecutionError(format!("Failed to run {}: {}", executable, e)))?;
+
+    Ok(ExecResult {
+        stdout: String::from_utf8_lossy(&result.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&result.stderr).to_string(),
+        exit_code: result.status.code().unwrap_or(-1),
+    })
+}

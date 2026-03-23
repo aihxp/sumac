@@ -2515,6 +2515,54 @@ async fn main() -> Result<()> {
             }
         }
 
+        Commands::Wrap {
+            command,
+            depth,
+            transport,
+            port,
+            host,
+            timeout_seconds,
+            require_headers,
+            bearer_token,
+            max_concurrency,
+            max_request_bytes,
+            allow_self,
+        } => {
+            let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
+            let server = server::build_wrapped_cli_server(&command, &profile, timeout_seconds)?;
+            let required_headers = parse_headers(&require_headers)?;
+            let bearer_token = parse_optional_secret(bearer_token)?;
+            let limits = HttpServeLimits {
+                max_concurrency,
+                max_request_body_bytes: max_request_bytes,
+            };
+            match transport.as_str() {
+                "stdio" => {
+                    if !required_headers.is_empty() || bearer_token.is_some() {
+                        eprintln!(
+                            "[sxmc] Warning: remote auth flags are ignored for stdio transport"
+                        );
+                    }
+                    server::serve_wrapped_cli_stdio(server).await?
+                }
+                "http" | "sse" => {
+                    server::serve_wrapped_cli_http(
+                        server,
+                        &host,
+                        port,
+                        &required_headers,
+                        bearer_token.as_deref(),
+                        limits,
+                    )
+                    .await?
+                }
+                other => {
+                    eprintln!("[sxmc] Unknown transport: {}", other);
+                    std::process::exit(1);
+                }
+            }
+        }
+
         Commands::Skills { action } => match action {
             SkillsAction::List { paths, json } => {
                 cmd_skills_list(&resolve_paths(paths), json)?;

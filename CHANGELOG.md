@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.24] - 2026-03-22
+
+### Added
+
+- `sxmc wrap <tool>` to inspect a CLI and expose its top-level subcommands as a
+  runnable MCP server over stdio or streamable HTTP
+
+### Changed
+
+- validation coverage now includes end-to-end wrapped CLI serving and tool
+  execution through the MCP stdio bridge
+
 ## [0.2.23] - 2026-03-22
 
 ### Added

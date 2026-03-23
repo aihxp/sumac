@@ -179,6 +179,104 @@ fi
     script
 }
 
+#[cfg(not(windows))]
+fn write_fake_wrappable_cli(dir: &Path) -> std::path::PathBuf {
+    let script = dir.join("fake-wrap-cli");
+    let body = r#"#!/bin/sh
+if [ "$1" = "hello" ] && [ "$2" = "--help" ]; then
+    cat <<'EOF'
+fake-wrap-cli hello
+
+Say hello.
+
+Usage:
+  fake-wrap-cli hello [OPTIONS] <target>
+
+Options:
+  --name <NAME>     Override the target name.
+  --excited         Add emphasis.
+EOF
+elif [ "$1" = "goodbye" ] && [ "$2" = "--help" ]; then
+    cat <<'EOF'
+fake-wrap-cli goodbye
+
+Say goodbye.
+
+Usage:
+  fake-wrap-cli goodbye [OPTIONS]
+
+Options:
+  --name <NAME>     Person to say goodbye to.
+EOF
+elif [ "$1" = "hello" ]; then
+    shift
+    target=""
+    name=""
+    excited="false"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --name)
+                name="$2"
+                shift 2
+                ;;
+            --excited)
+                excited="true"
+                shift
+                ;;
+            *)
+                if [ -z "$target" ]; then
+                    target="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    if [ -n "$name" ]; then
+        target="$name"
+    fi
+    if [ -z "$target" ]; then
+        target="world"
+    fi
+    suffix=""
+    if [ "$excited" = "true" ]; then
+        suffix="!"
+    fi
+    printf '{"message":"hello %s%s"}\n' "$target" "$suffix"
+elif [ "$1" = "goodbye" ]; then
+    shift
+    target="world"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --name)
+                target="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    printf '{"message":"goodbye %s"}\n' "$target"
+else
+    cat <<'EOF'
+fake-wrap-cli
+
+CLI wrapping fixture.
+
+Commands:
+  hello    Say hello
+  goodbye  Say goodbye
+EOF
+fi
+"#;
+    fs::write(&script, body).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    script
+}
+
 #[test]
 fn test_version() {
     sxmc()
@@ -196,6 +294,7 @@ fn test_help() {
         .success()
         .stdout(predicate::str::contains("Skills × MCP × CLI"))
         .stdout(predicate::str::contains("serve"))
+        .stdout(predicate::str::contains("wrap"))
         .stdout(predicate::str::contains("skills"))
         .stdout(predicate::str::contains("stdio"))
         .stdout(predicate::str::contains("http"))
@@ -208,6 +307,50 @@ fn test_help() {
         .stdout(predicate::str::contains("bake"))
         .stdout(predicate::str::contains("completions"))
         .stdout(predicate::str::contains("doctor"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_wrap_stdio_describe_and_call_work_for_fake_cli() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_wrappable_cli(temp.path());
+    let spec = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "wrap".to_string(),
+        fake.to_string_lossy().into_owned(),
+    ])
+    .unwrap();
+
+    sxmc()
+        .args(["stdio", &spec, "--list-tools"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"))
+        .stdout(predicate::str::contains("goodbye"));
+
+    sxmc()
+        .args(["stdio", &spec, "--describe-tool", "hello"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("name"))
+        .stdout(predicate::str::contains("target"))
+        .stdout(predicate::str::contains("excited"));
+
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "stdio",
+            &spec,
+            "hello",
+            "name=Sam",
+            "excited=true",
+            "--pretty",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["tool"], "hello");
+    assert_eq!(value["stdout"], "{\"message\":\"hello Sam!\"}\n");
 }
 
 #[test]

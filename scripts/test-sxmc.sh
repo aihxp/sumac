@@ -1248,6 +1248,101 @@ else
 fi
 
 # ============================================================================
+# SECTION 18: sxmc wrap
+# ============================================================================
+section "18. Wrap"
+
+wrap_help=$("$SXMC" wrap --help 2>&1)
+if echo "$wrap_help" | grep -q "transport"; then
+  pass "wrap --help mentions transport"
+else
+  fail "wrap --help should mention transport"
+fi
+
+if echo "$wrap_help" | grep -q "timeout-seconds"; then
+  pass "wrap --help mentions timeout"
+else
+  fail "wrap --help should mention timeout"
+fi
+
+fake_wrap_cli="$TMPDIR_TEST/fake-wrap-cli"
+cat > "$fake_wrap_cli" <<'EOF'
+#!/bin/sh
+if [ "$1" = "hello" ] && [ "$2" = "--help" ]; then
+  cat <<'INNER'
+fake-wrap-cli hello
+
+Say hello.
+
+Usage:
+  fake-wrap-cli hello [OPTIONS] <target>
+
+Options:
+  --name <NAME>  Override the target name.
+  --excited      Add emphasis.
+INNER
+elif [ "$1" = "hello" ]; then
+  shift
+  target=""
+  name=""
+  excited="false"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --name)
+        name="$2"
+        shift 2
+        ;;
+      --excited)
+        excited="true"
+        shift
+        ;;
+      *)
+        if [ -z "$target" ]; then
+          target="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+  [ -n "$name" ] && target="$name"
+  [ -z "$target" ] && target="world"
+  suffix=""
+  [ "$excited" = "true" ] && suffix="!"
+  printf '{"message":"hello %s%s"}\n' "$target" "$suffix"
+else
+  cat <<'INNER'
+fake-wrap-cli
+
+CLI wrapping fixture.
+
+Commands:
+  hello  Say hello
+INNER
+fi
+EOF
+chmod +x "$fake_wrap_cli"
+
+wrap_spec=$(python3 - <<'PY' "$SXMC" "$fake_wrap_cli"
+import json, sys
+print(json.dumps([sys.argv[1], "wrap", sys.argv[2]]))
+PY
+)
+
+wrap_tools=$("$SXMC" stdio "$wrap_spec" --list-tools 2>/dev/null)
+if echo "$wrap_tools" | grep -q "hello"; then
+  pass "wrap exposes fake CLI subcommands as MCP tools"
+else
+  fail "wrap should expose fake CLI tools" "${wrap_tools:0:120}"
+fi
+
+wrap_call=$("$SXMC" stdio "$wrap_spec" hello name=Sam excited=true --pretty 2>/dev/null)
+if printf '%s' "$wrap_call" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('tool') == 'hello' and 'hello Sam!' in d.get('stdout','') else 1)"; then
+  pass "wrap executes wrapped CLI tool calls"
+else
+  fail "wrap should execute fake CLI tool" "${wrap_call:0:160}"
+fi
+
+# ============================================================================
 # SUMMARY
 # ============================================================================
 printf "\n${BOLD}${CYAN}━━━ RESULTS ━━━${RESET}\n\n"

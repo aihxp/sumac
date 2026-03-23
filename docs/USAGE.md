@@ -6,6 +6,7 @@ The shortest path through `sxmc` is:
 - `serve` to publish skills as MCP
 - `mcp` for daily MCP client work against baked connections
 - `stdio` and `http` for raw or ad hoc MCP bridging
+- `wrap` to turn an existing CLI into a focused MCP server immediately
 - `api`, `spec`, and `graphql` for API-to-CLI flows
 - `inspect cli`, `init ai`, and `scaffold` for CLI-to-AI startup artifacts
 
@@ -107,6 +108,37 @@ Recommended low-token MCP workflow:
 3. `sxmc mcp info <server/tool> --format toon`
 4. `sxmc mcp call <server/tool> '<json-object>'`
 5. use `sxmc mcp session <server>` when the MCP server expects stateful multi-step calls
+
+## Wrap A CLI As MCP
+
+Local stdio MCP wrapper:
+
+```bash
+sxmc wrap git
+sxmc stdio '["sxmc","wrap","git"]' --list-tools
+sxmc stdio '["sxmc","wrap","git"]' --describe-tool add
+```
+
+Hosted streamable HTTP wrapper:
+
+```bash
+sxmc wrap gh --transport http --host 127.0.0.1 --port 8001 \
+  --bearer-token env:SXMC_WRAP_TOKEN
+
+sxmc http http://127.0.0.1:8001/mcp \
+  --auth-header "Authorization: Bearer $SXMC_WRAP_TOKEN" \
+  --list-tools
+```
+
+Notes:
+
+- `sxmc wrap <tool>` inspects the CLI first, then exposes focused MCP tools for
+  the discovered top-level command surface.
+- default inspection depth is `1`, so wrapped tools can pick up subcommand
+  options and positionals without requiring a separate saved profile step.
+- wrapped tool calls execute the real CLI directly, with argument validation
+  driven by the generated MCP schema and a default per-call timeout of 30
+  seconds.
 
 ## Use APIs As CLIs
 

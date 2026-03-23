@@ -4,6 +4,7 @@
 //! It supports both local stdio serving and remote streamable HTTP serving.
 
 pub mod handler;
+mod wrap;
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -41,6 +42,7 @@ use crate::skills::discovery;
 use crate::skills::parser;
 
 use self::handler::SkillsServer;
+pub use self::wrap::{build_wrapped_cli_server, serve_wrapped_cli_http, serve_wrapped_cli_stdio};
 
 #[derive(Clone, Debug)]
 pub struct HttpAuth {
