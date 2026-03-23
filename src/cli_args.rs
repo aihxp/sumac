@@ -1,9 +1,30 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use sxmc::cli_surfaces::{AiClientProfile, AiCoverage, ArtifactMode};
 use sxmc::output;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum DiffOutputFormat {
+    Json,
+    JsonPretty,
+    Toon,
+    Ndjson,
+    Markdown,
+}
+
+impl DiffOutputFormat {
+    pub fn as_structured(self) -> Option<output::StructuredOutputFormat> {
+        match self {
+            Self::Json => Some(output::StructuredOutputFormat::Json),
+            Self::JsonPretty => Some(output::StructuredOutputFormat::JsonPretty),
+            Self::Toon => Some(output::StructuredOutputFormat::Toon),
+            Self::Ndjson => Some(output::StructuredOutputFormat::Ndjson),
+            Self::Markdown => None,
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "sxmc", version, about = "AI-agnostic Skills × MCP × CLI")]
@@ -382,8 +403,12 @@ pub enum Commands {
         only_hosts: Vec<AiClientProfile>,
 
         /// Repair missing startup-facing files for the selected hosts
-        #[arg(long)]
+        #[arg(long, conflicts_with = "remove")]
         fix: bool,
+
+        /// Remove startup-facing files/snippets for the selected hosts
+        #[arg(long, conflicts_with = "fix")]
+        remove: bool,
 
         /// Preview doctor repair writes without modifying files
         #[arg(long)]
@@ -488,8 +513,14 @@ pub enum InspectAction {
         commands: Vec<String>,
         #[arg(long)]
         from_file: Option<PathBuf>,
+        #[arg(long, value_name = "BATCH_RESULT")]
+        retry_failed: Option<PathBuf>,
         #[arg(long)]
         output_dir: Option<PathBuf>,
+        #[arg(long, conflicts_with = "skip_existing")]
+        overwrite: bool,
+        #[arg(long, conflicts_with = "overwrite")]
+        skip_existing: bool,
         #[arg(long, default_value_t = 0)]
         depth: usize,
         #[arg(long, value_name = "TIMESTAMP")]
@@ -522,7 +553,7 @@ pub enum InspectAction {
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]
-        format: Option<output::StructuredOutputFormat>,
+        format: Option<DiffOutputFormat>,
         #[arg(long)]
         allow_self: bool,
     },
@@ -530,6 +561,15 @@ pub enum InspectAction {
         input: PathBuf,
         #[arg(long)]
         compact: bool,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    MigrateProfile {
+        input: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]

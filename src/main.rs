@@ -15,8 +15,8 @@ use std::time::Duration;
 use std::collections::HashMap;
 
 use cli_args::{
-    BakeAction, Cli, Commands, InitAction, InspectAction, McpAction, McpSessionAction,
-    McpSessionCli, ScaffoldAction, SkillsAction,
+    BakeAction, Cli, Commands, DiffOutputFormat, InitAction, InspectAction, McpAction,
+    McpSessionAction, McpSessionCli, ScaffoldAction, SkillsAction,
 };
 use command_handlers::{cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run};
 use sxmc::auth::secrets::{resolve_header, resolve_secret};
@@ -1503,6 +1503,13 @@ fn compact_value_from_full_profile_value(profile: &Value) -> Value {
         .unwrap_or_else(|_| profile.clone())
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum BatchOutputWriteMode {
+    Unique,
+    Overwrite,
+    SkipExisting,
+}
+
 fn diff_value_has_changes(value: &Value) -> bool {
     value["summary_changed"].as_bool().unwrap_or(false)
         || value["description_changed"].as_bool().unwrap_or(false)
@@ -1538,19 +1545,25 @@ fn resolve_batch_profile_output_path(
     output_dir: &Path,
     command: &str,
     slug_counts: &mut HashMap<String, usize>,
-) -> PathBuf {
+) -> (String, PathBuf) {
     let mut slug = slugify_loose(command);
     if slug.is_empty() {
         slug = "profile".into();
     }
     let count = slug_counts.entry(slug.clone()).or_insert(0);
     *count += 1;
-    let file_name = if *count == 1 {
-        format!("{slug}.json")
-    } else {
-        format!("{slug}-{}.json", *count)
-    };
-    output_dir.join(file_name)
+    loop {
+        let file_name = if *count == 1 {
+            format!("{slug}.json")
+        } else {
+            format!("{slug}-{}.json", *count)
+        };
+        let path = output_dir.join(&file_name);
+        if !path.exists() {
+            return (slug, path);
+        }
+        *count += 1;
+    }
 }
 
 fn write_batch_profile_file(
@@ -1559,6 +1572,7 @@ fn write_batch_profile_file(
     profile: &Value,
     compact: bool,
     slug_counts: &mut HashMap<String, usize>,
+    write_mode: BatchOutputWriteMode,
 ) -> Result<Value> {
     fs::create_dir_all(output_dir)?;
     let rendered_value = if compact {
@@ -1566,12 +1580,37 @@ fn write_batch_profile_file(
     } else {
         profile.clone()
     };
-    let path = resolve_batch_profile_output_path(output_dir, command, slug_counts);
+    let path = match write_mode {
+        BatchOutputWriteMode::Unique => {
+            resolve_batch_profile_output_path(output_dir, command, slug_counts).1
+        }
+        BatchOutputWriteMode::Overwrite | BatchOutputWriteMode::SkipExisting => {
+            let mut slug = slugify_loose(command);
+            if slug.is_empty() {
+                slug = "profile".into();
+            }
+            output_dir.join(format!("{slug}.json"))
+        }
+    };
+    let existed = path.exists();
+    if matches!(write_mode, BatchOutputWriteMode::SkipExisting) && path.exists() {
+        return Ok(json!({
+            "command": command,
+            "path": path.display().to_string(),
+            "compact": compact,
+            "action": "skipped_existing",
+        }));
+    }
     fs::write(&path, serde_json::to_string_pretty(&rendered_value)?)?;
     Ok(json!({
         "command": command,
         "path": path.display().to_string(),
         "compact": compact,
+        "action": if matches!(write_mode, BatchOutputWriteMode::Overwrite) && existed {
+            "overwritten"
+        } else {
+            "written"
+        },
     }))
 }
 
@@ -1580,6 +1619,14 @@ fn attach_batch_output_dir_metadata(
     output_dir: &Path,
     written_profiles: &[Value],
 ) {
+    let written_count = written_profiles
+        .iter()
+        .filter(|entry| entry["action"].as_str().unwrap_or("written") != "skipped_existing")
+        .count();
+    let skipped_existing_count = written_profiles
+        .iter()
+        .filter(|entry| entry["action"].as_str() == Some("skipped_existing"))
+        .count();
     if let Some(object) = value.as_object_mut() {
         object.insert(
             "output_dir".into(),
@@ -1587,13 +1634,24 @@ fn attach_batch_output_dir_metadata(
         );
         object.insert(
             "written_profile_count".into(),
-            Value::from(written_profiles.len() as u64),
+            Value::from(written_count as u64),
+        );
+        object.insert(
+            "skipped_existing_count".into(),
+            Value::from(skipped_existing_count as u64),
         );
         object.insert(
             "written_profiles".into(),
             Value::Array(written_profiles.to_vec()),
         );
     }
+}
+
+fn write_batch_manifest_file(output_dir: &Path, value: &Value) -> Result<PathBuf> {
+    fs::create_dir_all(output_dir)?;
+    let path = output_dir.join("batch-summary.json");
+    fs::write(&path, serde_json::to_string_pretty(value)?)?;
+    Ok(path)
 }
 
 fn batch_event_for_output(event: &Value, compact: bool) -> Value {
@@ -1614,12 +1672,65 @@ fn batch_event_for_output(event: &Value, compact: bool) -> Value {
     }
 }
 
-fn diff_display_value(value: &Value, format: output::StructuredOutputFormat) -> String {
-    if matches!(format, output::StructuredOutputFormat::Toon) {
-        format_diff_toon(value)
-    } else {
-        output::format_structured_value(value, format)
+fn format_diff_markdown(value: &Value) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "# CLI Diff: `{}`",
+        value["command"].as_str().unwrap_or("<unknown>")
+    ));
+    lines.push(String::new());
+    lines.push(format!(
+        "- Summary changed: `{}`",
+        value["summary_changed"].as_bool().unwrap_or(false)
+    ));
+    if let Some(before) = value["before_summary"].as_str() {
+        lines.push(format!("- Before summary: {}", before));
     }
+    if let Some(after) = value["after_summary"].as_str() {
+        lines.push(format!("- After summary: {}", after));
+    }
+    if let Some(note) = value["migration_note"].as_str() {
+        lines.push(format!("- Migration note: {}", note));
+    }
+
+    let mut push_section = |title: &str, field: &Value| {
+        if let Some(items) = field.as_array() {
+            if !items.is_empty() {
+                lines.push(String::new());
+                lines.push(format!("## {}", title));
+                lines.push(String::new());
+                for item in items {
+                    lines.push(format!("- `{}`", item.as_str().unwrap_or("<unknown>")));
+                }
+            }
+        }
+    };
+
+    push_section("Added subcommands", &value["subcommands_added"]);
+    push_section("Removed subcommands", &value["subcommands_removed"]);
+    push_section("Added options", &value["options_added"]);
+    push_section("Removed options", &value["options_removed"]);
+    push_section("Added environment", &value["environment_added"]);
+    push_section("Removed environment", &value["environment_removed"]);
+    lines.join("\n")
+}
+
+fn diff_display_value(value: &Value, format: DiffOutputFormat) -> String {
+    if matches!(format, DiffOutputFormat::Toon) {
+        format_diff_toon(value)
+    } else if matches!(format, DiffOutputFormat::Markdown) {
+        format_diff_markdown(value)
+    } else {
+        output::format_structured_value(value, format.as_structured().unwrap())
+    }
+}
+
+fn resolve_diff_output_format(format: Option<DiffOutputFormat>, pretty: bool) -> DiffOutputFormat {
+    format.unwrap_or(if pretty {
+        DiffOutputFormat::JsonPretty
+    } else {
+        DiffOutputFormat::Json
+    })
 }
 
 fn print_cache_stats_report(value: &Value) {
@@ -1640,6 +1751,23 @@ fn print_cache_warm_report(value: &Value) {
         value["parallelism"].as_u64().unwrap_or(0),
         value["failed_count"].as_u64().unwrap_or(0),
         value["skipped_count"].as_u64().unwrap_or(0)
+    );
+}
+
+fn print_migrated_profile_report(value: &Value) {
+    println!(
+        "Migrated CLI profile for `{}`",
+        value["command"].as_str().unwrap_or("<unknown>")
+    );
+    if let Some(input) = value["input"].as_str() {
+        println!("Input: {}", input);
+    }
+    if let Some(output) = value["output"].as_str() {
+        println!("Output: {}", output);
+    }
+    println!(
+        "Schema: {}",
+        value["profile_schema"].as_str().unwrap_or("<unknown>")
     );
 }
 
@@ -1923,46 +2051,69 @@ fn ensure_profile_ready_for_agent_docs(
     )))
 }
 
-fn repair_doctor_startup_files(
-    root: &std::path::Path,
-    only_hosts: &[AiClientProfile],
-    from_cli: &str,
+struct DoctorRepairOptions<'a> {
+    root: &'a std::path::Path,
+    only_hosts: &'a [AiClientProfile],
+    from_cli: &'a str,
     depth: usize,
-    skills_path: &std::path::Path,
+    skills_path: &'a std::path::Path,
     allow_low_confidence: bool,
     dry_run: bool,
+    remove: bool,
+}
+
+fn repair_doctor_startup_files(
+    options: DoctorRepairOptions<'_>,
 ) -> Result<Vec<cli_surfaces::WriteOutcome>> {
-    if only_hosts.is_empty() {
+    if options.only_hosts.is_empty() {
         return Err(sxmc::error::SxmcError::Other(
             "`sxmc doctor --fix` requires at least one `--only <host>` selection".into(),
         ));
     }
 
-    let profile = cli_surfaces::inspect_cli_with_depth(from_cli, true, depth)?;
-    ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
+    let profile = cli_surfaces::inspect_cli_with_depth(options.from_cli, true, options.depth)?;
     let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
         &profile,
         AiCoverage::Full,
         None,
-        only_hosts,
-        root,
-        skills_path,
+        options.only_hosts,
+        options.root,
+        options.skills_path,
         ArtifactMode::Apply,
     )?;
-    if dry_run {
-        cli_surfaces::preview_artifacts_with_apply_selection(
-            &artifacts,
-            ArtifactMode::Apply,
-            root,
-            &selected_hosts,
-        )
+    if options.remove {
+        if options.dry_run {
+            cli_surfaces::remove_artifacts_with_apply_selection(
+                &artifacts,
+                ArtifactMode::Preview,
+                options.root,
+                &selected_hosts,
+            )
+        } else {
+            cli_surfaces::remove_artifacts_with_apply_selection(
+                &artifacts,
+                ArtifactMode::Apply,
+                options.root,
+                &selected_hosts,
+            )
+        }
     } else {
-        cli_surfaces::materialize_artifacts_with_apply_selection(
-            &artifacts,
-            ArtifactMode::Apply,
-            root,
-            &selected_hosts,
-        )
+        ensure_profile_ready_for_agent_docs(&profile, options.allow_low_confidence)?;
+        if options.dry_run {
+            cli_surfaces::preview_artifacts_with_apply_selection(
+                &artifacts,
+                ArtifactMode::Apply,
+                options.root,
+                &selected_hosts,
+            )
+        } else {
+            cli_surfaces::materialize_artifacts_with_apply_selection(
+                &artifacts,
+                ArtifactMode::Apply,
+                options.root,
+                &selected_hosts,
+            )
+        }
     }
 }
 
@@ -2667,7 +2818,10 @@ async fn main() -> Result<()> {
             InspectAction::Batch {
                 commands,
                 from_file,
+                retry_failed,
                 output_dir,
+                overwrite,
+                skip_existing,
                 depth,
                 since,
                 parallel,
@@ -2677,8 +2831,11 @@ async fn main() -> Result<()> {
                 format,
                 allow_self,
             } => {
-                let mut requests =
-                    cli_surfaces::load_batch_requests(&commands, from_file.as_deref())?;
+                let mut requests = cli_surfaces::load_batch_requests(
+                    &commands,
+                    from_file.as_deref(),
+                    retry_failed.as_deref(),
+                )?;
                 for request in &mut requests {
                     if request.depth == 0 {
                         request.depth = depth;
@@ -2696,6 +2853,13 @@ async fn main() -> Result<()> {
                     .transpose()?;
                 let mut written_profiles = Vec::new();
                 let mut slug_counts = HashMap::new();
+                let write_mode = if overwrite {
+                    BatchOutputWriteMode::Overwrite
+                } else if skip_existing {
+                    BatchOutputWriteMode::SkipExisting
+                } else {
+                    BatchOutputWriteMode::Unique
+                };
                 let output_dir = output_dir.map(|path| {
                     if path.is_absolute() {
                         path
@@ -2730,6 +2894,7 @@ async fn main() -> Result<()> {
                                         &event["profile"],
                                         compact,
                                         &mut slug_counts,
+                                        write_mode,
                                     ) {
                                         Ok(metadata) => written_profiles.push(metadata),
                                         Err(error) => stream_error = Some(error),
@@ -2771,11 +2936,19 @@ async fn main() -> Result<()> {
                                     profile,
                                     compact,
                                     &mut slug_counts,
+                                    write_mode,
                                 )?);
                             }
                         }
                     }
                     attach_batch_output_dir_metadata(&mut value, dir, &written_profiles);
+                    let manifest_path = write_batch_manifest_file(dir, &value)?;
+                    if let Some(object) = value.as_object_mut() {
+                        object.insert(
+                            "written_manifest_path".into(),
+                            Value::String(manifest_path.display().to_string()),
+                        );
+                    }
                 }
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
                     if matches!(format, output::StructuredOutputFormat::Ndjson) {
@@ -2792,6 +2965,8 @@ async fn main() -> Result<()> {
                                     "skipped_count": value["skipped_count"],
                                     "output_dir": value.get("output_dir").cloned().unwrap_or(Value::Null),
                                     "written_profile_count": value.get("written_profile_count").cloned().unwrap_or(Value::from(0)),
+                                    "skipped_existing_count": value.get("skipped_existing_count").cloned().unwrap_or(Value::from(0)),
+                                    "written_manifest_path": value.get("written_manifest_path").cloned().unwrap_or(Value::Null),
                                 }),
                                 output::StructuredOutputFormat::Ndjson,
                             )
@@ -2845,8 +3020,7 @@ async fn main() -> Result<()> {
                 format,
                 allow_self,
             } => {
-                let render_format = output::prefer_structured_output(format, pretty)
-                    .unwrap_or_else(|| output::resolve_structured_format(format, pretty));
+                let render_format = resolve_diff_output_format(format, pretty);
                 let render_once = || -> Result<Value> {
                     let before_profile = cli_surfaces::load_profile(&before)?;
                     let after_profile = if let Some(after_path) = after.as_ref() {
@@ -2899,6 +3073,44 @@ async fn main() -> Result<()> {
                     cli_surfaces::profile_value(&profile)
                 };
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    let format = output::resolve_structured_format(format, pretty);
+                    println!("{}", output::format_structured_value(&value, format));
+                }
+            }
+            InspectAction::MigrateProfile {
+                input,
+                output: migrate_output,
+                pretty,
+                format,
+            } => {
+                let profile = cli_surfaces::load_profile(&input)?;
+                let value = cli_surfaces::profile_value(&profile);
+                if let Some(path) = migrate_output {
+                    let path = if path.is_absolute() {
+                        path
+                    } else {
+                        std::env::current_dir()
+                            .unwrap_or_else(|_| PathBuf::from("."))
+                            .join(path)
+                    };
+                    if let Some(parent) = path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(&path, serde_json::to_string_pretty(&value)?)?;
+                    let report = json!({
+                        "command": profile.command,
+                        "input": input.display().to_string(),
+                        "output": path.display().to_string(),
+                        "profile_schema": profile.profile_schema,
+                    });
+                    if let Some(format) = output::prefer_structured_output(format, pretty) {
+                        println!("{}", output::format_structured_value(&report, format));
+                    } else {
+                        print_migrated_profile_report(&report);
+                    }
+                } else if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
                     let format = output::resolve_structured_format(format, pretty);
@@ -2965,7 +3177,7 @@ async fn main() -> Result<()> {
                 allow_self,
             } => {
                 let mut requests =
-                    cli_surfaces::load_batch_requests(&commands, from_file.as_deref())?;
+                    cli_surfaces::load_batch_requests(&commands, from_file.as_deref(), None)?;
                 for request in &mut requests {
                     if request.depth == 0 {
                         request.depth = depth;
@@ -3274,6 +3486,7 @@ async fn main() -> Result<()> {
             check,
             only_hosts,
             fix,
+            remove,
             dry_run,
             from_cli,
             depth,
@@ -3284,21 +3497,24 @@ async fn main() -> Result<()> {
             format,
         } => {
             let root = resolve_generation_root(root)?;
-            if fix {
+            if fix || remove {
                 let from_cli = from_cli.as_deref().ok_or_else(|| {
-                    sxmc::error::SxmcError::Other(
-                        "`sxmc doctor --fix` requires `--from-cli <tool>`".into(),
-                    )
+                    sxmc::error::SxmcError::Other(if remove {
+                        "`sxmc doctor --remove` requires `--from-cli <tool>`".into()
+                    } else {
+                        "`sxmc doctor --fix` requires `--from-cli <tool>`".into()
+                    })
                 })?;
-                let outcomes = repair_doctor_startup_files(
-                    &root,
-                    &only_hosts,
+                let outcomes = repair_doctor_startup_files(DoctorRepairOptions {
+                    root: &root,
+                    only_hosts: &only_hosts,
                     from_cli,
                     depth,
-                    &skills_path,
+                    skills_path: &skills_path,
                     allow_low_confidence,
                     dry_run,
-                )?;
+                    remove,
+                })?;
                 print_write_outcomes(&outcomes);
             }
             let value = doctor_value(&root, &only_hosts)?;

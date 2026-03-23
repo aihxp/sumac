@@ -381,6 +381,7 @@ pub fn invalidate_profile_cache_value(command_spec: &str, dry_run: bool) -> Resu
 pub fn load_batch_requests(
     commands: &[String],
     from_file: Option<&Path>,
+    retry_failed: Option<&Path>,
 ) -> Result<Vec<BatchInspectRequest>> {
     let mut specs = commands
         .iter()
@@ -434,7 +435,86 @@ pub fn load_batch_requests(
             }
         }
     }
+    if let Some(path) = retry_failed {
+        specs.extend(load_failed_batch_requests(path)?);
+    }
     Ok(specs)
+}
+
+fn load_failed_batch_requests(path: &Path) -> Result<Vec<BatchInspectRequest>> {
+    let raw = fs::read_to_string(path).map_err(|error| {
+        SxmcError::Other(format!(
+            "Failed to read retry-failed batch file '{}': {}",
+            path.display(),
+            error
+        ))
+    })?;
+    if raw.trim().is_empty() {
+        return Err(SxmcError::Other(format!(
+            "Retry-failed batch file '{}' is empty.",
+            path.display()
+        )));
+    }
+
+    if let Ok(value) = serde_json::from_str::<Value>(&raw) {
+        let specs = extract_failed_batch_requests_from_value(&value);
+        if !specs.is_empty() {
+            return Ok(specs);
+        }
+    }
+
+    let mut specs = Vec::new();
+    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
+        let value = serde_json::from_str::<Value>(line).map_err(|error| {
+            SxmcError::Other(format!(
+                "Retry-failed batch file '{}' is neither a batch JSON envelope nor NDJSON events: {}",
+                path.display(),
+                error
+            ))
+        })?;
+        specs.extend(extract_failed_batch_requests_from_value(&value));
+    }
+
+    if specs.is_empty() {
+        return Err(SxmcError::Other(format!(
+            "Retry-failed batch file '{}' did not contain any failed command entries.",
+            path.display()
+        )));
+    }
+
+    Ok(specs)
+}
+
+fn extract_failed_batch_requests_from_value(value: &Value) -> Vec<BatchInspectRequest> {
+    let mut requests = Vec::new();
+    match value {
+        Value::Object(map) => {
+            if value["type"].as_str() == Some("failure") {
+                if let Some(command) = value["command"].as_str() {
+                    requests.push(BatchInspectRequest {
+                        command_spec: command.to_string(),
+                        depth: 0,
+                    });
+                }
+            } else if let Some(failures) = map.get("failures").and_then(Value::as_array) {
+                for entry in failures {
+                    if let Some(command) = entry["command"].as_str() {
+                        requests.push(BatchInspectRequest {
+                            command_spec: command.to_string(),
+                            depth: 0,
+                        });
+                    }
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                requests.extend(extract_failed_batch_requests_from_value(item));
+            }
+        }
+        _ => {}
+    }
+    requests
 }
 
 pub fn parse_batch_since_filter(raw: &str) -> Result<BatchSinceFilter> {

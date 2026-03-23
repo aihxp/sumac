@@ -12,6 +12,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   false-positives on GNU binutils (`nm`, `strings`, etc.) whose `man`/`--help`
   text includes `Report bugs to <url>`.
 
+## [0.2.22] - 2026-03-22
+
+### Added
+
+- `sxmc inspect diff --format markdown` for PR-friendly human diffs
+- `sxmc inspect batch --retry-failed <previous-batch.{json,ndjson}>` to rerun
+  only failed command specs from an earlier batch result
+- `sxmc inspect migrate-profile <input> [--output migrated.json]` to rewrite
+  saved profiles into the current canonical schema
+- `sxmc doctor --remove --only <hosts> --from-cli <tool>` to clean up
+  generated startup files/snippets for selected hosts
+
+### Changed
+
+- `sxmc inspect batch --output-dir` now supports `--overwrite` and
+  `--skip-existing` controls for managing existing saved profile files
+- `sxmc inspect batch --output-dir` now writes a `batch-summary.json` manifest
+  alongside the individual saved profiles
+- validation coverage now includes markdown diffs, retrying failed batch
+  entries, output-dir skip-existing behavior, profile migration, and doctor
+  cleanup flows
+
 ## [0.2.21] - 2026-03-22
 
 ### Changed

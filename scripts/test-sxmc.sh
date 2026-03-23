@@ -787,6 +787,13 @@ else
   fail "doctor --fix --dry-run should not write files" "${doctor_dry_run:0:160}"
 fi
 
+doctor_remove=$("$SXMC" doctor --remove --only claude-code --from-cli "$TMPDIR_TEST/doctor-fix-cli" --root "$TMP_DOCTOR_FIX_ROOT" --human 2>/dev/null || true)
+if echo "$doctor_remove" | grep -q "Removed" && echo "$doctor_remove" | grep -q "Summary:"; then
+  pass "doctor --remove cleans selected startup files"
+else
+  fail "doctor --remove should clean selected startup files" "${doctor_remove:0:180}"
+fi
+
 # ============================================================================
 # SECTION 14: Self-Dogfooding
 # ============================================================================
@@ -864,10 +871,18 @@ fi
 
 TMP_BATCH_OUT="$TMPDIR_TEST/batch-output"
 batch_output_dir=$("$SXMC" inspect batch git ls --output-dir "$TMP_BATCH_OUT" 2>/dev/null)
-if json_check "$batch_output_dir" "d.get('written_profile_count', 0) == 2 and 'output_dir' in d" && [ -f "$TMP_BATCH_OUT/git.json" ] && [ -f "$TMP_BATCH_OUT/ls.json" ]; then
+if json_check "$batch_output_dir" "d.get('written_profile_count', 0) == 2 and 'output_dir' in d and 'written_manifest_path' in d" && [ -f "$TMP_BATCH_OUT/git.json" ] && [ -f "$TMP_BATCH_OUT/ls.json" ] && [ -f "$TMP_BATCH_OUT/batch-summary.json" ]; then
   pass "inspect batch --output-dir saves separate profile files"
 else
   fail "inspect batch --output-dir" "${batch_output_dir:0:140}"
+fi
+
+echo '{"sentinel":true}' > "$TMP_BATCH_OUT/git.json"
+batch_skip_existing=$("$SXMC" inspect batch git --output-dir "$TMP_BATCH_OUT" --skip-existing 2>/dev/null)
+if json_check "$batch_skip_existing" "d.get('written_profile_count', 0) == 0 and d.get('skipped_existing_count', 0) == 1" && grep -q 'sentinel' "$TMP_BATCH_OUT/git.json"; then
+  pass "inspect batch --skip-existing preserves existing files"
+else
+  fail "inspect batch --skip-existing" "${batch_skip_existing:0:160}"
 fi
 
 batch_from_file_comments=$("$SXMC" inspect batch --from-file "$TMPDIR_TEST/tools-with-comments.txt" --parallel 2 2>/dev/null)
@@ -1013,6 +1028,13 @@ PY
     fail "inspect diff saved-vs-saved" "${diff_saved_saved:0:120}"
   fi
 
+  diff_markdown=$("$SXMC" inspect diff --before "$before_profile" --after "$tmp_after_profile" --format markdown 2>/dev/null)
+  if echo "$diff_markdown" | grep -q '^# CLI Diff:' && echo "$diff_markdown" | grep -q 'Summary changed: `true`'; then
+    pass "inspect diff --format markdown is human-readable"
+  else
+    fail "inspect diff --format markdown" "${diff_markdown:0:160}"
+  fi
+
   diff_exit_fail=$("$SXMC" inspect diff --before "$before_profile" --after "$tmp_after_profile" --exit-code >/dev/null 2>&1; echo $?)
   if [ "$diff_exit_fail" = "1" ]; then
     pass "inspect diff --exit-code returns 1 when changed"
@@ -1060,6 +1082,14 @@ else
   fail "inspect diff legacy-profile tolerance" "${legacy_diff_out:0:120}"
 fi
 
+migrated_profile="$TMPDIR_TEST/git-migrated.json"
+migrate_report=$("$SXMC" inspect migrate-profile "$legacy_before" --output "$migrated_profile" 2>/dev/null)
+if json_check "$migrate_report" "'output' in d and d.get('profile_schema') == 'sxmc_cli_surface_profile_v1'" && [ -f "$migrated_profile" ]; then
+  pass "inspect migrate-profile rewrites a canonical saved profile"
+else
+  fail "inspect migrate-profile" "${migrate_report:0:160}"
+fi
+
 legacy_version_before="$TMPDIR_TEST/git-before-old-version.json"
 python3 - <<'PY' "$before_profile" "$legacy_version_before"
 import json, sys
@@ -1075,6 +1105,15 @@ if json_check "$legacy_version_diff" "'migration_note' in d and '0.1.0' in d.get
   pass "inspect diff reports a migration note for older generator versions"
 else
   fail "inspect diff migration note" "${legacy_version_diff:0:160}"
+fi
+
+retry_failed_file="$TMPDIR_TEST/batch-retry.json"
+printf '%s\n' "$batch_out" > "$retry_failed_file"
+retry_failed=$("$SXMC" inspect batch --retry-failed "$retry_failed_file" 2>/dev/null)
+if json_check "$retry_failed" "d.get('count', 0) == 1 and d.get('failed_count', 0) == 1"; then
+  pass "inspect batch --retry-failed reloads failed commands from saved batch output"
+else
+  fail "inspect batch --retry-failed" "${retry_failed:0:160}"
 fi
 
 watch_ndjson=$(

@@ -142,12 +142,16 @@ sxmc doctor
 sxmc doctor --human
 sxmc doctor --check --only claude-code,cursor
 sxmc doctor --check --fix --only claude-code,cursor --from-cli gh
+sxmc doctor --remove --only claude-code --from-cli gh
 sxmc inspect cli <tool> --depth 1 --format json-pretty
 sxmc inspect cli <tool> --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.txt --compact --format json-pretty
 sxmc inspect batch --from-file tools.yaml --since 2026-03-22T00:00:00Z --format json-pretty
+sxmc inspect batch --retry-failed previous-batch.json --parallel 4
 sxmc inspect diff git --before before.json --format json-pretty
+sxmc inspect diff --before before.json --after after.json --format markdown
+sxmc inspect migrate-profile legacy-profile.json --output migrated-profile.json
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
 sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
@@ -171,8 +175,10 @@ sxmc inspect cli gh --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.txt --parallel 4 --compact --format json-pretty
 sxmc inspect batch --from-file tools.yaml --parallel 4 --since 2026-03-22T00:00:00Z
+sxmc inspect batch --retry-failed previous-batch.ndjson --parallel 4
 sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff git --before before.json --format toon
+sxmc inspect diff --before before.json --after after.json --format markdown
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
 sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
@@ -198,11 +204,15 @@ Notes:
 - `sxmc doctor --check --fix --only claude-code,cursor --from-cli gh` repairs
   missing startup files for the selected hosts by running the same generation
   path as `init ai`.
+- `sxmc doctor --remove --only claude-code --from-cli gh` removes generated
+  startup files or managed snippets for the selected hosts.
 - `sxmc inspect batch ...` keeps partial failures in a `failures` array instead
   of failing the whole run on the first missing command.
 - `sxmc inspect batch ... --parallel N` bounds concurrency for larger batch jobs.
 - `sxmc inspect batch ...` automatically emits stderr progress notes for larger
   batch runs on a real terminal; `--progress` forces them for smaller runs too.
+- `sxmc inspect batch --retry-failed previous-batch.json` reloads only the
+  failed command specs from a prior batch JSON or NDJSON result.
 - `sxmc inspect batch --from-file tools.txt` reads one command spec per line.
   Blank lines and lines starting with `#` are ignored, trailing whitespace is
   trimmed, and inline arguments like `git status` are preserved.
@@ -217,6 +227,11 @@ Notes:
   previously saved profile and reports added/removed options and subcommands.
 - `sxmc inspect diff --before old.json --after new.json` compares two saved
   profiles without needing the live tool on `PATH`.
+- `sxmc inspect migrate-profile legacy-profile.json --output migrated.json`
+  rewrites a saved profile through the current schema-tolerant loader and emits
+  canonical current-schema JSON.
+- `sxmc inspect diff --format markdown` renders a PR-friendly Markdown summary
+  of summary, subcommand, option, and environment deltas.
 - `sxmc inspect diff --watch 3` re-runs the diff every three seconds, and each
   frame is flushed immediately so piped/non-interactive consumers can observe
   updates without waiting for process exit.
@@ -234,6 +249,11 @@ Notes:
 - `sxmc inspect cache-clear` wipes all cached CLI profiles.
 - `sxmc inspect cache-warm ...` pre-populates the profile cache without dumping
   full profile payloads into stdout.
+- `sxmc inspect batch --output-dir ./profiles --skip-existing` preserves
+  existing profile files, while `--overwrite` replaces them in place.
+- `sxmc inspect batch --output-dir ./profiles` also writes
+  `batch-summary.json` so exported profile directories keep a machine-readable
+  manifest alongside the individual profile files.
 
 Generate startup-facing artifacts for a host profile:
 
