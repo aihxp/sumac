@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.30] - 2026-03-23
+
 ### Added
 
 - `sxmc inspect corpus-stats` and `sxmc inspect corpus-query` for local
