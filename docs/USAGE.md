@@ -218,6 +218,8 @@ sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff git --before before.json --format toon
 sxmc inspect diff --before before.json --after after.json --format markdown
 sxmc inspect bundle-export --bundle-name "Platform Bundle" --role platform --hosts claude-code,cursor --output team-profiles.bundle.json
+sxmc publish team-profiles.bundle.json --bundle-name "Platform Bundle" --role platform
+sxmc pull team-profiles.bundle.json --output-dir .sxmc/ai/profiles
 sxmc inspect cache-stats --format json-pretty
 sxmc inspect cache-invalidate cargo --format json-pretty
 sxmc inspect cache-invalidate 'g*' --dry-run --format json-pretty
@@ -284,6 +286,10 @@ Notes:
 - `sxmc inspect bundle-import profiles.bundle.json --output-dir ./profiles`
   restores bundle contents into a target profile directory, with
   `--overwrite` or `--skip-existing` controls when files already exist.
+- `sxmc publish <target>` wraps bundle export plus transport, so you can write
+  a team bundle directly to a file path, `file://` URI, or HTTP(S) endpoint.
+- `sxmc pull <source>` fetches a published bundle from a file path, `file://`
+  URI, or HTTP(S) endpoint and restores it into a local profile directory.
 - `sxmc inspect diff --format markdown` renders a PR-friendly Markdown summary
   of summary, subcommand, option, and environment deltas.
 - `sxmc inspect diff --watch 3` re-runs the diff every three seconds, and each

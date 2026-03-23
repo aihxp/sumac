@@ -1,12 +1,12 @@
 use assert_cmd::Command;
-use axum::{routing::get, routing::post, Json, Router};
+use axum::{extract::State, routing::get, routing::post, routing::put, Json, Router};
 use predicates::prelude::*;
 use serde_json::Value;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command as ProcessCommand, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 fn sxmc() -> Command {
@@ -652,6 +652,128 @@ fn test_inspect_bundle_export_and_import_preserve_metadata() {
         Value::from("Blessed internal tool set")
     );
     assert_eq!(import["imported_count"], Value::from(1));
+}
+
+#[test]
+fn test_publish_and_pull_round_trip_via_local_bundle_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let profiles_dir = root.join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+
+    let git = command_json(&["inspect", "cli", "git", "--pretty"]);
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&git).unwrap(),
+    )
+    .unwrap();
+
+    let bundle_path = root.join("published.bundle.json");
+    let publish = command_json(&[
+        "publish",
+        bundle_path.to_str().unwrap(),
+        "--root",
+        root.to_str().unwrap(),
+        "--bundle-name",
+        "Team Bundle",
+        "--role",
+        "platform",
+        "--pretty",
+    ]);
+    assert_eq!(publish["profile_count"], Value::from(1));
+    assert_eq!(publish["transport"], Value::from("file"));
+    assert!(bundle_path.exists());
+
+    let pull_dir = root.join("pulled-profiles");
+    let pull = command_json(&[
+        "pull",
+        bundle_path.to_str().unwrap(),
+        "--root",
+        root.to_str().unwrap(),
+        "--output-dir",
+        pull_dir.to_str().unwrap(),
+        "--pretty",
+    ]);
+    assert_eq!(pull["imported_count"], Value::from(1));
+    assert_eq!(pull["metadata"]["name"], Value::from("Team Bundle"));
+    assert!(pull_dir.join("git.json").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_publish_and_pull_support_http_bundle_endpoints() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let profiles_dir = root.join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+
+    let git = command_json(&["inspect", "cli", "git", "--pretty"]);
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&git).unwrap(),
+    )
+    .unwrap();
+
+    let stored_bundle = Arc::new(Mutex::new(None::<Value>));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app =
+        Router::new()
+            .route(
+                "/bundle",
+                put(
+                    |State(stored): State<Arc<Mutex<Option<Value>>>>,
+                     Json(payload): Json<Value>| async move {
+                        *stored.lock().unwrap() = Some(payload);
+                        Json(serde_json::json!({"ok": true}))
+                    },
+                )
+                .get(
+                    |State(stored): State<Arc<Mutex<Option<Value>>>>| async move {
+                        Json(stored.lock().unwrap().clone().unwrap_or_else(|| {
+                            serde_json::json!({
+                                "bundle_schema": "sxmc_profile_bundle_v1",
+                                "profiles": []
+                            })
+                        }))
+                    },
+                ),
+            )
+            .with_state(Arc::clone(&stored_bundle));
+    let handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let url = format!("http://{addr}/bundle");
+    let publish = command_json(&[
+        "publish",
+        &url,
+        "--root",
+        root.to_str().unwrap(),
+        "--bundle-name",
+        "Remote Bundle",
+        "--pretty",
+    ]);
+    assert_eq!(publish["transport"], Value::from("http"));
+    assert_eq!(publish["profile_count"], Value::from(1));
+    assert_eq!(
+        stored_bundle.lock().unwrap().as_ref().unwrap()["metadata"]["name"],
+        Value::from("Remote Bundle")
+    );
+
+    let pull_dir = root.join("remote-pulled-profiles");
+    let pull = command_json(&[
+        "pull",
+        &url,
+        "--root",
+        root.to_str().unwrap(),
+        "--output-dir",
+        pull_dir.to_str().unwrap(),
+        "--pretty",
+    ]);
+    assert_eq!(pull["imported_count"], Value::from(1));
+    assert!(pull_dir.join("git.json").exists());
+
+    handle.abort();
 }
 
 #[test]

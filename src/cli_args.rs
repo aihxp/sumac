@@ -411,6 +411,93 @@ pub enum Commands {
         action: InspectAction,
     },
 
+    /// Publish saved CLI profiles as a portable team bundle
+    Publish {
+        /// Destination path or HTTP(S) URL for the published bundle
+        target: String,
+
+        /// Optional explicit profile inputs (files or directories)
+        inputs: Vec<PathBuf>,
+
+        /// Project root to resolve relative profile paths from
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Recurse into profile directories
+        #[arg(long)]
+        recursive: bool,
+
+        /// Optional bundle display name
+        #[arg(long = "bundle-name")]
+        bundle_name: Option<String>,
+
+        /// Optional bundle description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Optional role/scope label like backend/frontend/platform
+        #[arg(long)]
+        role: Option<String>,
+
+        /// AI hosts this bundle is intended for
+        #[arg(long = "hosts", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
+
+        /// HTTP headers when publishing to a remote endpoint (Key:Value)
+        #[arg(long = "auth-header", value_name = "K:V")]
+        auth_headers: Vec<String>,
+
+        /// Network timeout in seconds for remote publish
+        #[arg(long = "timeout-seconds", value_name = "SECONDS")]
+        timeout_seconds: Option<u64>,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+
+    /// Pull a published profile bundle into the local saved-profile directory
+    Pull {
+        /// Source path or HTTP(S) URL for the bundle
+        source: String,
+
+        /// Project root to resolve relative output paths from
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Destination profile directory
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+
+        /// Overwrite existing profile files
+        #[arg(long, conflicts_with = "skip_existing")]
+        overwrite: bool,
+
+        /// Skip existing profile files
+        #[arg(long, conflicts_with = "overwrite")]
+        skip_existing: bool,
+
+        /// HTTP headers when pulling from a remote endpoint (Key:Value)
+        #[arg(long = "auth-header", value_name = "K:V")]
+        auth_headers: Vec<String>,
+
+        /// Network timeout in seconds for remote pull
+        #[arg(long = "timeout-seconds", value_name = "SECONDS")]
+        timeout_seconds: Option<u64>,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+
     /// Initialize startup-facing AI artifacts from an inspected CLI
     Init {
         #[command(subcommand)]

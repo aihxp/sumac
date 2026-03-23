@@ -1170,6 +1170,14 @@ fn bundle_slug(input: &str) -> String {
     }
 }
 
+fn is_http_target(target: &str) -> bool {
+    target.starts_with("http://") || target.starts_with("https://")
+}
+
+fn file_uri_to_path(uri: &str) -> PathBuf {
+    PathBuf::from(uri.trim_start_matches("file://"))
+}
+
 fn resolved_hosts(only_hosts: &[AiClientProfile]) -> Vec<AiClientProfile> {
     if only_hosts.is_empty() {
         vec![
@@ -1239,6 +1247,20 @@ fn load_bundle_value(path: &Path) -> Result<Value> {
     Ok(value)
 }
 
+fn validate_bundle_value(value: Value, source_label: &str) -> Result<Value> {
+    let schema = value
+        .get("bundle_schema")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if schema != PROFILE_BUNDLE_SCHEMA {
+        return Err(sxmc::error::SxmcError::Other(format!(
+            "Bundle source '{}' is not a valid sxmc profile bundle. Expected `bundle_schema: {}`.",
+            source_label, PROFILE_BUNDLE_SCHEMA
+        )));
+    }
+    Ok(value)
+}
+
 fn bundle_metadata_value(
     bundle_name: Option<&str>,
     description: Option<&str>,
@@ -1292,19 +1314,19 @@ enum BundleImportMode {
     SkipExisting,
 }
 
-fn import_profile_bundle_value(
-    input: &Path,
+fn import_profile_bundle_from_value(
+    source_label: &str,
+    bundle_value: Value,
     output_dir: &Path,
     mode: BundleImportMode,
 ) -> Result<Value> {
-    let bundle_value = load_bundle_value(input)?;
     let profiles: Vec<cli_surfaces::CliSurfaceProfile> = bundle_value
         .get("profiles")
         .and_then(Value::as_array)
         .ok_or_else(|| {
             sxmc::error::SxmcError::Other(format!(
                 "Bundle file '{}' is missing a `profiles` array.",
-                input.display()
+                source_label
             ))
         })?
         .iter()
@@ -1355,7 +1377,7 @@ fn import_profile_bundle_value(
 
     Ok(json!({
         "bundle_schema": PROFILE_BUNDLE_SCHEMA,
-        "input": input.display().to_string(),
+        "input": source_label,
         "output_dir": output_dir.display().to_string(),
         "metadata": bundle_value.get("metadata").cloned().unwrap_or(Value::Null),
         "imported_count": written.len(),
@@ -1363,6 +1385,142 @@ fn import_profile_bundle_value(
         "written": written,
         "skipped": skipped,
     }))
+}
+
+fn import_profile_bundle_value(
+    input: &Path,
+    output_dir: &Path,
+    mode: BundleImportMode,
+) -> Result<Value> {
+    let bundle_value = load_bundle_value(input)?;
+    import_profile_bundle_from_value(&input.display().to_string(), bundle_value, output_dir, mode)
+}
+
+fn request_header_map(headers: &[(String, String)]) -> Result<reqwest::header::HeaderMap> {
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+
+    let mut map = HeaderMap::new();
+    for (key, value) in headers {
+        let name = HeaderName::from_bytes(key.as_bytes()).map_err(|error| {
+            sxmc::error::SxmcError::Other(format!("Invalid HTTP header name '{}': {}", key, error))
+        })?;
+        let value = HeaderValue::from_str(value).map_err(|error| {
+            sxmc::error::SxmcError::Other(format!(
+                "Invalid HTTP header value for '{}': {}",
+                key, error
+            ))
+        })?;
+        map.insert(name, value);
+    }
+    Ok(map)
+}
+
+async fn publish_bundle_target(
+    target: &str,
+    bundle_value: &Value,
+    headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Result<Value> {
+    if is_http_target(target) {
+        let client = reqwest::Client::builder()
+            .timeout(timeout.unwrap_or(Duration::from_secs(30)))
+            .build()
+            .map_err(|error| {
+                sxmc::error::SxmcError::Other(format!(
+                    "Failed to create HTTP client for bundle publish: {}",
+                    error
+                ))
+            })?;
+        let response = client
+            .put(target)
+            .headers(request_header_map(headers)?)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(serde_json::to_vec_pretty(bundle_value)?)
+            .send()
+            .await
+            .map_err(|error| {
+                sxmc::error::SxmcError::Other(format!(
+                    "Failed to publish profile bundle to '{}': {}",
+                    target, error
+                ))
+            })?;
+        let status = response.status();
+        response.error_for_status().map_err(|error| {
+            sxmc::error::SxmcError::Other(format!(
+                "Failed to publish profile bundle to '{}': {}",
+                target, error
+            ))
+        })?;
+        Ok(json!({
+            "target": target,
+            "transport": "http",
+            "http_status": status.as_u16(),
+        }))
+    } else {
+        let target_path = if target.starts_with("file://") {
+            file_uri_to_path(target)
+        } else {
+            PathBuf::from(target)
+        };
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&target_path, serde_json::to_string_pretty(bundle_value)?)?;
+        Ok(json!({
+            "target": target_path.display().to_string(),
+            "transport": "file",
+        }))
+    }
+}
+
+async fn read_bundle_source(
+    source: &str,
+    headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Result<Value> {
+    if is_http_target(source) {
+        let client = reqwest::Client::builder()
+            .timeout(timeout.unwrap_or(Duration::from_secs(30)))
+            .build()
+            .map_err(|error| {
+                sxmc::error::SxmcError::Other(format!(
+                    "Failed to create HTTP client for bundle pull: {}",
+                    error
+                ))
+            })?;
+        let response = client
+            .get(source)
+            .headers(request_header_map(headers)?)
+            .send()
+            .await
+            .map_err(|error| {
+                sxmc::error::SxmcError::Other(format!(
+                    "Failed to pull profile bundle from '{}': {}",
+                    source, error
+                ))
+            })?
+            .error_for_status()
+            .map_err(|error| {
+                sxmc::error::SxmcError::Other(format!(
+                    "Failed to pull profile bundle from '{}': {}",
+                    source, error
+                ))
+            })?;
+        let value: Value = response.json().await.map_err(|error| {
+            sxmc::error::SxmcError::Other(format!(
+                "Profile bundle response from '{}' was not valid JSON: {}",
+                source, error
+            ))
+        })?;
+        validate_bundle_value(value, source)
+    } else {
+        let path = if source.starts_with("file://") {
+            file_uri_to_path(source)
+        } else {
+            PathBuf::from(source)
+        };
+        validate_bundle_value(load_bundle_value(&path)?, source)
+    }
 }
 
 fn drift_entry_for_profile(path: &Path, allow_self: bool) -> Value {
@@ -3961,6 +4119,130 @@ async fn main() -> Result<()> {
                 }
             }
         },
+
+        Commands::Publish {
+            target,
+            inputs,
+            root,
+            recursive,
+            bundle_name,
+            description,
+            role,
+            hosts,
+            auth_headers,
+            timeout_seconds,
+            pretty,
+            format,
+        } => {
+            let root = resolve_generation_root(root)?;
+            let use_default_recursive = inputs.is_empty();
+            let profile_inputs = if use_default_recursive {
+                vec![default_saved_profiles_dir(&root)]
+            } else {
+                inputs
+                    .into_iter()
+                    .map(|path| {
+                        if path.is_absolute() {
+                            path
+                        } else {
+                            root.join(path)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let profile_paths =
+                collect_profile_paths(&profile_inputs, recursive || use_default_recursive)?;
+            let bundle_value = export_profile_bundle_value(
+                &profile_paths,
+                bundle_name.as_deref(),
+                description.as_deref(),
+                role.as_deref(),
+                &hosts,
+            )?;
+            let resolved_target = if is_http_target(&target) || target.starts_with("file://") {
+                target.clone()
+            } else {
+                root.join(&target).display().to_string()
+            };
+            let headers = parse_headers(&auth_headers)?;
+            let destination = publish_bundle_target(
+                &resolved_target,
+                &bundle_value,
+                &headers,
+                parse_timeout(timeout_seconds),
+            )
+            .await?;
+            let report = json!({
+                "bundle_schema": PROFILE_BUNDLE_SCHEMA,
+                "target": destination["target"],
+                "transport": destination["transport"],
+                "http_status": destination.get("http_status").cloned().unwrap_or(Value::Null),
+                "profile_count": bundle_value["profile_count"],
+                "metadata": bundle_value["metadata"],
+                "entries": bundle_value["entries"],
+            });
+            if let Some(format) = output::prefer_structured_output(format, pretty) {
+                println!("{}", output::format_structured_value(&report, format));
+            } else {
+                println!(
+                    "Published {} profiles to {}",
+                    report["profile_count"].as_u64().unwrap_or(0),
+                    report["target"].as_str().unwrap_or("<unknown>")
+                );
+            }
+        }
+
+        Commands::Pull {
+            source,
+            root,
+            output_dir,
+            overwrite,
+            skip_existing,
+            auth_headers,
+            timeout_seconds,
+            pretty,
+            format,
+        } => {
+            let root = resolve_generation_root(root)?;
+            let output_dir = output_dir.unwrap_or_else(|| default_saved_profiles_dir(&root));
+            let output_dir = if output_dir.is_absolute() {
+                output_dir
+            } else {
+                root.join(output_dir)
+            };
+            let mode = if overwrite {
+                BundleImportMode::Overwrite
+            } else if skip_existing {
+                BundleImportMode::SkipExisting
+            } else {
+                BundleImportMode::Unique
+            };
+            let resolved_source = if is_http_target(&source) || source.starts_with("file://") {
+                source.clone()
+            } else {
+                root.join(&source).display().to_string()
+            };
+            let headers = parse_headers(&auth_headers)?;
+            let bundle_value =
+                read_bundle_source(&resolved_source, &headers, parse_timeout(timeout_seconds))
+                    .await?;
+            let value = import_profile_bundle_from_value(
+                &resolved_source,
+                bundle_value,
+                &output_dir,
+                mode,
+            )?;
+            if let Some(format) = output::prefer_structured_output(format, pretty) {
+                println!("{}", output::format_structured_value(&value, format));
+            } else {
+                println!(
+                    "Pulled {} profiles from {} into {}",
+                    value["imported_count"].as_u64().unwrap_or(0),
+                    value["input"].as_str().unwrap_or("<unknown>"),
+                    value["output_dir"].as_str().unwrap_or("<unknown>")
+                );
+            }
+        }
 
         Commands::Init { action } => match action {
             InitAction::Ai {

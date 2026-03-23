@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.27] - 2026-03-23
+
+### Added
+
+- top-level `sxmc publish` / `sxmc pull` commands for moving profile bundles
+  over filesystem paths and HTTP(S) endpoints
+
 ## [0.2.26] - 2026-03-23
 
 ### Added

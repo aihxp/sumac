@@ -1193,6 +1193,16 @@ else
   fail "inspect bundle metadata" "${bundle_meta_import:0:220}"
 fi
 
+publish_bundle_file="$TMPDIR_TEST/published.bundle.json"
+publish_out=$("$SXMC" publish "$publish_bundle_file" --root "$bundle_root" --bundle-name "Team Bundle" --role platform 2>/dev/null)
+pull_dir="$TMPDIR_TEST/pulled-profiles"
+pull_out=$("$SXMC" pull "$publish_bundle_file" --root "$bundle_root" --output-dir "$pull_dir" 2>/dev/null)
+if json_check "$publish_out" "d.get('transport') == 'file' and d.get('metadata',{}).get('name') == 'Team Bundle'" && json_check "$pull_out" "d.get('imported_count',0) >= 1 and d.get('metadata',{}).get('name') == 'Team Bundle'" && [ -f "$pull_dir/git.json" ]; then
+  pass "publish/pull round-trips bundle files"
+else
+  fail "publish/pull" "${pull_out:0:220}"
+fi
+
 watch_ndjson=$(
 python3 - <<'PY' "$SXMC" "$before_profile"
 import subprocess, sys, time
