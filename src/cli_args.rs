@@ -611,6 +611,41 @@ pub enum Commands {
         #[arg(long, value_enum)]
         format: Option<output::StructuredOutputFormat>,
     },
+
+    /// Watch saved-profile drift and environment health over time
+    Watch {
+        /// Project root to inspect for startup-facing AI files and saved profiles
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Limit startup-file checks to specific AI hosts
+        #[arg(long = "only", value_enum, value_delimiter = ',')]
+        only_hosts: Vec<AiClientProfile>,
+
+        /// Compare capability readiness across specific AI hosts
+        #[arg(long = "compare-hosts", value_enum, value_delimiter = ',')]
+        compare_hosts: Vec<AiClientProfile>,
+
+        /// Check health of baked MCP/API connections
+        #[arg(long)]
+        health: bool,
+
+        /// Poll interval in seconds
+        #[arg(long, default_value_t = 5)]
+        interval_seconds: u64,
+
+        /// Exit with code 1 on the first observed change after the initial frame
+        #[arg(long)]
+        exit_on_change: bool,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -803,6 +838,19 @@ pub enum InspectAction {
         timeout_seconds: Option<u64>,
         #[arg(long = "expected-sha256", value_name = "HEX")]
         expected_sha256: Option<String>,
+        #[arg(long)]
+        pretty: bool,
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
+    ExportCorpus {
+        inputs: Vec<PathBuf>,
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        recursive: bool,
+        #[arg(long)]
+        output: Option<PathBuf>,
         #[arg(long)]
         pretty: bool,
         #[arg(long, value_enum)]

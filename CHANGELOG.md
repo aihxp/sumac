@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- top-level `sxmc watch` for polling status/drift/health over time with
+  immediate frame flushing for piped consumers
+- `sxmc inspect export-corpus` for exporting saved CLI profiles plus readiness
+  and freshness metadata in JSON or NDJSON form
+
+### Changed
+
+- `sxmc status` now includes saved-profile inventory metadata such as stale
+  counts, freshness visibility, and agent-doc readiness summaries
+- `sxmc status --health` now reports baked health grouped by source type in
+  addition to per-entry details
+
 ## [0.2.28] - 2026-03-23
 
 ### Added

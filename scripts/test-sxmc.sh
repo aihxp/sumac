@@ -812,6 +812,22 @@ else
   fail "status should report saved-profile drift" "${status_out:0:180}"
 fi
 
+python3 - <<'PY' "$TMPDIR_TEST/status-root/.sxmc/ai/profiles/cargo.json"
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data.setdefault("provenance", {})["generated_at"] = "2025-01-01T00:00:00Z"
+with open(path, "w") as f:
+    json.dump(data, f)
+PY
+status_inventory_out=$("$SXMC" status --root "$TMPDIR_TEST/status-root" 2>/dev/null)
+if json_check "$status_inventory_out" "d.get('saved_profiles',{}).get('inventory',{}).get('count',0) == 1 and d.get('saved_profiles',{}).get('inventory',{}).get('stale_count',0) == 1"; then
+  pass "status reports saved-profile freshness inventory"
+else
+  fail "status should report profile inventory freshness" "${status_inventory_out:0:220}"
+fi
+
 STATUS_BAKE_HOME="$TMPDIR_TEST/status-bake-home"
 mkdir -p "$STATUS_BAKE_HOME/.config" "$STATUS_BAKE_HOME/AppData/Roaming" "$STATUS_BAKE_HOME/AppData/Local"
 status_bake_source=$(python3 - <<'PY' "$SXMC"
@@ -823,7 +839,7 @@ env HOME="$STATUS_BAKE_HOME" USERPROFILE="$STATUS_BAKE_HOME" XDG_CONFIG_HOME="$S
   "$SXMC" bake create status-health --type stdio --source "$status_bake_source" >/dev/null 2>&1
 status_health_out=$(env HOME="$STATUS_BAKE_HOME" USERPROFILE="$STATUS_BAKE_HOME" XDG_CONFIG_HOME="$STATUS_BAKE_HOME/.config" APPDATA="$STATUS_BAKE_HOME/AppData/Roaming" LOCALAPPDATA="$STATUS_BAKE_HOME/AppData/Local" \
   "$SXMC" status --health 2>/dev/null)
-if json_check "$status_health_out" "d.get('baked_health',{}).get('healthy_count',0) >= 1 and 'host_capabilities' in d"; then
+if json_check "$status_health_out" "d.get('baked_health',{}).get('healthy_count',0) >= 1 and d.get('baked_health',{}).get('by_source_type',{}).get('stdio',{}).get('count',0) >= 1 and 'host_capabilities' in d"; then
   pass "status --health reports baked connection health and host capabilities"
 else
   fail "status --health should report baked health" "${status_health_out:0:220}"
@@ -1193,6 +1209,13 @@ else
   fail "inspect bundle metadata" "${bundle_meta_import:0:220}"
 fi
 
+corpus_out=$("$SXMC" inspect export-corpus --root "$bundle_root" 2>/dev/null)
+if json_check "$corpus_out" "d.get('corpus_schema') == 'sxmc_profile_corpus_v1' and d.get('count',0) == 2 and d.get('entries',[{}])[0].get('type') == 'profile'"; then
+  pass "inspect export-corpus emits saved-profile corpus metadata"
+else
+  fail "inspect export-corpus" "${corpus_out:0:220}"
+fi
+
 publish_bundle_file="$TMPDIR_TEST/published.bundle.json"
 publish_out=$("$SXMC" publish "$publish_bundle_file" --root "$bundle_root" --bundle-name "Team Bundle" --role platform 2>/dev/null)
 publish_sha=$(json_field "$publish_out" "d.get('sha256','')")
@@ -1236,6 +1259,39 @@ if json_check "$watch_ndjson" "d.get('command') == 'git' and 'summary_changed' i
   pass "inspect diff --watch flushes ndjson frames for piped output"
 else
   fail "inspect diff --watch ndjson flush" "${watch_ndjson:0:160}"
+fi
+
+status_watch_ndjson=$(
+python3 - <<'PY' "$SXMC" "$TMPDIR_TEST/status-root"
+import subprocess, sys, time
+sxmc, root = sys.argv[1], sys.argv[2]
+p = subprocess.Popen(
+    [sxmc, "watch", "--root", root, "--interval-seconds", "3", "--format", "ndjson"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+)
+try:
+    deadline = time.time() + 2.0
+    line = ""
+    while time.time() < deadline and not line:
+        line = p.stdout.readline()
+        if not line:
+            time.sleep(0.05)
+    print(line.strip())
+finally:
+    p.terminate()
+    try:
+        p.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+PY
+)
+if json_check "$status_watch_ndjson" "'saved_profiles' in d and 'root' in d"; then
+  pass "watch flushes status frames for piped output"
+else
+  fail "watch piped output flush" "${status_watch_ndjson:0:160}"
 fi
 
 # ============================================================================

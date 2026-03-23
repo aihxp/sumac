@@ -33,6 +33,8 @@ use sxmc::server::{self, HttpServeLimits};
 use sxmc::skills::{discovery, generator, parser};
 
 const PROFILE_BUNDLE_SCHEMA: &str = "sxmc_profile_bundle_v1";
+const PROFILE_CORPUS_SCHEMA: &str = "sxmc_profile_corpus_v1";
+const PROFILE_STALE_DAYS: i64 = 30;
 
 fn resolve_paths(paths: Option<Vec<PathBuf>>) -> Vec<PathBuf> {
     paths.unwrap_or_else(discovery::default_paths)
@@ -1588,6 +1590,102 @@ fn drift_entry_for_profile(path: &Path, allow_self: bool) -> Value {
     }
 }
 
+fn profile_freshness_value(profile: &cli_surfaces::CliSurfaceProfile) -> Value {
+    let generated_at = profile.provenance.generated_at.trim();
+    if generated_at.is_empty() {
+        return json!({
+            "known": false,
+            "generated_at": Value::Null,
+            "age_days": Value::Null,
+            "stale": Value::Null,
+        });
+    }
+
+    match chrono::DateTime::parse_from_rfc3339(generated_at) {
+        Ok(parsed) => {
+            let parsed = parsed.with_timezone(&Utc);
+            let age_days = Utc::now().signed_duration_since(parsed).num_days().max(0);
+            json!({
+                "known": true,
+                "generated_at": generated_at,
+                "age_days": age_days,
+                "stale": age_days > PROFILE_STALE_DAYS,
+            })
+        }
+        Err(_) => json!({
+            "known": false,
+            "generated_at": generated_at,
+            "age_days": Value::Null,
+            "stale": Value::Null,
+            "parse_error": true,
+        }),
+    }
+}
+
+fn saved_profile_inventory_value(profile_paths: &[PathBuf]) -> Value {
+    let mut entries = Vec::new();
+    let mut ready_count = 0usize;
+    let mut stale_count = 0usize;
+    let mut freshness_known_count = 0usize;
+    let mut error_count = 0usize;
+
+    for path in profile_paths {
+        match cli_surfaces::load_profile(path) {
+            Ok(profile) => {
+                let quality = profile.quality_report();
+                let freshness = profile_freshness_value(&profile);
+                if quality.ready_for_agent_docs {
+                    ready_count += 1;
+                }
+                if freshness["known"].as_bool().unwrap_or(false) {
+                    freshness_known_count += 1;
+                }
+                if freshness["stale"].as_bool().unwrap_or(false) {
+                    stale_count += 1;
+                }
+                entries.push(json!({
+                    "path": path.display().to_string(),
+                    "command": profile.command,
+                    "summary": profile.summary,
+                    "subcommand_count": profile.subcommands.len(),
+                    "option_count": profile.options.len(),
+                    "quality": {
+                        "ready_for_agent_docs": quality.ready_for_agent_docs,
+                        "reasons": quality.reasons,
+                    },
+                    "freshness": freshness,
+                    "provenance": {
+                        "generated_at": profile.provenance.generated_at,
+                        "generator_version": profile.provenance.generator_version,
+                        "source_kind": profile.provenance.source_kind,
+                    }
+                }));
+            }
+            Err(error) => {
+                error_count += 1;
+                entries.push(json!({
+                    "path": path.display().to_string(),
+                    "error": error.to_string(),
+                }));
+            }
+        }
+    }
+
+    let total = entries.len();
+    json!({
+        "count": total,
+        "ready_count": ready_count,
+        "not_ready_count": total.saturating_sub(ready_count + error_count),
+        "freshness_known_count": freshness_known_count,
+        "stale_count": stale_count,
+        "fresh_count": freshness_known_count.saturating_sub(stale_count),
+        "unknown_freshness_count": total.saturating_sub(freshness_known_count + error_count),
+        "error_count": error_count,
+        "stale_after_days": PROFILE_STALE_DAYS,
+        "entries": entries,
+    })
+}
+
 fn drift_value(profile_paths: &[PathBuf], allow_self: bool) -> Value {
     let entries: Vec<Value> = profile_paths
         .iter()
@@ -1613,17 +1711,33 @@ fn drift_value(profile_paths: &[PathBuf], allow_self: bool) -> Value {
 fn status_value(root: &std::path::Path, only_hosts: &[AiClientProfile]) -> Result<Value> {
     let mut value = doctor_value(root, only_hosts)?;
     let profile_dir = default_saved_profiles_dir(root);
-    let drift = if profile_dir.exists() {
+    let (drift, inventory) = if profile_dir.exists() {
         let paths = collect_profile_paths(std::slice::from_ref(&profile_dir), true)?;
-        drift_value(&paths, true)
+        let inventory = saved_profile_inventory_value(&paths);
+        let drift = drift_value(&paths, true);
+        (drift, inventory)
     } else {
-        json!({
-            "count": 0,
-            "changed_count": 0,
-            "unchanged_count": 0,
-            "error_count": 0,
-            "entries": [],
-        })
+        (
+            json!({
+                "count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "error_count": 0,
+                "entries": [],
+            }),
+            json!({
+                "count": 0,
+                "ready_count": 0,
+                "not_ready_count": 0,
+                "freshness_known_count": 0,
+                "stale_count": 0,
+                "fresh_count": 0,
+                "unknown_freshness_count": 0,
+                "error_count": 0,
+                "stale_after_days": PROFILE_STALE_DAYS,
+                "entries": [],
+            }),
+        )
     };
 
     if let Some(object) = value.as_object_mut() {
@@ -1633,10 +1747,73 @@ fn status_value(root: &std::path::Path, only_hosts: &[AiClientProfile]) -> Resul
                 "path": profile_dir.display().to_string(),
                 "present": profile_dir.exists(),
                 "drift": drift,
+                "inventory": inventory,
             }),
         );
     }
     Ok(value)
+}
+
+fn export_profile_corpus_value(profile_paths: &[PathBuf]) -> Value {
+    let mut entries = Vec::new();
+    let mut error_count = 0usize;
+    let mut ready_count = 0usize;
+    let mut stale_count = 0usize;
+    let mut freshness_known_count = 0usize;
+
+    for path in profile_paths {
+        match cli_surfaces::load_profile(path) {
+            Ok(profile) => {
+                let quality = profile.quality_report();
+                let freshness = profile_freshness_value(&profile);
+                if quality.ready_for_agent_docs {
+                    ready_count += 1;
+                }
+                if freshness["known"].as_bool().unwrap_or(false) {
+                    freshness_known_count += 1;
+                }
+                if freshness["stale"].as_bool().unwrap_or(false) {
+                    stale_count += 1;
+                }
+                entries.push(json!({
+                    "type": "profile",
+                    "path": path.display().to_string(),
+                    "command": profile.command,
+                    "summary": profile.summary,
+                    "quality": {
+                        "ready_for_agent_docs": quality.ready_for_agent_docs,
+                        "reasons": quality.reasons,
+                    },
+                    "freshness": freshness,
+                    "profile": cli_surfaces::profile_value(&profile),
+                }));
+            }
+            Err(error) => {
+                error_count += 1;
+                entries.push(json!({
+                    "type": "error",
+                    "path": path.display().to_string(),
+                    "error": error.to_string(),
+                }));
+            }
+        }
+    }
+
+    let total = entries.len();
+    json!({
+        "corpus_schema": PROFILE_CORPUS_SCHEMA,
+        "generated_at": Utc::now().to_rfc3339(),
+        "count": total,
+        "ready_count": ready_count,
+        "not_ready_count": total.saturating_sub(ready_count + error_count),
+        "freshness_known_count": freshness_known_count,
+        "stale_count": stale_count,
+        "fresh_count": freshness_known_count.saturating_sub(stale_count),
+        "unknown_freshness_count": total.saturating_sub(freshness_known_count + error_count),
+        "error_count": error_count,
+        "stale_after_days": PROFILE_STALE_DAYS,
+        "entries": entries,
+    })
 }
 
 fn host_capability_map(
@@ -1714,14 +1891,37 @@ fn compare_host_capabilities(root: &Path, compare_hosts: &[AiClientProfile]) -> 
 async fn baked_health_value() -> Result<Value> {
     let store = BakeStore::load()?;
     let mut entries = Vec::new();
+    let mut by_source_type = serde_json::Map::new();
     let configs = store.list();
     for config in configs {
         let check = validate_bake_config(config).await;
+        let source_type = format!("{:?}", config.source_type).to_lowercase();
+        let healthy = check.is_ok();
+        let entry = by_source_type
+            .entry(source_type.clone())
+            .or_insert_with(|| {
+                json!({
+                    "count": 0,
+                    "healthy_count": 0,
+                    "unhealthy_count": 0,
+                })
+            });
+        if let Some(object) = entry.as_object_mut() {
+            let count = object.get("count").and_then(Value::as_u64).unwrap_or(0) + 1;
+            object.insert("count".into(), Value::from(count));
+            let key = if healthy {
+                "healthy_count"
+            } else {
+                "unhealthy_count"
+            };
+            let current = object.get(key).and_then(Value::as_u64).unwrap_or(0) + 1;
+            object.insert(key.into(), Value::from(current));
+        }
         entries.push(json!({
             "name": config.name,
-            "source_type": format!("{:?}", config.source_type).to_lowercase(),
+            "source_type": source_type,
             "source": config.source,
-            "healthy": check.is_ok(),
+            "healthy": healthy,
             "error": check.err().map(|error| error.to_string()),
         }));
     }
@@ -1733,6 +1933,7 @@ async fn baked_health_value() -> Result<Value> {
         "count": entries.len(),
         "healthy_count": healthy_count,
         "unhealthy_count": entries.len().saturating_sub(healthy_count),
+        "by_source_type": by_source_type,
         "entries": entries,
     }))
 }
@@ -1775,7 +1976,8 @@ fn should_render_doctor_human(
     format.is_none() && !pretty && stdout_is_tty
 }
 
-fn print_doctor_report(value: &Value) {
+fn format_doctor_report(value: &Value) -> String {
+    let mut lines = Vec::new();
     let startup_files = value["startup_files"].as_object();
     let startup_total = startup_files.map(|files| files.len()).unwrap_or(0);
     let startup_present = startup_files
@@ -1807,15 +2009,18 @@ fn print_doctor_report(value: &Value) {
         })
         .unwrap_or_default();
 
-    println!("Root: {}", value["root"].as_str().unwrap_or("<unknown>"));
+    lines.push(format!(
+        "Root: {}",
+        value["root"].as_str().unwrap_or("<unknown>")
+    ));
     if !checked_hosts.is_empty() {
-        println!("Checked hosts: {}", checked_hosts);
+        lines.push(format!("Checked hosts: {}", checked_hosts));
     }
-    println!(
+    lines.push(format!(
         "Baked MCP servers: {}",
         value["baked_mcp_servers"].as_u64().unwrap_or(0)
-    );
-    println!(
+    ));
+    lines.push(format!(
         "Profile cache dir: {} ({})",
         if portable_profiles_present {
             "present"
@@ -1823,15 +2028,17 @@ fn print_doctor_report(value: &Value) {
             "missing"
         },
         portable_profiles_path
-    );
-    println!(
+    ));
+    lines.push(format!(
         "CLI profile cache: {} entries, {} bytes (TTL: {}h)",
         cache_entries, cache_total_bytes, cache_ttl_hours
-    );
-    println!("Cache path: {}", cache_path);
-    println!("Startup files present: {startup_present}/{startup_total}");
-    println!();
-    println!("Startup files:");
+    ));
+    lines.push(format!("Cache path: {}", cache_path));
+    lines.push(format!(
+        "Startup files present: {startup_present}/{startup_total}"
+    ));
+    lines.push(String::new());
+    lines.push("Startup files:".into());
     if let Some(files) = startup_files {
         let mut entries: Vec<_> = files.iter().collect();
         entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -1845,56 +2052,70 @@ fn print_doctor_report(value: &Value) {
             .collect();
 
         if !present.is_empty() {
-            println!("  Present:");
+            lines.push("  Present:".into());
             for (name, details) in present {
                 let path = details["path"].as_str().unwrap_or_default();
-                println!("  - {} ({})", name, path);
+                lines.push(format!("  - {} ({})", name, path));
             }
         }
 
         if !missing.is_empty() {
-            println!("  Missing:");
+            lines.push("  Missing:".into());
             for (name, details) in missing {
                 let path = details["path"].as_str().unwrap_or_default();
-                println!("  - {} ({})", name, path);
+                lines.push(format!("  - {} ({})", name, path));
             }
         }
     }
-    println!();
-    println!("Recommended first moves:");
+    lines.push(String::new());
+    lines.push("Recommended first moves:".into());
     if let Some(moves) = value["recommended_first_moves"].as_array() {
         for (index, item) in moves.iter().enumerate() {
             let surface = item["surface"].as_str().unwrap_or("surface");
             let command = item["command"].as_str().unwrap_or_default();
             let why = item["why"].as_str().unwrap_or_default();
-            println!(
+            lines.push(format!(
                 "{}. {} -> `{}`",
                 index + 1,
                 surface.replace('_', " "),
                 command
-            );
-            println!("   {}", why);
+            ));
+            lines.push(format!("   {}", why));
         }
     }
+    lines.join("\n")
 }
 
-fn print_status_report(value: &Value) {
-    print_doctor_report(value);
+fn print_doctor_report(value: &Value) {
+    println!("{}", format_doctor_report(value));
+}
+
+fn format_status_report(value: &Value) -> String {
+    let mut lines = vec![format_doctor_report(value)];
     let saved_profiles = &value["saved_profiles"];
-    println!();
-    println!("Saved CLI profiles");
-    println!(
+    lines.push(String::new());
+    lines.push("Saved CLI profiles".into());
+    lines.push(format!(
         "Path: {}",
         saved_profiles["path"].as_str().unwrap_or("<unknown>")
-    );
+    ));
     let drift = &saved_profiles["drift"];
-    println!(
+    lines.push(format!(
         "Profiles: {} total, {} changed, {} unchanged, {} errors",
         drift["count"].as_u64().unwrap_or(0),
         drift["changed_count"].as_u64().unwrap_or(0),
         drift["unchanged_count"].as_u64().unwrap_or(0),
         drift["error_count"].as_u64().unwrap_or(0)
-    );
+    ));
+    let inventory = &saved_profiles["inventory"];
+    lines.push(format!(
+        "Quality/Freshness: {} ready, {} not ready, {} stale, {} unknown freshness, {} inventory errors",
+        inventory["ready_count"].as_u64().unwrap_or(0),
+        inventory["not_ready_count"].as_u64().unwrap_or(0),
+        inventory["stale_count"].as_u64().unwrap_or(0),
+        inventory["unknown_freshness_count"].as_u64().unwrap_or(0),
+        inventory["error_count"].as_u64().unwrap_or(0)
+    ));
     if let Some(entries) = drift["entries"].as_array() {
         let changed = entries
             .iter()
@@ -1902,19 +2123,36 @@ fn print_status_report(value: &Value) {
             .take(5)
             .collect::<Vec<_>>();
         if !changed.is_empty() {
-            println!("Changed profiles:");
+            lines.push("Changed profiles:".into());
             for entry in changed {
-                println!(
+                lines.push(format!(
                     "- {} ({})",
                     entry["command"].as_str().unwrap_or("<unknown>"),
                     entry["path"].as_str().unwrap_or("<unknown>")
-                );
+                ));
+            }
+        }
+    }
+    if let Some(entries) = inventory["entries"].as_array() {
+        let stale = entries
+            .iter()
+            .filter(|entry| entry["freshness"]["stale"].as_bool().unwrap_or(false))
+            .take(5)
+            .collect::<Vec<_>>();
+        if !stale.is_empty() {
+            lines.push("Stale profiles:".into());
+            for entry in stale {
+                lines.push(format!(
+                    "- {} ({})",
+                    entry["command"].as_str().unwrap_or("<unknown>"),
+                    entry["path"].as_str().unwrap_or("<unknown>")
+                ));
             }
         }
     }
     if let Some(hosts) = value["host_capabilities"].as_object() {
-        println!();
-        println!("Host capabilities");
+        lines.push(String::new());
+        lines.push("Host capabilities".into());
         let mut entries = hosts.iter().collect::<Vec<_>>();
         entries.sort_by(|a, b| a.0.cmp(b.0));
         for (key, details) in entries {
@@ -1922,18 +2160,18 @@ fn print_status_report(value: &Value) {
             let doc_present = details["doc_present"].as_bool().unwrap_or(false);
             let config_present = details["config_present"].as_bool().unwrap_or(false);
             let ready = details["ready"].as_bool().unwrap_or(false);
-            println!(
+            lines.push(format!(
                 "- {}: ready={} doc_present={} config_present={}",
                 label, ready, doc_present, config_present
-            );
+            ));
         }
     }
     if let Some(diff) = value.get("host_capability_diff") {
-        println!();
-        println!(
+        lines.push(String::new());
+        lines.push(format!(
             "Host capability comparison: {} differing field(s)",
             diff["difference_count"].as_u64().unwrap_or(0)
-        );
+        ));
         if let Some(entries) = diff["differences"].as_array() {
             for entry in entries {
                 let field = entry["field"].as_str().unwrap_or("field");
@@ -1957,35 +2195,67 @@ fn print_status_report(value: &Value) {
                             .join(", ")
                     })
                     .unwrap_or_default();
-                println!(
+                lines.push(format!(
                     "- {}: true on [{}], false on [{}]",
                     field, hosts_true, hosts_false
-                );
+                ));
             }
         }
     }
     if let Some(health) = value.get("baked_health") {
-        println!();
-        println!(
+        lines.push(String::new());
+        lines.push(format!(
             "Baked connection health: {} healthy, {} unhealthy ({} total)",
             health["healthy_count"].as_u64().unwrap_or(0),
             health["unhealthy_count"].as_u64().unwrap_or(0),
             health["count"].as_u64().unwrap_or(0)
-        );
+        ));
+        if let Some(by_type) = health["by_source_type"].as_object() {
+            let mut entries = by_type.iter().collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (source_type, details) in entries {
+                lines.push(format!(
+                    "- {}: {} healthy, {} unhealthy ({} total)",
+                    source_type,
+                    details["healthy_count"].as_u64().unwrap_or(0),
+                    details["unhealthy_count"].as_u64().unwrap_or(0),
+                    details["count"].as_u64().unwrap_or(0)
+                ));
+            }
+        }
         if let Some(entries) = health["entries"].as_array() {
             for entry in entries
                 .iter()
                 .filter(|entry| !entry["healthy"].as_bool().unwrap_or(false))
                 .take(5)
             {
-                println!(
+                lines.push(format!(
                     "- {} [{}]: {}",
                     entry["name"].as_str().unwrap_or("<unknown>"),
                     entry["source_type"].as_str().unwrap_or("unknown"),
                     entry["error"].as_str().unwrap_or("unhealthy")
-                );
+                ));
             }
         }
+    }
+    lines.join("\n")
+}
+
+fn print_status_report(value: &Value) {
+    println!("{}", format_status_report(value));
+}
+
+fn render_status_output(
+    value: &Value,
+    format: Option<output::StructuredOutputFormat>,
+    pretty: bool,
+    stdout_is_tty: bool,
+) -> String {
+    if should_render_doctor_human(false, format, pretty, stdout_is_tty) {
+        format_status_report(value)
+    } else {
+        let format = output::resolve_structured_format(format, pretty);
+        output::format_structured_value(value, format)
     }
 }
 
@@ -4095,6 +4365,73 @@ async fn main() -> Result<()> {
                     );
                 }
             }
+            InspectAction::ExportCorpus {
+                inputs,
+                root,
+                recursive,
+                output,
+                pretty,
+                format,
+            } => {
+                let root = resolve_generation_root(root)?;
+                let use_default_recursive = inputs.is_empty();
+                let profile_inputs = if use_default_recursive {
+                    vec![default_saved_profiles_dir(&root)]
+                } else {
+                    inputs
+                        .into_iter()
+                        .map(|path| {
+                            if path.is_absolute() {
+                                path
+                            } else {
+                                root.join(path)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let profile_paths =
+                    collect_profile_paths(&profile_inputs, recursive || use_default_recursive)?;
+                let value = export_profile_corpus_value(&profile_paths);
+                let render_format = output::resolve_structured_format(format, pretty);
+                let rendered = if matches!(render_format, output::StructuredOutputFormat::Ndjson) {
+                    let entries =
+                        Value::Array(value["entries"].as_array().cloned().unwrap_or_default());
+                    output::format_structured_value(
+                        &entries,
+                        output::StructuredOutputFormat::Ndjson,
+                    )
+                } else {
+                    output::format_structured_value(&value, render_format)
+                };
+                if let Some(output_path) = output {
+                    let output_path = if output_path.is_absolute() {
+                        output_path
+                    } else {
+                        root.join(output_path)
+                    };
+                    if let Some(parent) = output_path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(&output_path, rendered)?;
+                    let report = json!({
+                        "corpus_schema": PROFILE_CORPUS_SCHEMA,
+                        "output": output_path.display().to_string(),
+                        "count": value["count"],
+                        "error_count": value["error_count"],
+                    });
+                    if let Some(format) = output::prefer_structured_output(format, pretty) {
+                        println!("{}", output::format_structured_value(&report, format));
+                    } else {
+                        println!(
+                            "Exported {} corpus entries to {}",
+                            report["count"].as_u64().unwrap_or(0),
+                            report["output"].as_str().unwrap_or("<unknown>")
+                        );
+                    }
+                } else {
+                    println!("{rendered}");
+                }
+            }
             InspectAction::CacheStats { pretty, format } => {
                 let value = cli_surfaces::cache_stats_value()?;
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
@@ -4674,6 +5011,38 @@ async fn main() -> Result<()> {
             } else {
                 let format = output::resolve_structured_format(format, pretty);
                 println!("{}", output::format_structured_value(&value, format));
+            }
+        }
+        Commands::Watch {
+            root,
+            only_hosts,
+            compare_hosts,
+            health,
+            interval_seconds,
+            exit_on_change,
+            pretty,
+            format,
+        } => {
+            let root = resolve_generation_root(root)?;
+            let stdout_is_tty = std::io::stdout().is_terminal();
+            let interval = Duration::from_secs(interval_seconds.max(1));
+            let mut last_rendered = None::<String>;
+            let mut first_frame = true;
+            loop {
+                let value =
+                    status_value_with_health(&root, &only_hosts, &compare_hosts, health).await?;
+                let rendered = render_status_output(&value, format, pretty, stdout_is_tty);
+                if last_rendered.as_ref() != Some(&rendered) {
+                    println!("{rendered}");
+                    println!();
+                    std::io::stdout().flush()?;
+                    if exit_on_change && !first_frame {
+                        std::process::exit(1);
+                    }
+                    last_rendered = Some(rendered);
+                }
+                first_frame = false;
+                std::thread::sleep(interval);
             }
         }
     }

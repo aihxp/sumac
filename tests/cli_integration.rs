@@ -435,6 +435,44 @@ fn test_status_reports_saved_profile_drift() {
 }
 
 #[test]
+fn test_status_reports_saved_profile_inventory_freshness() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let mut profile = command_json(&["inspect", "cli", "cargo", "--format", "json-pretty"]);
+    profile["provenance"]["generated_at"] = Value::from("2025-01-01T00:00:00Z");
+    fs::write(
+        profiles_dir.join("cargo.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json(&[
+        "status",
+        "--root",
+        temp.path().to_str().unwrap(),
+        "--format",
+        "json-pretty",
+    ]);
+    assert_eq!(
+        value["saved_profiles"]["inventory"]["count"],
+        Value::from(1)
+    );
+    assert_eq!(
+        value["saved_profiles"]["inventory"]["ready_count"],
+        Value::from(1)
+    );
+    assert_eq!(
+        value["saved_profiles"]["inventory"]["stale_count"],
+        Value::from(1)
+    );
+    assert_eq!(
+        value["saved_profiles"]["inventory"]["entries"][0]["freshness"]["known"],
+        Value::Bool(true)
+    );
+}
+
+#[test]
 fn test_status_reports_host_capabilities_and_baked_health() {
     let temp = tempfile::tempdir().unwrap();
     let inner = serde_json::to_string(&vec![
@@ -470,6 +508,10 @@ fn test_status_reports_host_capabilities_and_baked_health() {
         .contains("Claude"));
     assert_eq!(value["baked_health"]["count"], Value::from(1));
     assert_eq!(value["baked_health"]["healthy_count"], Value::from(1));
+    assert_eq!(
+        value["baked_health"]["by_source_type"]["stdio"]["count"],
+        Value::from(1)
+    );
 }
 
 #[test]
@@ -652,6 +694,39 @@ fn test_inspect_bundle_export_and_import_preserve_metadata() {
         Value::from("Blessed internal tool set")
     );
     assert_eq!(import["imported_count"], Value::from(1));
+}
+
+#[test]
+fn test_inspect_export_corpus_round_trips_saved_profiles() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let profiles_dir = root.join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+
+    let git = command_json(&["inspect", "cli", "git", "--pretty"]);
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&git).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json(&[
+        "inspect",
+        "export-corpus",
+        "--root",
+        root.to_str().unwrap(),
+        "--pretty",
+    ]);
+    assert_eq!(
+        value["corpus_schema"],
+        Value::from("sxmc_profile_corpus_v1")
+    );
+    assert_eq!(value["count"], Value::from(1));
+    assert_eq!(value["entries"][0]["type"], Value::from("profile"));
+    assert_eq!(
+        value["entries"][0]["profile"]["command"],
+        Value::from("git")
+    );
 }
 
 #[test]
@@ -1637,6 +1712,44 @@ fn test_inspect_diff_watch_ndjson_flushes_first_frame_for_piped_stdout() {
     assert!(first_line.contains("\"summary_changed\""));
     let parsed: Value = serde_json::from_str(first_line.trim()).unwrap();
     assert!(parsed.get("command").is_some());
+}
+
+#[test]
+#[cfg(not(windows))]
+fn test_watch_flushes_first_frame_for_piped_stdout() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "watch",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--interval-seconds",
+            "3",
+            "--format",
+            "ndjson",
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let _ = reader.read_line(&mut line);
+        let _ = sender.send(line);
+    });
+
+    let first_line = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("timed out waiting for watch output");
+    child.kill().ok();
+    let _ = child.wait();
+
+    assert!(first_line.contains("\"saved_profiles\""));
+    let parsed: Value = serde_json::from_str(first_line.trim()).unwrap();
+    assert!(parsed.get("root").is_some());
 }
 
 #[test]

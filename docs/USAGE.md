@@ -178,6 +178,7 @@ sxmc doctor --remove --only claude-code --from-cli gh
 sxmc status --human
 sxmc status --health --format json-pretty
 sxmc status --compare-hosts claude-code,cursor --format json-pretty
+sxmc watch --health --format ndjson
 sxmc inspect cli <tool> --depth 1 --format json-pretty
 sxmc inspect cli <tool> --depth 2 --compact --format json-pretty
 sxmc inspect batch git cargo brew --parallel 4 --compact --format json-pretty
@@ -188,6 +189,7 @@ sxmc inspect drift .sxmc/ai/profiles --recursive --format json-pretty
 sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff --before before.json --after after.json --format markdown
 sxmc inspect migrate-profile legacy-profile.json --output migrated-profile.json
+sxmc inspect export-corpus --root . --format json-pretty
 sxmc inspect bundle-export --output team-profiles.bundle.json
 sxmc inspect bundle-import team-profiles.bundle.json --output-dir .sxmc/ai/profiles
 sxmc inspect cache-stats --format json-pretty
@@ -217,6 +219,7 @@ sxmc inspect batch --retry-failed previous-batch.ndjson --parallel 4
 sxmc inspect diff git --before before.json --format json-pretty
 sxmc inspect diff git --before before.json --format toon
 sxmc inspect diff --before before.json --after after.json --format markdown
+sxmc inspect export-corpus --root . --output corpus.ndjson --format ndjson
 sxmc inspect bundle-export --bundle-name "Platform Bundle" --role platform --hosts claude-code,cursor --output team-profiles.bundle.json
 sxmc inspect bundle-verify team-profiles.bundle.json --format json-pretty
 sxmc publish team-profiles.bundle.json --bundle-name "Platform Bundle" --role platform
@@ -250,10 +253,16 @@ Notes:
   startup files or managed snippets for the selected hosts.
 - `sxmc status` extends doctor with saved-profile drift so you can see whether
   `.sxmc/ai/profiles` still matches the currently installed tools.
+- `sxmc status` also includes saved-profile inventory metadata so you can spot
+  stale profiles, freshness gaps, and profiles that are not yet ready for
+  startup-doc generation.
 - `sxmc status --health` also validates baked MCP/API connections and adds a
   `baked_health` summary plus per-host readiness under `host_capabilities`.
 - `sxmc status --compare-hosts claude-code,cursor` highlights readiness,
   doc-presence, and config-presence differences across selected AI hosts.
+- `sxmc watch` polls the same status surface over time, flushes the first frame
+  immediately for piped consumers, and can exit non-zero on the first observed
+  change after the initial frame with `--exit-on-change`.
 - `sxmc inspect batch ...` keeps partial failures in a `failures` array instead
   of failing the whole run on the first missing command.
 - `sxmc inspect batch ... --parallel N` bounds concurrency for larger batch jobs.
@@ -280,6 +289,9 @@ Notes:
 - `sxmc inspect migrate-profile legacy-profile.json --output migrated.json`
   rewrites a saved profile through the current schema-tolerant loader and emits
   canonical current-schema JSON.
+- `sxmc inspect export-corpus` packages saved profiles plus readiness and
+  freshness metadata into a corpus-friendly JSON envelope. Use
+  `--format ndjson` for one-record-per-line export.
 - `sxmc inspect bundle-export --output profiles.bundle.json` packages saved
   profiles from `.sxmc/ai/profiles` into one portable bundle file.
 - bundle export also accepts optional team metadata via `--bundle-name`,
