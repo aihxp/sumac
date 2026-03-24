@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, SxmcError};
+use crate::paths;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheStats {
@@ -39,10 +40,11 @@ struct CacheEntry {
 impl Cache {
     /// Create a new cache with the given TTL.
     pub fn new(ttl_secs: u64) -> Result<Self> {
-        let dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join("sxmc");
+        Self::with_dir(paths::cache_dir(), ttl_secs)
+    }
 
+    /// Create a cache rooted at an explicit directory.
+    pub fn with_dir(dir: PathBuf, ttl_secs: u64) -> Result<Self> {
         std::fs::create_dir_all(&dir)
             .map_err(|e| SxmcError::Other(format!("Failed to create cache dir: {}", e)))?;
 
@@ -231,10 +233,18 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+
+    fn test_cache(ttl_secs: u64) -> Cache {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().to_path_buf();
+        let _dir = dir.keep();
+        Cache::with_dir(cache_dir, ttl_secs).unwrap()
+    }
 
     #[test]
     fn test_cache_set_get() {
-        let cache = Cache::new(3600).unwrap();
+        let cache = test_cache(3600);
         let key = "test_cache_set_get";
         cache.set(key, "hello world").unwrap();
         assert_eq!(cache.get(key), Some("hello world".to_string()));
@@ -243,13 +253,13 @@ mod tests {
 
     #[test]
     fn test_cache_miss() {
-        let cache = Cache::new(3600).unwrap();
+        let cache = test_cache(3600);
         assert_eq!(cache.get("nonexistent_key_12345"), None);
     }
 
     #[test]
     fn test_cache_expired() {
-        let cache = Cache::new(3600).unwrap();
+        let cache = test_cache(3600);
         let key = "test_cache_expired";
         // Set with 0 TTL — immediately expired
         cache.set_with_ttl(key, "expired data", 0).unwrap();
@@ -260,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_cache_stats_reports_entries() {
-        let cache = Cache::new(3600).unwrap();
+        let cache = test_cache(3600);
         let key = "test_cache_stats_reports_entries";
         cache.set(key, "hello world").unwrap();
 
@@ -274,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_cache_remove_matching_removes_selected_entries() {
-        let cache = Cache::new(3600).unwrap();
+        let cache = test_cache(3600);
         let first = "cli-profile:first";
         let second = "cli-profile:second";
         cache.set(first, "hello").unwrap();

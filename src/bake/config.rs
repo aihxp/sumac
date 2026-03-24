@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use crate::error::{Result, SxmcError};
+use crate::paths;
 
 /// A baked connection configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,9 +41,7 @@ pub struct BakeStore {
 impl BakeStore {
     /// Load the bake store from disk.
     pub fn load() -> Result<Self> {
-        let dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("sxmc");
+        let dir = paths::config_dir();
 
         std::fs::create_dir_all(&dir)
             .map_err(|e| SxmcError::Other(format!("Failed to create config dir: {}", e)))?;

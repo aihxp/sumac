@@ -61,20 +61,30 @@ pub fn parse_command_spec(command: &str) -> Result<Vec<String>> {
     }
 
     if trimmed.starts_with('[') {
-        return serde_json::from_str::<Vec<String>>(trimmed).map_err(|e| {
+        let parsed = serde_json::from_str::<Vec<String>>(trimmed).map_err(|e| {
             SxmcError::Other(format!(
                 "Invalid command JSON array. Expected [\"cmd\", \"arg1\", ...]: {}",
                 e
             ))
-        });
+        })?;
+        #[cfg(windows)]
+        {
+            return Ok(normalize_windows_command_parts(parsed));
+        }
+        #[cfg(not(windows))]
+        {
+            return Ok(parsed);
+        }
     }
 
     #[cfg(windows)]
     {
         if let Some(parts) = parse_windows_command_spec(trimmed) {
-            return Ok(parts);
+            return Ok(normalize_windows_command_parts(parts));
         }
-        return Ok(trimmed.split_whitespace().map(str::to_string).collect());
+        return Ok(normalize_windows_command_parts(
+            trimmed.split_whitespace().map(str::to_string).collect(),
+        ));
     }
 
     #[cfg(not(windows))]
@@ -83,6 +93,28 @@ pub fn parse_command_spec(command: &str) -> Result<Vec<String>> {
             "Invalid command string. Use shell-style quoting or a JSON array command spec.".into(),
         )
     })
+}
+
+#[cfg(windows)]
+fn normalize_windows_command_parts(parts: Vec<String>) -> Vec<String> {
+    parts
+        .into_iter()
+        .map(|part| normalize_windows_command_part(&part))
+        .collect()
+}
+
+#[cfg(windows)]
+fn normalize_windows_command_part(part: &str) -> String {
+    let bytes = part.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        let rest = &part[3..];
+        if rest.is_empty() {
+            return format!("{drive}:\\");
+        }
+        return format!(r"{drive}:\{}", rest.replace('/', r"\"));
+    }
+    part.to_string()
 }
 
 #[cfg(windows)]
@@ -555,6 +587,7 @@ pub fn inspect_cli_with_depth(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(executable)
+        .trim_end_matches(".exe")
         .to_string();
 
     if !allow_self && is_self_command(&command_name) {
@@ -1880,11 +1913,11 @@ fn looks_like_man_fallback_candidate(help: &str) -> bool {
 fn is_unhelpful_summary_line(line: &str, command_name: &str) -> bool {
     let lowered = line.to_ascii_lowercase();
     let trimmed = line.trim();
-    let descriptive_intro =
-        trimmed.starts_with("These are common ") || trimmed.starts_with("These are available ");
 
     trimmed.is_empty()
-        || (!descriptive_intro && is_major_section_heading(trimmed))
+        || is_major_section_heading(trimmed)
+        || trimmed.starts_with("These are common ")
+        || trimmed.starts_with("These are available ")
         || looks_like_usage_line(trimmed, command_name)
         || looks_like_option_line(trimmed)
         || looks_like_cli_example_line(trimmed, command_name)
@@ -2745,6 +2778,23 @@ mod tests {
         assert_eq!(parsed, vec!["sxmc", "serve", "--paths", "tests/fixtures"]);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn parse_json_array_command_spec_normalizes_git_bash_paths() {
+        let parsed =
+            parse_command_spec(r#"["sxmc","serve","--paths","/c/Users/example/tests/fixtures"]"#)
+                .unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                "sxmc",
+                "serve",
+                "--paths",
+                r#"C:\Users\example\tests\fixtures"#,
+            ]
+        );
+    }
+
     #[test]
     fn parse_gh_style_grouped_commands() {
         let help = r#"Work seamlessly with GitHub from the command line.
@@ -2818,10 +2868,7 @@ collaborate (see also: git help workflows)
    fetch      Download objects and refs from another repository
 "#;
         let profile = parse_help_text("git", "git", help);
-        assert_eq!(
-            profile.summary,
-            "These are common Git commands used in various situations:"
-        );
+        assert_eq!(profile.summary, "git command-line interface");
         assert_eq!(profile.subcommands.len(), 3);
         assert_eq!(profile.subcommands[0].name, "clone");
         assert_eq!(profile.subcommands[2].name, "fetch");

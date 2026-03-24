@@ -111,6 +111,8 @@ pub mod error;
 pub mod executor;
 /// Output formatting helpers for CLI rendering.
 pub mod output;
+/// Path resolution helpers for config/cache storage.
+pub mod paths;
 /// Security scanners and finding/report models.
 pub mod security;
 /// MCP server construction and transport serving.

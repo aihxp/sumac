@@ -13,6 +13,38 @@ pub struct ExecResult {
     pub exit_code: i32,
 }
 
+pub fn script_command(script_path: &Path) -> (std::path::PathBuf, Vec<String>) {
+    #[cfg(windows)]
+    {
+        fn bash_script_path(script_path: &Path) -> String {
+            let raw = script_path.to_string_lossy();
+            let trimmed = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+            trimmed.replace('\\', "/")
+        }
+
+        let uses_bash = script_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "sh" | "bash"))
+            .unwrap_or(false);
+        if uses_bash {
+            let script_arg = bash_script_path(script_path);
+            for candidate in [
+                r"C:\Program Files\Git\bin\bash.exe",
+                r"C:\Program Files\Git\usr\bin\bash.exe",
+            ] {
+                let path = std::path::PathBuf::from(candidate);
+                if path.exists() {
+                    return (path, vec![script_arg.clone()]);
+                }
+            }
+            return (std::path::PathBuf::from("bash"), vec![script_arg]);
+        }
+    }
+
+    (script_path.to_path_buf(), Vec::new())
+}
+
 /// Execute a script with arguments, capturing output.
 pub async fn execute_script(
     script_path: &Path,
@@ -20,9 +52,13 @@ pub async fn execute_script(
     working_dir: &Path,
     timeout_secs: u64,
 ) -> Result<ExecResult> {
-    let mut cmd = Command::new(script_path);
-    cmd.args(args)
+    let (executable, mut launcher_args) = script_command(script_path);
+    launcher_args.extend(args.iter().map(|arg| arg.to_string()));
+
+    let mut cmd = Command::new(executable);
+    cmd.args(&launcher_args)
         .current_dir(working_dir)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -48,7 +84,10 @@ pub async fn execute_command(
     timeout_secs: u64,
 ) -> Result<ExecResult> {
     let mut cmd = Command::new(executable);
-    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     if let Some(working_dir) = working_dir {
         cmd.current_dir(working_dir);

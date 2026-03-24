@@ -217,10 +217,15 @@ async fn execute_skill_script(
     env_pairs: &[(String, String)],
     arguments: &[String],
 ) -> Result<()> {
-    let mut command = Command::new(&script_path);
+    let (executable, mut launcher_args): (PathBuf, Vec<String>) =
+        sxmc::executor::script_command(&script_path);
+    launcher_args.extend(arguments.iter().cloned());
+
+    let mut command = Command::new(&executable);
     command
-        .args(arguments)
+        .args(&launcher_args)
         .current_dir(&skill.base_dir)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("SXMC_SKILL_NAME", &skill.name)
