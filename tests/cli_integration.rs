@@ -229,6 +229,18 @@ Usage:
 Options:
   --count <COUNT>   Number of characters to emit.
 EOF
+elif [ "$1" = "slow" ] && [ "$2" = "--help" ]; then
+    cat <<'EOF'
+fake-wrap-cli slow
+
+Sleep briefly, then report completion.
+
+Usage:
+  fake-wrap-cli slow [OPTIONS]
+
+Options:
+  --seconds <SECONDS>   Seconds to sleep before completing.
+EOF
 elif [ "$1" = "hello" ]; then
     shift
     target=""
@@ -299,6 +311,22 @@ import sys
 count = int(sys.argv[1])
 print("x" * count)
 PY
+elif [ "$1" = "slow" ]; then
+    shift
+    seconds="2"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --seconds)
+                seconds="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    sleep "$seconds"
+    printf '{"status":"done","slept":"%s"}\n' "$seconds"
 else
     cat <<'EOF'
 fake-wrap-cli
@@ -310,6 +338,7 @@ Commands:
   goodbye  Say goodbye
   pwd      Report the current working directory
   spam     Emit repeated output
+  slow     Sleep briefly, then report completion
 EOF
 fi
 "#;
@@ -455,6 +484,46 @@ fn test_wrap_respects_working_dir() {
     let expected = fs::canonicalize(temp.path()).unwrap();
     let actual = fs::canonicalize(value["stdout_json"]["cwd"].as_str().unwrap()).unwrap();
     assert_eq!(actual, expected);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_wrap_reports_progress_events_and_structured_timeout_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = write_fake_wrappable_cli(temp.path());
+    let spec = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "wrap".to_string(),
+        fake.to_string_lossy().into_owned(),
+        "--allow-tool".to_string(),
+        "slow".to_string(),
+        "--progress-seconds".to_string(),
+        "1".to_string(),
+        "--timeout-seconds".to_string(),
+        "1".to_string(),
+    ])
+    .unwrap();
+
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args(["stdio", &spec, "slow", "seconds=2", "--pretty"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["tool"], "slow");
+    assert_eq!(value["timeout"], Value::Bool(true));
+    assert!(value["progress_event_count"].as_u64().unwrap_or(0) >= 1);
+    assert_eq!(value["long_running"], Value::Bool(true));
+    assert!(value["progress_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| {
+            entry["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("still running")
+        }));
 }
 
 #[test]

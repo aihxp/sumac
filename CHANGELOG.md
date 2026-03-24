@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-03-23
+
+### Changed
+
+- wrapped CLI tool calls now return structured progress events and timeout
+  metadata in their final JSON payloads
+
 ## [0.2.33] - 2026-03-23
 
 ### Added

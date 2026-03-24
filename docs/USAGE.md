@@ -142,6 +142,10 @@ Notes:
 - `sxmc wrap` also supports `--allow-tool`, `--deny-tool`, `--working-dir`,
   bounded stdout/stderr capture, and optional stderr heartbeat progress notes
   for long-running wrapped commands.
+- long-running wrapped calls now also return structured `progress_events`,
+  `progress_event_count`, `long_running`, and timeout metadata in the final JSON
+  payload, so MCP clients can reason about slow or timed-out executions without
+  scraping stderr.
 
 ## Use APIs As CLIs
 

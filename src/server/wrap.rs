@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::{
@@ -189,6 +189,8 @@ impl ServerHandler for WrappedCliServer {
             let progress_secs = self.progress_secs;
             let done = Arc::new(AtomicBool::new(false));
             let done_for_task = done.clone();
+            let progress_events = Arc::new(Mutex::new(Vec::new()));
+            let progress_events_for_task = progress_events.clone();
             let task = tokio::spawn(async move {
                 let mut elapsed = progress_secs;
                 while !done_for_task.load(Ordering::Relaxed) {
@@ -196,14 +198,21 @@ impl ServerHandler for WrappedCliServer {
                     if done_for_task.load(Ordering::Relaxed) {
                         break;
                     }
-                    eprintln!(
-                        "[sxmc] Wrapped tool '{}' for '{}' still running after {}s",
+                    let message = format!(
+                        "Wrapped tool '{}' for '{}' still running after {}s",
                         tool_name, command, elapsed
                     );
+                    eprintln!("[sxmc] {}", message);
+                    if let Ok(mut items) = progress_events_for_task.lock() {
+                        items.push(json!({
+                            "elapsed_secs": elapsed,
+                            "message": message,
+                        }));
+                    }
                     elapsed += progress_secs;
                 }
             });
-            Some((done, task))
+            Some((done, task, progress_events))
         } else {
             None
         };
@@ -215,10 +224,19 @@ impl ServerHandler for WrappedCliServer {
             self.timeout_secs,
         )
         .await;
-        if let Some((done, task)) = progress_task {
+        let progress_events = if let Some((done, task, progress_events)) = progress_task {
             done.store(true, Ordering::Relaxed);
             let _ = task.await;
-        }
+            progress_events
+                .lock()
+                .map(|items| items.clone())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let elapsed_ms = started_at.elapsed().as_millis() as u64;
+        let progress_event_count = progress_events.len() as u64;
+        let long_running = progress_event_count > 0;
         match execution {
             Ok(result) => {
                 let (stdout, stdout_truncated) =
@@ -236,6 +254,10 @@ impl ServerHandler for WrappedCliServer {
                         .chain(args.clone())
                         .collect::<Vec<_>>(),
                     "working_dir": self.working_dir,
+                    "progress_seconds": self.progress_secs,
+                    "progress_event_count": progress_event_count,
+                    "progress_events": progress_events,
+                    "long_running": long_running,
                     "stdout": stdout,
                     "stdout_bytes": result.stdout.len(),
                     "stdout_truncated": stdout_truncated,
@@ -246,7 +268,7 @@ impl ServerHandler for WrappedCliServer {
                     "stderr_truncated": stderr_truncated,
                     "stderr_nonempty": stderr_nonempty,
                     "exit_code": result.exit_code,
-                    "elapsed_ms": started_at.elapsed().as_millis() as u64,
+                    "elapsed_ms": elapsed_ms,
                     "timeout_seconds": self.timeout_secs,
                 });
                 let text = serde_json::to_string_pretty(&payload)
@@ -257,9 +279,29 @@ impl ServerHandler for WrappedCliServer {
                     Ok(CallToolResult::error(vec![Content::text(text)]))
                 }
             }
-            Err(error) => Ok(CallToolResult::error(vec![Content::text(
-                error.to_string(),
-            )])),
+            Err(error) => {
+                let timeout = matches!(error, SxmcError::TimeoutError(_));
+                let payload = json!({
+                    "wrapped_command": self.wrapped_command,
+                    "tool": tool.name,
+                    "summary": self.summary,
+                    "argv": std::iter::once(self.executable.clone())
+                        .chain(args.clone())
+                        .collect::<Vec<_>>(),
+                    "working_dir": self.working_dir,
+                    "progress_seconds": self.progress_secs,
+                    "progress_event_count": progress_event_count,
+                    "progress_events": progress_events,
+                    "long_running": long_running,
+                    "elapsed_ms": elapsed_ms,
+                    "timeout_seconds": self.timeout_secs,
+                    "timeout": timeout,
+                    "error": error.to_string(),
+                });
+                let text = serde_json::to_string_pretty(&payload)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+                Ok(CallToolResult::error(vec![Content::text(text)]))
+            }
         }
     }
 

@@ -1453,11 +1453,23 @@ fake-wrap-cli hello
 Say hello.
 
 Usage:
-  fake-wrap-cli hello [OPTIONS] <target>
+fake-wrap-cli hello [OPTIONS] <target>
 
 Options:
   --name <NAME>  Override the target name.
   --excited      Add emphasis.
+INNER
+elif [ "$1" = "slow" ] && [ "$2" = "--help" ]; then
+  cat <<'INNER'
+fake-wrap-cli slow
+
+Sleep briefly, then report completion.
+
+Usage:
+  fake-wrap-cli slow [OPTIONS]
+
+Options:
+  --seconds <SECONDS>  Seconds to sleep before completing.
 INNER
 elif [ "$1" = "hello" ]; then
   shift
@@ -1487,6 +1499,22 @@ elif [ "$1" = "hello" ]; then
   suffix=""
   [ "$excited" = "true" ] && suffix="!"
   printf '{"message":"hello %s%s"}\n' "$target" "$suffix"
+elif [ "$1" = "slow" ]; then
+  shift
+  seconds="2"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --seconds)
+        seconds="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+  sleep "$seconds"
+  printf '{"status":"done","slept":"%s"}\n' "$seconds"
 else
   cat <<'INNER'
 fake-wrap-cli
@@ -1495,6 +1523,7 @@ CLI wrapping fixture.
 
 Commands:
   hello  Say hello
+  slow   Sleep briefly, then report completion
 INNER
 fi
 EOF
@@ -1518,6 +1547,19 @@ if printf '%s' "$wrap_call" | python3 -c "import json,sys; d=json.load(sys.stdin
   pass "wrap executes wrapped CLI tool calls"
 else
   fail "wrap should execute fake CLI tool" "${wrap_call:0:160}"
+fi
+
+slow_wrap_spec=$(python3 - <<'PY' "$SXMC" "$fake_wrap_cli"
+import json, sys
+print(json.dumps([sys.argv[1], "wrap", sys.argv[2], "--allow-tool", "slow", "--progress-seconds", "1", "--timeout-seconds", "1"]))
+PY
+)
+
+slow_wrap_call=$("$SXMC" stdio "$slow_wrap_spec" slow seconds=2 --pretty 2>/dev/null)
+if json_check "$slow_wrap_call" "d.get('tool') == 'slow' and d.get('timeout') is True and d.get('progress_event_count',0) >= 1 and d.get('long_running') is True"; then
+  pass "wrap reports structured progress events and timeout metadata"
+else
+  fail "wrap progress events" "${slow_wrap_call:0:220}"
 fi
 
 # ============================================================================
