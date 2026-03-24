@@ -16,7 +16,7 @@ if (process.env.SXMC_NPM_SKIP_DOWNLOAD === "1") {
 
 const target = resolveTarget();
 const releaseTag = `v${version}`;
-const archiveName = `sxmc-${releaseTag}-${target.target}.${target.archiveExt}`;
+const archiveName = `sxmc-${releaseTag}-${target.assetId}.${target.archiveExt}`;
 const checksumName = `${archiveName}.sha256`;
 const downloadBase =
   process.env.SXMC_NPM_DOWNLOAD_BASE ??
@@ -61,7 +61,7 @@ try {
     execFileSync("tar", ["-xzf", archivePath, "-C", extractDir], { stdio: "inherit" });
   }
 
-  const packageRoot = path.join(extractDir, `sxmc-${releaseTag}-${target.target}`);
+  const packageRoot = path.join(extractDir, `sxmc-${releaseTag}-${target.assetId}`);
   const binaryName = process.platform === "win32" ? "sxmc.exe" : "sxmc";
   const sourceBinary = path.join(packageRoot, binaryName);
   const destinationBinary = path.join(vendorDir, binaryName);
@@ -80,16 +80,32 @@ try {
 
 function resolveTarget() {
   if (process.platform === "darwin" && process.arch === "arm64") {
-    return { target: "aarch64-apple-darwin", archiveExt: "tar.gz" };
+    return {
+      target: "aarch64-apple-darwin",
+      assetId: "macos-arm64",
+      archiveExt: "tar.gz",
+    };
   }
   if (process.platform === "darwin" && process.arch === "x64") {
-    return { target: "x86_64-apple-darwin", archiveExt: "tar.gz" };
+    return {
+      target: "x86_64-apple-darwin",
+      assetId: "macos-x64",
+      archiveExt: "tar.gz",
+    };
   }
   if (process.platform === "linux" && process.arch === "x64") {
-    return { target: "x86_64-unknown-linux-gnu", archiveExt: "tar.gz" };
+    return {
+      target: "x86_64-unknown-linux-gnu",
+      assetId: "linux-x64",
+      archiveExt: "tar.gz",
+    };
   }
   if (process.platform === "win32" && process.arch === "x64") {
-    return { target: "x86_64-pc-windows-msvc", archiveExt: "zip" };
+    return {
+      target: "x86_64-pc-windows-msvc",
+      assetId: "windows-x64",
+      archiveExt: "zip",
+    };
   }
 
   throw new Error(

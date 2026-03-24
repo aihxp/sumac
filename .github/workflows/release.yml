@@ -20,15 +20,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            asset_id: linux-x64
             archive_ext: tar.gz
           - os: macos-15-intel
             target: x86_64-apple-darwin
+            asset_id: macos-x64
             archive_ext: tar.gz
           - os: macos-14
             target: aarch64-apple-darwin
+            asset_id: macos-arm64
             archive_ext: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            asset_id: windows-x64
             archive_ext: zip
 
     runs-on: ${{ matrix.os }}
@@ -50,7 +54,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
-          PKG_DIR="sxmc-${VERSION}-${{ matrix.target }}"
+          PKG_DIR="sxmc-${VERSION}-${{ matrix.asset_id }}"
           mkdir -p "$PKG_DIR"
           cp "target/${{ matrix.target }}/release/sxmc" "$PKG_DIR/"
           cp README.md LICENSE "$PKG_DIR/"
@@ -63,7 +67,7 @@ jobs:
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
-          $pkgDir = "sxmc-$version-${{ matrix.target }}"
+          $pkgDir = "sxmc-$version-${{ matrix.asset_id }}"
           New-Item -ItemType Directory -Path $pkgDir | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/sxmc.exe" "$pkgDir/"
           Copy-Item README.md, LICENSE "$pkgDir/"
@@ -76,5 +80,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            sxmc-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-            sxmc-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+            sxmc-${{ github.ref_name }}-${{ matrix.asset_id }}.${{ matrix.archive_ext }}
+            sxmc-${{ github.ref_name }}-${{ matrix.asset_id }}.${{ matrix.archive_ext }}.sha256
