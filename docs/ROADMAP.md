@@ -1,6 +1,6 @@
 # Roadmap
 
-This document captures the next major product evolutions for `sxmc` now that
+This document captures the next major product evolutions for Sumac (`sxmc`) now that
 the core CLI/MCP/API/configuration pipeline is stable and well covered by tests.
 
 ## Principles

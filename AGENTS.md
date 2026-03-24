@@ -1,9 +1,9 @@
 <!-- sxmc:begin cli-ai:portable -->
-## sxmc CLI Surface: `sxmc`
+## Sumac CLI Surface: `sxmc`
 
-Use `sxmc` as a portable terminal workflow across AI tools in this repo.
+Use `sxmc` (Sumac) as a portable terminal workflow across AI tools in this repo.
 
-Summary: AI-agnostic Skills × MCP × CLI
+Summary: Sumac — bring out what your tools can do (Skills × MCP × CLI)
 
 Recommended startup guidance:
 - When the exact CLI surface is unclear, start with `sxmc inspect cli <tool> --depth 1 --format json-pretty`.

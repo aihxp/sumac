@@ -1,17 +1,17 @@
-# sxmc Test Script Guide
+# Sumac Test Script Guide
 
 **Script:** `scripts/test-sxmc.sh`
-**Lines:** ~1225
-**Sections:** 17
-**Tests:** 136
+**Lines:** ~1625
+**Sections:** 39 (4 parts: old features, new features, 10x10x10 matrix, benchmarks)
+**Tests:** 250
 
 ---
 
 ## Overview
 
-`test-sxmc.sh` is a comprehensive, cross-platform bash test suite for the `sxmc` CLI. It validates every major feature surface — CLI inspection, MCP pipeline, API mode, security scanning, scaffolds, AI host initialization, caching, doctor diagnostics, and profile diffing — using only `bash` and `python3`.
+`test-sxmc.sh` is a comprehensive, cross-platform bash test + benchmark suite for Sumac (`sxmc`). It validates every major feature surface — CLI inspection, MCP pipeline, API mode, security scanning, scaffolds, AI host initialization, caching, doctor diagnostics, profile diffing, wrap, status/watch, publish/pull, bundle signing, corpus, registry, trust, and side-by-side comparisons — using only `bash` and `python3`.
 
-The script was developed iteratively across sxmc versions v0.2.10 through v0.2.21, growing from ~50 tests to 136 tests as features were added.
+The script was developed iteratively across sxmc versions v0.2.10 through v0.2.38, growing from ~50 tests to 250 tests as features were added.
 
 ---
 
@@ -96,125 +96,83 @@ Tests that create bakes or modify cache use `sxmc_isolated()` which overrides `H
 
 ---
 
-## Section-by-Section Guide
+## Section Overview
 
-### Section 1: Environment (lines 119–146)
-**What:** Prints version/OS info, confirms sxmc and python3 work
-**How:** Runs `sxmc --version`, `uname`, `python3 --version`
+The script is organized into 4 parts with 39 sections:
 
-### Section 2: Help & Completions (lines 148–184)
-**What:** Validates `--help` output and shell completions
-**How:**
-- Checks `--help` for 14 subcommand keywords via grep
-- Generates completions for bash, zsh, fish
-- Sources bash completions and simulates tab-completion for subcommands and options
+### Part A — Old Features (Sections 1–18)
 
-### Section 3: CLI Inspection Matrix (lines 186–257)
-**What:** Bulk-tests CLI parsing against 95+ tools
-**How:**
-- Iterates over a large array of tool names
-- Skips tools not on PATH
-- Runs `sxmc inspect cli <tool>` and validates output is valid JSON
-- Checks summary quality: rejects raw `usage:` lines, copyright notices, overstrike artifacts (`SSUUMM`), error messages, and *standalone* “report bugs” noise — but **allows** GNU-style `Report bugs to <url>` lines (e.g. `nm`, `strings`) so Linux binutils do not false-positive
-- Reports aggregate counts (parsed, failed, skipped, bad summaries)
+Re-validates all features from v0.2.10–v0.2.21:
 
-### Section 4: Previously-Broken Tools (lines 259–319)
-**What:** Regression tests for specific parser bugs from earlier versions
-**How:** Uses `check_tool()` helper that runs inspect, evaluates a Python expression, and on failure prints diagnostic info (subcommand count, option count, summary preview)
+| Section | What it tests |
+|---|---|
+| 1. Environment | Binary runs, python3 available |
+| 2. Help & Completions | --help output (20 subcommands), bash/zsh/fish completions |
+| 3. CLI Inspection Matrix | 95+ tools bulk-parsed, summary quality checks |
+| 4. Previously-Broken Tools | Regressions for brew, cat, python3, gh, etc. |
+| 5. Compact Mode | Size reduction, field presence, provenance stripped |
+| 6. Profile Caching | Cache creation, cold vs warm timing |
+| 7. Scaffold System | skill, mcp-wrapper, llms-txt scaffolds |
+| 8. Init AI Pipeline | 10 AI hosts, --coverage full |
+| 9. Security Scanner | Prompt injection, secrets, dangerous ops |
+| 10. MCP Pipeline | bake create/list/tools/grep/remove |
+| 11. Bake Validation | Invalid source rejection, --skip-validate |
+| 12. API Mode | Petstore OpenAPI: --list, --search, call |
+| 13. Doctor Command | JSON/human, --check, --fix, --dry-run |
+| 14. Self-Dogfooding | Repo ships its own AI config files |
+| 15. Depth & Batch | subcommand_profiles, batch, cache-stats, cache-clear |
+| 16. Error Messages | Clear errors for invalid inputs |
+| 17. Serve | serve --help, skills list |
+| 18. Wrap (basic) | wrap --help flags |
 
-### Section 5: Compact Mode (lines 321–372)
-**What:** Validates `--compact` output format and size reduction
-**How:**
-- Compares full vs compact output byte counts
-- Checks for compact-specific fields (`subcommand_count`, `option_count`)
-- Confirms `provenance` is stripped
-- Measures curl compact savings percentage
+### Part B — New Features v0.2.22–v0.2.38 (Sections 19–31)
 
-### Section 6: Profile Caching (lines 374–408)
-**What:** Validates cache directory creation and warm-cache performance
-**How:**
-- Clears cache directories
-- Times cold then warm runs using `time_ms()`
-- Checks cache directory and file existence
+| Section | What it tests |
+|---|---|
+| 19. Wrap Execution & Filtering | --allow/deny-option/positional, progress, stdout limits, stdio bridge |
+| 20. Status & Watch | Structured JSON, --health, --exit-code, --compare-hosts, watch flags |
+| 21. Publish / Pull | Help flags, signing, round-trip (publish → pull → verify profiles) |
+| 22. Bundle Export/Import/Verify | Create bundle, verify integrity, import profiles |
+| 23. Bundle Signing | Ed25519 keygen, HMAC + Ed25519 sign/verify/reject |
+| 24. Corpus | export-corpus, corpus-stats, corpus-query |
+| 25. Registry | registry-init, registry-add, registry-list |
+| 26. Trust | trust-report, trust-policy |
+| 27. Known-Good | Best profile selection |
+| 28. New Inspect Features | diff --format markdown, migrate-profile, drift, batch --retry-failed |
+| 29. Doctor Enhancements | --remove for cleanup |
+| 30. CI Scaffold | scaffold ci generates GitHub Actions workflows |
+| 31. Health Gates | --health --exit-code returns 0/1 |
 
-### Section 7: Scaffold System (lines 410–468)
-**What:** Tests profile-to-scaffold pipeline
-**How:**
-- Saves a git profile to a temp file
-- Runs `scaffold skill`, `scaffold mcp-wrapper`, `scaffold llms-txt`
-- Checks output mentions expected files
-- Tests overflow hints using brew (115+ subcommands)
+### Part C — 10x10x10 Matrix (Sections 32–35)
 
-### Section 8: Init AI Pipeline (lines 470–498)
-**What:** Tests AI host configuration generation for 10 hosts
-**How:** Runs `init ai --from-cli git --client <host> --mode preview` for each host, checks output contains `Target:`. Tests `--coverage full` produces ≥10 sections.
+| Section | What it tests |
+|---|---|
+| 32. 10 Known CLIs | git, curl, ls, ssh, tar, grep, find, gh, python3, jq — each: inspect, compact, scaffold, init-ai |
+| 33. 10 Known Skills | 4 fixtures + 6 synthetic — list, info, run, --script, --env, --print-body, serve (MCP tools/prompts/resources), MCP tool calls |
+| 34. 10 Known MCPs | 1 fixture + 4 npm + 1 self-host + 4 synthetic — bake, list, tools, grep, remove |
+| 35. Side-by-Side | With vs without Sumac: CLI understanding, AI host config, CLI→MCP, skill execution, serve, full pipeline — with timing |
 
-### Section 9: Security Scanner (lines 500–557)
-**What:** Tests security vulnerability detection
-**How:**
-- Scans bundled `malicious-skill` fixture for CRITICAL, SL-INJ-001, SL-EXEC-001, SL-SEC-001
-- Creates a synthetic skill with API keys/tokens and verifies ≥3 secret patterns are detected
+### Part D — Benchmarks (Sections 36–39)
 
-### Section 10: MCP Pipeline (lines 559–609)
-**What:** Tests full MCP bake lifecycle
-**How:** Uses `fixtures/stateful_mcp_server.py` to test bake create → list → tools → grep → remove. Runs in isolated environment.
-
-### Section 11: Bake Validation (lines 611–637)
-**What:** Tests bake source validation and `--skip-validate`
-**How:** Attempts bake create with invalid source, checks for error and guidance, then verifies `--skip-validate` bypasses validation.
-
-### Section 12: API Mode (lines 639–679)
-**What:** Tests OpenAPI integration via Petstore spec
-**How:** Checks network availability, then tests `--list`, `--search`, and direct API call. Requires internet.
-
-### Section 13: Doctor Command (lines 681–785)
-**What:** Tests diagnostic and repair commands
-**How:**
-- Validates JSON structure (root, startup_files, recommended_first_moves)
-- Tests `--human` output format
-- Creates temp directories with/without startup files for `--check` and `--check --only`
-- Creates a mock CLI script for `--fix` tests
-- Validates `--fix --dry-run` doesn't write files
-
-### Section 14: Self-Dogfooding (lines 787–805)
-**What:** Verifies sxmc repo ships its own AI config files
-**How:** Checks existence and sxmc mention in CLAUDE.md, AGENTS.md, GEMINI.md, .cursor/rules/sxmc-cli-ai.md, .github/copilot-instructions.md
-
-### Section 15: Depth Expansion & Batch Inspection (lines 807–1108)
-**What:** Comprehensive tests for batch, cache management, and diffing
-**How:**
-- Tests `--depth 1` subcommand_profiles
-- Batch with inline args, `--from-file` (plain text, comments, YAML, TOML)
-- Batch `--output-dir`, `--format toon`, `--format ndjson`
-- `--since` with RFC3339 timestamps
-- `cache-stats`, `cache-invalidate` (exact, glob, `--dry-run`), `cache-clear`, `cache-warm`
-- Profile diffing: saved, toon, saved-vs-saved, `--exit-code`, compact error, legacy tolerance, migration notes
-- `--watch` ndjson flush test using a Python subprocess that reads the first frame within 2 seconds
-
-### Section 16: Error Messages (lines 1110–1138)
-**What:** Tests user-facing error quality
-**How:** Triggers errors (nonexistent tool, no args, self-inspection) and checks for clear, actionable messages.
-
-### Section 17: Serve & Skills (lines 1140–1181)
-**What:** Tests MCP server and skills listing
-**How:** Checks `serve --help` for transport, watch, and auth options. Lists skills from fixtures directory.
-
-### Summary Output (lines 1183–1225)
-**What:** Prints results and optionally writes JSON
-**How:** Prints colored pass/fail/skip counts. Generates JSON summary via python3 with version, OS, timestamp, and all counters. Exits with code 1 if any test failed.
+| Section | What it measures |
+|---|---|
+| 36. CLI Inspection | Cold/warm per-tool (5 runs median), batch --parallel 1 vs 4 |
+| 37. Wrap & MCP | wrap git → stdio --list latency |
+| 38. Bundle | Export, HMAC sign timing |
+| 39. Pipeline | inspect → scaffold → init-ai for 5 CLIs end-to-end |
 
 ---
 
 ## Test Development History
 
-The test script was developed during a structured testing session across sxmc releases:
+The test script was developed during structured testing sessions across sxmc releases:
 
-1. **Initial creation** — Built for v0.2.10 with ~50 tests covering core functionality
-2. **v0.2.13 expansion** — Added batch inspection, cache stats, doctor human output (grew to ~101 tests)
-3. **v0.2.14–v0.2.16** — Added cache management, file-driven batch, doctor check tests
-4. **v0.2.17** — Major expansion: diff engine, cache-warm, YAML/TOML from-file, completion integration, doctor fix (grew to ~130 tests)
-5. **v0.2.18** — Fixed test data: changed `cargo` to `git` for compact diff test (cargo not on test machine's PATH)
-6. **v0.2.19–v0.2.21** — Added schema tolerance, migration notes, saved-vs-saved diffs, exit codes, watch mode tests (final: 136 tests)
+1. **v0.2.10** — Initial creation with ~50 tests covering core functionality
+2. **v0.2.13** — Added batch inspection, cache stats, doctor human output (~101 tests)
+3. **v0.2.14–v0.2.16** — Cache management, file-driven batch, doctor check
+4. **v0.2.17–v0.2.21** — Diff engine, completion integration, doctor fix, schema tolerance (136 tests)
+5. **v0.2.22–v0.2.37** — Major rewrite: added Part B (new features), Part C (10x10x10 matrix), Part D (benchmarks). Wrap, status, watch, publish/pull, bundles, signing, corpus, registry, trust, CI scaffold, health gates (247 tests)
+6. **v0.2.38** — Added skills execution depth (--script, --env, --print-body), side-by-side comparisons, MCP tool call tests (250 tests)
 
 ### Key debugging lessons
 

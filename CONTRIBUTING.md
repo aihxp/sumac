@@ -1,4 +1,4 @@
-# Contributing to sxmc
+# Contributing to Sumac (`sxmc`)
 
 Please note that this project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to abide by its terms.
 

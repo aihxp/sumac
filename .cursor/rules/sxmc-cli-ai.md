@@ -1,9 +1,9 @@
 <!-- sxmc:begin cli-ai:cursor -->
-## sxmc CLI Surface: `sxmc`
+## Sumac CLI Surface: `sxmc`
 
-Use `sxmc` as a first-class terminal workflow in this repo for Cursor.
+Use `sxmc` (Sumac) as a first-class terminal workflow in this repo for Cursor.
 
-Summary: AI-agnostic Skills × MCP × CLI
+Summary: Sumac — bring out what your tools can do (Skills × MCP × CLI)
 
 Preferred flow:
 1. `sxmc --help`

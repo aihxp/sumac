@@ -3,10 +3,8 @@
 This guide consolidates the release checklist, compatibility notes, smoke
 tests, and benchmark summary.
 
-For a concrete maintainer validation pass against **`0.2.0`**, see
-[`VALIDATION_RUN_v0.2.0.md`](VALIDATION_RUN_v0.2.0.md). Older snapshots:
-[`VALIDATION_RUN_v0.1.9.md`](VALIDATION_RUN_v0.1.9.md),
-[`VALIDATION_RUN_v0.1.8.md`](VALIDATION_RUN_v0.1.8.md).
+For the latest validation report, see
+[`TEST_SUITE_REPORT_v0.2.37.md`](TEST_SUITE_REPORT_v0.2.37.md) (250 tests, benchmarks, 10x10x10 matrix).
 
 ## What To Run Before A Release
 
@@ -286,7 +284,7 @@ The current validation posture is:
 
 ## Latest maintainer snapshot
 
-**[VALIDATION_RUN_v0.2.0.md](VALIDATION_RUN_v0.2.0.md)** — **0.2.0** pass: tests (**123**), certify + smoke, benchmarks, five skills, five MCPs, **JSON / stderr notes**, promptless multi-invocation, **MCP → CLI**, **`sxmc mcp`**, **`sxmc mcp session`**, **Cursor-style stdio simulation (per USAGE)**, and **warnings inventory**.
+**[TEST_SUITE_REPORT_v0.2.37.md](TEST_SUITE_REPORT_v0.2.37.md)** — **0.2.37/0.2.38** pass: 250 tests, 10x10x10 matrix (10 CLIs, 10 skills, 10 MCPs), benchmarks, bundle signing, registry, trust, wrap, status/watch, publish/pull, side-by-side with/without comparisons.
 
 Repeated standalone **`sxmc stdio …`** invocations do **not** share MCP session memory. For continuity, use **`sxmc mcp session <server>`** (see validation run §9).
 

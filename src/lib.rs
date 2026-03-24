@@ -1,9 +1,9 @@
-//! `sxmc` is a native Rust toolkit for turning agent-facing interfaces into
-//! practical tools: skills become MCP servers, MCP servers become terminal
-//! workflows, and APIs become CLIs.
+//! Sumac (`sxmc`) is a native Rust toolkit that brings out what your tools can
+//! do: skills become MCP servers, MCP servers become terminal workflows, and
+//! APIs become CLIs.
 //!
 //! MCP is an open standard for connecting AI assistants to external tools and
-//! data sources. `sxmc` removes the need to write separate adapters for each
+//! data sources. Sumac removes the need to write separate adapters for each
 //! surface by providing one binary that handles all three while reducing
 //! wrapper sprawl, keeping discovery narrower, and making the same capabilities
 //! reusable across agents, shells, and hosted MCP clients:
@@ -20,9 +20,9 @@
 //! skill discovery, MCP serving, API introspection, or security scanning in a
 //! Rust application of your own.
 //!
-//! # What `sxmc` does
+//! # What Sumac does
 //!
-//! `sxmc` treats a skills directory as structured input:
+//! Sumac treats a skills directory as structured input:
 //!
 //! - each `SKILL.md` body becomes an MCP prompt
 //! - each file in `scripts/` becomes an MCP tool

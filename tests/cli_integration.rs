@@ -464,7 +464,7 @@ fn test_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Skills × MCP × CLI"))
+        .stdout(predicate::str::contains("Sumac"))
         .stdout(predicate::str::contains("serve"))
         .stdout(predicate::str::contains("wrap"))
         .stdout(predicate::str::contains("skills"))

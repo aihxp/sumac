@@ -1,18 +1,18 @@
-# sxmc
+# Sumac (`sxmc`)
 
-One Rust binary for turning agent-facing interfaces into practical tools: serve skills over MCP, use MCP servers from the terminal, run APIs as CLIs, and generate startup-ready AI surfaces from existing CLIs.
+Bring out what your tools can do. One Rust binary that bridges skills, MCP servers, and APIs — so every tool you have becomes AI-accessible.
 
 [Crates.io](https://crates.io/crates/sxmc) | [docs.rs](https://docs.rs/sxmc/latest/sxmc/)
 
 ## Why It Exists
 
-Without `sxmc`, the same capability usually gets rebuilt several times:
+Without Sumac, the same capability usually gets rebuilt several times:
 - a skill adapter for one agent
 - a JSON-RPC script for one MCP server
 - a thin shell wrapper for one API
 - per-host startup docs and config files for AI tools
 
-`sxmc` collapses that into one installable binary with four core flows:
+Sumac collapses that into one installable binary (`sxmc`) with four core flows:
 
 ```text
 Skills -> MCP server
@@ -21,7 +21,7 @@ API -> CLI
 CLI -> AI startup surfaces
 ```
 
-That means less glue code, narrower MCP discovery, fewer retry turns, and much less repeated setup across Claude Code, Cursor, Gemini CLI, Copilot, Codex-style tools, and generic MCP clients.
+That means less glue code, narrower MCP discovery, fewer retry turns, and much less repeated setup across Claude Code, Cursor, Gemini CLI, Copilot, Codex-style tools, and generic MCP clients. The CLI command is `sxmc` — short to type, same letters as the brand.
 
 ## Install
 

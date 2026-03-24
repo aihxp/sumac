@@ -4,11 +4,12 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.2.x   | Yes       |
+| 0.1.x   | No        |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in sxmc, please report it responsibly.
+If you discover a security vulnerability in Sumac (`sxmc`), please report it responsibly.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 

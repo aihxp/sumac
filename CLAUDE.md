@@ -1,9 +1,9 @@
 <!-- sxmc:begin cli-ai:claude-code -->
-## sxmc CLI Surface: `sxmc`
+## Sumac CLI Surface: `sxmc`
 
-Use `sxmc` as a first-class terminal workflow in this repo for Claude Code.
+Use `sxmc` (Sumac) as a first-class terminal workflow in this repo for Claude Code.
 
-Summary: AI-agnostic Skills × MCP × CLI
+Summary: Sumac — bring out what your tools can do (Skills × MCP × CLI)
 
 Preferred flow:
 1. `sxmc --help`

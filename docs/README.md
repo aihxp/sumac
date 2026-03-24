@@ -1,6 +1,6 @@
 # Documentation
 
-Additional documentation for sxmc developers and maintainers.
+Additional documentation for Sumac (`sxmc`) developers and maintainers.
 
 | Document | Description |
 |----------|-------------|
@@ -12,8 +12,7 @@ Additional documentation for sxmc developers and maintainers.
 | [OPERATIONS.md](OPERATIONS.md) | Hosted deployment, release process, and distribution notes |
 | [VALIDATION.md](VALIDATION.md) | Test, smoke, compatibility, and benchmark summary |
 | [CLI_TO_AI_COMPATIBILITY.md](CLI_TO_AI_COMPATIBILITY.md) | Host-by-host `CLI -> AI` coverage matrix for startup docs, native config, and apply behavior |
-| [VALIDATION_RUN_v0.2.0.md](VALIDATION_RUN_v0.2.0.md) | Maintainer validation for **0.2.0**: tests, smoke, benchmarks, JSON/stderr, MCP→CLI, `sxmc mcp`, `mcp session`, Cursor-style stdio check |
-| [VALIDATION_RUN_v0.1.9.md](VALIDATION_RUN_v0.1.9.md) | Prior snapshot for `0.1.9` |
-| [VALIDATION_RUN_v0.1.8.md](VALIDATION_RUN_v0.1.8.md) | Prior snapshot for `0.1.8` |
-| [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) | Explicit support boundary: what `sxmc` guarantees, degrades gracefully, or leaves out of scope |
+| [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) | Explicit support boundary: what Sumac guarantees, degrades gracefully, or leaves out of scope |
 | [CLI_SURFACES.md](CLI_SURFACES.md) | Shipped `CLI -> AI` model: inspection, host-aware startup artifacts, provenance, depth limits, and review/apply rules |
+| [TEST_SUITE_REPORT_v0.2.37.md](TEST_SUITE_REPORT_v0.2.37.md) | Comprehensive test results for v0.2.37 (227 tests, benchmarks, 10x10x10 matrix) |
+| [TEST_SCRIPT_GUIDE.md](TEST_SCRIPT_GUIDE.md) | Guide to the test script: architecture, sections, how to run on other platforms |
