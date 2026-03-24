@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/test-sxmc.sh` now prefers the repo-local build before any installed
+  `sxmc` on `PATH`, avoiding stale-binary false failures during local validation
+- validation docs now point at a published `v0.2.38` report that matches the
+  committed script and current 250-test suite
+
 ## [0.2.38] - 2026-03-24
 
 ### Changed

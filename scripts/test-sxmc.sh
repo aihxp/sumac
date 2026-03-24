@@ -108,12 +108,12 @@ trap cleanup EXIT
 # --- Resolve sxmc binary ---
 if [ -n "${SXMC:-}" ]; then
   :
-elif has_cmd sxmc; then
-  SXMC="sxmc"
 elif [ -x "$ROOT/target/release/sxmc" ]; then
   SXMC="$ROOT/target/release/sxmc"
 elif [ -x "$ROOT/target/debug/sxmc" ]; then
   SXMC="$ROOT/target/debug/sxmc"
+elif has_cmd sxmc; then
+  SXMC="sxmc"
 else
   echo "ERROR: sxmc not found. Set SXMC= or install it." >&2
   exit 1

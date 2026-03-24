@@ -3,7 +3,7 @@
 **Version:** 0.2.37 (16 releases since last test at v0.2.21)
 **Platform:** macOS Darwin arm64
 **Date:** 2026-03-24
-**Test script:** `scripts/test-sxmc-v2.sh`
+**Test script:** `scripts/test-sxmc.sh`
 
 ---
 
