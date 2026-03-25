@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- `sxmc add` and `sxmc setup` now expose an explicit structured-output contract
+  via `--pretty` / `--format ...`, including resolved hosts, profile summaries,
+  write outcomes, and recommended next commands when onboarding is previewed
+- `sxmc add --client ...` / `sxmc setup --client ...` now act as naming aliases
+  for `--host ...`, while `sxmc doctor --host ...` / `sxmc status --host ...`
+  mirror the same host scoping on the health and recovery surfaces
+- `docs/PRODUCT_CONTRACT.md` now treats `sxmc add`, `sxmc setup`, `sxmc doctor`,
+  and `sxmc status` as stable promised product paths instead of leaving them as
+  implicit implementation details
+
 ## [0.2.42] - 2026-03-25
 
 ### Added

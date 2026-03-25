@@ -5104,6 +5104,195 @@ fn augment_bake_validation_message(config: &BakeConfig, base: &str, detail: &str
     message
 }
 
+fn ai_client_id(client: AiClientProfile) -> &'static str {
+    cli_surfaces::host_profile_spec(client).sidecar_scope
+}
+
+fn host_value(client: AiClientProfile) -> Value {
+    json!({
+        "id": ai_client_id(client),
+        "label": ai_client_display_name(client),
+    })
+}
+
+fn profile_summary_value(profile: &cli_surfaces::CliSurfaceProfile) -> Value {
+    let quality = profile.quality_report();
+    json!({
+        "command": profile.command,
+        "summary": profile.summary,
+        "subcommand_count": profile.subcommands.len(),
+        "option_count": profile.options.len(),
+        "interactive": profile.interactive,
+        "interactive_reasons": profile.interactive_reasons,
+        "non_interactive_alternatives": profile.non_interactive_alternatives,
+        "quality": {
+            "ready_for_agent_docs": quality.ready_for_agent_docs,
+            "score": quality.score,
+            "level": quality.level,
+            "reasons": quality.reasons,
+        }
+    })
+}
+
+fn write_status_name(status: cli_surfaces::WriteStatus) -> &'static str {
+    match status {
+        cli_surfaces::WriteStatus::Created => "created",
+        cli_surfaces::WriteStatus::Updated => "updated",
+        cli_surfaces::WriteStatus::Skipped => "skipped",
+        cli_surfaces::WriteStatus::Removed => "removed",
+    }
+}
+
+fn artifact_mode_name(mode: ArtifactMode) -> &'static str {
+    match mode {
+        ArtifactMode::Preview => "preview",
+        ArtifactMode::WriteSidecar => "write_sidecar",
+        ArtifactMode::Patch => "patch",
+        ArtifactMode::Apply => "apply",
+    }
+}
+
+fn write_outcomes_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
+    Value::Array(
+        outcomes
+            .iter()
+            .map(|outcome| {
+                json!({
+                    "label": outcome.label,
+                    "path": outcome.path.display().to_string(),
+                    "mode": artifact_mode_name(outcome.mode),
+                    "status": write_status_name(outcome.status),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn write_outcome_summary_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
+    let mut created = 0usize;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut removed = 0usize;
+
+    for outcome in outcomes {
+        match outcome.status {
+            cli_surfaces::WriteStatus::Created => created += 1,
+            cli_surfaces::WriteStatus::Updated => updated += 1,
+            cli_surfaces::WriteStatus::Skipped => skipped += 1,
+            cli_surfaces::WriteStatus::Removed => removed += 1,
+        }
+    }
+
+    json!({
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "removed": removed,
+        "total": outcomes.len(),
+    })
+}
+
+struct AddResultContext<'a> {
+    root: &'a Path,
+    command: &'a str,
+    profile: &'a cli_surfaces::CliSurfaceProfile,
+    hosts: &'a [AiClientProfile],
+    outcomes: &'a [cli_surfaces::WriteOutcome],
+    auto_detected_hosts: bool,
+    preview_requested: bool,
+    auto_previewed_due_to_missing_hosts: bool,
+}
+
+fn add_result_value(ctx: AddResultContext<'_>) -> Value {
+    json!({
+        "command": "add",
+        "tool": ctx.command,
+        "root": ctx.root.display().to_string(),
+        "effective_mode": if ctx.auto_previewed_due_to_missing_hosts || ctx.preview_requested { "preview" } else { "apply" },
+        "preview_requested": ctx.preview_requested,
+        "auto_previewed_due_to_missing_hosts": ctx.auto_previewed_due_to_missing_hosts,
+        "auto_detected_hosts": ctx.auto_detected_hosts,
+        "hosts": ctx.hosts.iter().copied().map(host_value).collect::<Vec<_>>(),
+        "profile": profile_summary_value(ctx.profile),
+        "outcomes": write_outcomes_value(ctx.outcomes),
+        "outcome_summary": write_outcome_summary_value(ctx.outcomes),
+        "recommended_command": if ctx.hosts.is_empty() {
+            Value::from(format!(
+                "sxmc add {} --root {} --host claude-code",
+                ctx.command,
+                ctx.root.display()
+            ))
+        } else {
+            Value::Null
+        }
+    })
+}
+
+fn explicit_structured_format(
+    format: Option<output::StructuredOutputFormat>,
+    pretty: bool,
+) -> Option<output::StructuredOutputFormat> {
+    if format.is_some() || pretty {
+        Some(output::resolve_structured_format(format, pretty))
+    } else {
+        None
+    }
+}
+
+struct SetupResultContext<'a> {
+    root: &'a Path,
+    tools: &'a [String],
+    tool_results: &'a [Value],
+    auto_detected_tools: bool,
+    hosts: &'a [AiClientProfile],
+    auto_detected_hosts: bool,
+    preview_requested: bool,
+    auto_previewed_due_to_missing_hosts: bool,
+}
+
+fn setup_result_value(ctx: SetupResultContext<'_>) -> Value {
+    let mut created = 0u64;
+    let mut updated = 0u64;
+    let mut skipped = 0u64;
+    let mut removed = 0u64;
+    for result in ctx.tool_results {
+        let summary = &result["outcome_summary"];
+        created += summary["created"].as_u64().unwrap_or(0);
+        updated += summary["updated"].as_u64().unwrap_or(0);
+        skipped += summary["skipped"].as_u64().unwrap_or(0);
+        removed += summary["removed"].as_u64().unwrap_or(0);
+    }
+
+    json!({
+        "command": "setup",
+        "tools": ctx.tools,
+        "root": ctx.root.display().to_string(),
+        "effective_mode": if ctx.auto_previewed_due_to_missing_hosts || ctx.preview_requested { "preview" } else { "apply" },
+        "preview_requested": ctx.preview_requested,
+        "auto_previewed_due_to_missing_hosts": ctx.auto_previewed_due_to_missing_hosts,
+        "auto_detected_tools": ctx.auto_detected_tools,
+        "auto_detected_hosts": ctx.auto_detected_hosts,
+        "hosts": ctx.hosts.iter().copied().map(host_value).collect::<Vec<_>>(),
+        "results": ctx.tool_results,
+        "outcome_summary": {
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "removed": removed,
+            "total": created + updated + skipped + removed,
+        },
+        "recommended_command": if ctx.hosts.is_empty() {
+            Value::from(format!(
+                "sxmc setup --tool {} --root {} --host claude-code",
+                ctx.tools.join(","),
+                ctx.root.display()
+            ))
+        } else {
+            Value::Null
+        }
+    })
+}
+
 fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     let mut created = 0usize;
     let mut updated = 0usize;
@@ -8398,30 +8587,35 @@ async fn main() -> Result<()> {
             preview,
             allow_low_confidence,
             allow_self,
+            pretty,
+            format,
         } => {
             let root = resolve_generation_root(root)?;
             let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
             ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
+            let render_format = explicit_structured_format(format, pretty);
+            let auto_detected_hosts = hosts.is_empty();
 
-            let selected_hosts = if hosts.is_empty() {
+            let selected_hosts = if auto_detected_hosts {
                 auto_detect_add_hosts(&root)
             } else {
                 hosts
             };
             let has_selected_hosts = !selected_hosts.is_empty();
             let apply = has_selected_hosts && !preview;
+            let auto_previewed_due_to_missing_hosts = !has_selected_hosts;
 
-            if apply {
+            if render_format.is_none() && apply {
                 println!(
                     "Detected configured AI hosts: {}",
                     host_label_list(&selected_hosts)
                 );
-            } else if has_selected_hosts {
+            } else if render_format.is_none() && has_selected_hosts {
                 println!(
                     "Previewing onboarding for configured AI hosts: {}",
                     host_label_list(&selected_hosts)
                 );
-            } else {
+            } else if render_format.is_none() {
                 println!(
                     "No configured AI hosts detected under {}. Previewing the full onboarding plan instead.",
                     root.display()
@@ -8445,16 +8639,15 @@ async fn main() -> Result<()> {
                 },
             )?;
 
-            if apply {
-                let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+            let outcomes = if apply {
+                cli_surfaces::materialize_artifacts_with_apply_selection(
                     &artifacts,
                     ArtifactMode::Apply,
                     &root,
                     &selected_hosts,
-                )?;
-                print_write_outcomes(&outcomes);
+                )?
             } else {
-                let outcomes = if has_selected_hosts {
+                if has_selected_hosts {
                     cli_surfaces::preview_artifacts_with_apply_selection(
                         &artifacts,
                         ArtifactMode::Apply,
@@ -8463,7 +8656,24 @@ async fn main() -> Result<()> {
                     )?
                 } else {
                     cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
-                };
+                }
+            };
+
+            if let Some(format) = render_format {
+                let value = add_result_value(AddResultContext {
+                    root: &root,
+                    command: &command,
+                    profile: &profile,
+                    hosts: &selected_hosts,
+                    outcomes: &outcomes,
+                    auto_detected_hosts,
+                    preview_requested: preview,
+                    auto_previewed_due_to_missing_hosts,
+                });
+                println!("{}", output::format_structured_value(&value, format));
+            } else if apply {
+                print_write_outcomes(&outcomes);
+            } else {
                 print_preview_outcomes(&outcomes);
             }
         }
@@ -8478,9 +8688,12 @@ async fn main() -> Result<()> {
             preview,
             allow_low_confidence,
             allow_self,
+            pretty,
+            format,
         } => {
             let root = resolve_generation_root(root)?;
-            let tools = if tools.is_empty() {
+            let auto_detected_tools = tools.is_empty();
+            let tools = if auto_detected_tools {
                 detect_setup_tools(limit)
             } else {
                 tools
@@ -8490,27 +8703,32 @@ async fn main() -> Result<()> {
                     "No CLI tools were selected or auto-detected. Re-run with `--tool <name>` or install one of the common tools Sumac scans for.".into(),
                 ));
             }
+            let render_format = explicit_structured_format(format, pretty);
+            let auto_detected_hosts = hosts.is_empty();
 
-            let selected_hosts = if hosts.is_empty() {
+            let selected_hosts = if auto_detected_hosts {
                 auto_detect_add_hosts(&root)
             } else {
                 hosts
             };
             let has_selected_hosts = !selected_hosts.is_empty();
             let apply = has_selected_hosts && !preview;
+            let auto_previewed_due_to_missing_hosts = !has_selected_hosts;
 
-            println!("Selected tools: {}", tools.join(", "));
-            if apply {
+            if render_format.is_none() {
+                println!("Selected tools: {}", tools.join(", "));
+            }
+            if render_format.is_none() && apply {
                 println!(
                     "Detected configured AI hosts: {}",
                     host_label_list(&selected_hosts)
                 );
-            } else if has_selected_hosts {
+            } else if render_format.is_none() && has_selected_hosts {
                 println!(
                     "Previewing onboarding for configured AI hosts: {}",
                     host_label_list(&selected_hosts)
                 );
-            } else {
+            } else if render_format.is_none() {
                 println!(
                     "No configured AI hosts detected under {}. Previewing the full onboarding plan instead.",
                     root.display()
@@ -8520,9 +8738,12 @@ async fn main() -> Result<()> {
                 );
             }
 
-            for command in tools {
-                println!("Onboarding tool: {}", command);
-                let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
+            let mut tool_results = Vec::new();
+            for command in &tools {
+                if render_format.is_none() {
+                    println!("Onboarding tool: {}", command);
+                }
+                let profile = cli_surfaces::inspect_cli_with_depth(command, allow_self, depth)?;
                 ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
                 let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
                     &profile,
@@ -8538,16 +8759,15 @@ async fn main() -> Result<()> {
                     },
                 )?;
 
-                if apply {
-                    let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                let outcomes = if apply {
+                    cli_surfaces::materialize_artifacts_with_apply_selection(
                         &artifacts,
                         ArtifactMode::Apply,
                         &root,
                         &selected_hosts,
-                    )?;
-                    print_write_outcomes(&outcomes);
+                    )?
                 } else {
-                    let outcomes = if has_selected_hosts {
+                    if has_selected_hosts {
                         cli_surfaces::preview_artifacts_with_apply_selection(
                             &artifacts,
                             ArtifactMode::Apply,
@@ -8556,9 +8776,35 @@ async fn main() -> Result<()> {
                         )?
                     } else {
                         cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
-                    };
+                    }
+                };
+
+                if render_format.is_none() && apply {
+                    print_write_outcomes(&outcomes);
+                } else if render_format.is_none() {
                     print_preview_outcomes(&outcomes);
                 }
+
+                tool_results.push(json!({
+                    "tool": command,
+                    "profile": profile_summary_value(&profile),
+                    "outcomes": write_outcomes_value(&outcomes),
+                    "outcome_summary": write_outcome_summary_value(&outcomes),
+                }));
+            }
+
+            if let Some(format) = render_format {
+                let value = setup_result_value(SetupResultContext {
+                    root: &root,
+                    tools: &tools,
+                    tool_results: &tool_results,
+                    auto_detected_tools,
+                    hosts: &selected_hosts,
+                    auto_detected_hosts,
+                    preview_requested: preview,
+                    auto_previewed_due_to_missing_hosts,
+                });
+                println!("{}", output::format_structured_value(&value, format));
             }
         }
 
@@ -8904,19 +9150,22 @@ async fn main() -> Result<()> {
         } => {
             let root = resolve_generation_root(root)?;
             let mut report_hosts = only_hosts.clone();
+            let explicit_structured = format.is_some() || pretty;
             if fix || remove {
                 let selected_hosts = infer_doctor_hosts(&root, &only_hosts)?;
                 let from_cli = infer_doctor_from_cli(&root, &selected_hosts, from_cli.as_deref())?;
                 if report_hosts.is_empty() {
                     report_hosts = selected_hosts.clone();
                 }
-                if only_hosts.is_empty() {
+                if only_hosts.is_empty() && !explicit_structured {
                     println!(
                         "Auto-detected AI hosts: {}",
                         host_label_list(&selected_hosts)
                     );
                 }
-                println!("Using CLI surface: {}", from_cli);
+                if !explicit_structured {
+                    println!("Using CLI surface: {}", from_cli);
+                }
                 let outcomes = repair_doctor_startup_files(DoctorRepairOptions {
                     root: &root,
                     only_hosts: &selected_hosts,

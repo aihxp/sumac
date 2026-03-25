@@ -664,7 +664,12 @@ pub enum Commands {
         skills_path: PathBuf,
 
         /// Explicit AI hosts to apply to instead of auto-detecting from the repo
-        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        #[arg(
+            long = "host",
+            visible_alias = "client",
+            value_enum,
+            value_delimiter = ','
+        )]
         hosts: Vec<AiClientProfile>,
 
         /// Preview changes instead of writing them
@@ -678,6 +683,14 @@ pub enum Commands {
         /// Allow inspecting sxmc itself
         #[arg(long)]
         allow_self: bool,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
     },
 
     /// Scan common tools or explicit selections and onboard them in one pass
@@ -703,7 +716,12 @@ pub enum Commands {
         skills_path: PathBuf,
 
         /// Explicit AI hosts to apply to instead of auto-detecting from the repo
-        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        #[arg(
+            long = "host",
+            visible_alias = "client",
+            value_enum,
+            value_delimiter = ','
+        )]
         hosts: Vec<AiClientProfile>,
 
         /// Preview changes instead of writing them
@@ -717,6 +735,14 @@ pub enum Commands {
         /// Allow inspecting sxmc itself
         #[arg(long)]
         allow_self: bool,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
     },
 
     /// Initialize startup-facing AI artifacts from an inspected CLI
@@ -754,7 +780,12 @@ pub enum Commands {
         check: bool,
 
         /// Limit doctor startup-file checks to specific AI hosts
-        #[arg(long = "only", value_enum, value_delimiter = ',')]
+        #[arg(
+            long = "only",
+            visible_alias = "host",
+            value_enum,
+            value_delimiter = ','
+        )]
         only_hosts: Vec<AiClientProfile>,
 
         /// Repair missing startup-facing files for the selected hosts
@@ -805,7 +836,12 @@ pub enum Commands {
         root: Option<PathBuf>,
 
         /// Limit startup-file checks to specific AI hosts
-        #[arg(long = "only", value_enum, value_delimiter = ',')]
+        #[arg(
+            long = "only",
+            visible_alias = "host",
+            value_enum,
+            value_delimiter = ','
+        )]
         only_hosts: Vec<AiClientProfile>,
 
         /// Compare capability readiness across specific AI hosts
@@ -840,7 +876,12 @@ pub enum Commands {
         root: Option<PathBuf>,
 
         /// Limit startup-file checks to specific AI hosts
-        #[arg(long = "only", value_enum, value_delimiter = ',')]
+        #[arg(
+            long = "only",
+            visible_alias = "host",
+            value_enum,
+            value_delimiter = ','
+        )]
         only_hosts: Vec<AiClientProfile>,
 
         /// Compare capability readiness across specific AI hosts

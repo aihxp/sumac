@@ -1,8 +1,8 @@
 # Sumac Test Script Guide
 
 **Script:** `scripts/test-sxmc.sh`
-**Lines:** ~1635
-**Sections:** 40 (4 parts: old features, new features, 10x10x10 matrix, benchmarks)
+**Lines:** ~1700
+**Sections:** 41 (4 parts: old features, new features, 10x10x10 matrix, benchmarks)
 **Tests:** See the latest validation report
 
 ---
@@ -11,7 +11,7 @@
 
 `test-sxmc.sh` is a comprehensive, cross-platform bash test + benchmark suite for Sumac (`sxmc`). It validates every major feature surface — CLI inspection, MCP pipeline, API mode, security scanning, scaffolds, AI host initialization, caching, doctor diagnostics, profile diffing, wrap, status/watch, publish/pull, bundle signing, corpus, registry, trust, and side-by-side comparisons — using only `bash` and `python3`.
 
-The script was developed iteratively across sxmc versions v0.2.10 through v0.2.41, growing from ~50 tests to the current release-sized validation suite as features were added.
+The script was developed iteratively across sxmc versions v0.2.10 through v0.2.43, growing from ~50 tests to the current release-sized validation suite as features were added.
 
 ---
 
@@ -52,9 +52,9 @@ SXMC=./target/release/sxmc bash scripts/test-sxmc.sh
 ### Binary resolution order
 
 1. `$SXMC` environment variable (if set)
-2. `sxmc` on `$PATH`
+2. `target/debug/sxmc` (relative to repo root)
 3. `target/release/sxmc` (relative to repo root)
-4. `target/debug/sxmc` (relative to repo root)
+4. `sxmc` on `$PATH`
 
 ---
 
@@ -98,7 +98,7 @@ Tests that create bakes or modify cache use `sxmc_isolated()` which overrides `H
 
 ## Section Overview
 
-The script is organized into 4 parts with 39 sections:
+The script is organized into 4 parts with 41 sections:
 
 ### Part A — Old Features (Sections 1–18)
 
@@ -125,7 +125,7 @@ Re-validates all features from v0.2.10–v0.2.21:
 | 17. Serve | serve --help, skills list |
 | 18. Wrap (basic) | wrap --help flags |
 
-### Part B — New Features v0.2.22–v0.2.41 (Sections 19–32)
+### Part B — New Features v0.2.22–v0.2.43 (Sections 19–33)
 
 | Section | What it tests |
 |---|---|
@@ -177,6 +177,7 @@ The test script was developed during structured testing sessions across sxmc rel
 6. **v0.2.38–v0.2.39** — Added skills execution depth (--script, --env, --print-body), side-by-side comparisons, MCP tool call tests, and final metadata-sync cleanup (250 tests)
 7. **v0.2.40** — Added GraphQL/traffic discovery lifecycle coverage plus codebase and database discovery snapshot checks (published report: 257 tests)
 8. **v0.2.41** — Added `discover db --output`, corrected discovery help text, and aligned script numbering/docs with the current 275-test suite
+9. **v0.2.42–v0.2.43** — Added one-step onboarding (`add`, `setup`), discovery-to-doc bridging, MCP auto-registration, stronger `status`/`doctor` recovery flows, interactive/TUI wrap safety, and explicit onboarding/status contract coverage (293 tests)
 
 ### Key debugging lessons
 

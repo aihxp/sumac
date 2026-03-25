@@ -672,6 +672,7 @@ status_help=$("$SXMC" status --help 2>&1)
 echo "$status_help" | grep -q "health" && pass "status --help has --health" || fail "status missing --health"
 echo "$status_help" | grep -q "exit-code" && pass "status --help has --exit-code" || fail "status missing --exit-code"
 echo "$status_help" | grep -q "compare-hosts" && pass "status --help has --compare-hosts" || fail "status missing --compare-hosts"
+echo "$status_help" | grep -q -- "--host" && pass "status --help shows host alias" || fail "status missing --host alias"
 
 watch_help=$("$SXMC" watch --help 2>&1)
 echo "$watch_help" | grep -q "interval-seconds" && pass "watch has --interval-seconds" || fail "watch missing --interval-seconds"
@@ -976,6 +977,7 @@ section "29. Doctor Enhancements"
 
 doctor_help=$("$SXMC" doctor --help 2>&1)
 echo "$doctor_help" | grep -q "remove" && pass "doctor --help has --remove" || fail "doctor missing --remove"
+echo "$doctor_help" | grep -q -- "--host" && pass "doctor --help shows host alias" || fail "doctor missing --host alias"
 
 # Functional --remove test
 if has_cmd git; then
@@ -1269,6 +1271,13 @@ if has_cmd git; then
     fail "add preview fallback" "${add_preview_out:0:120}"
   fi
 
+  add_json_out=$("$SXMC" add git --client claude-code --root "$ADD_ROOT" --format json-pretty 2>&1 || true)
+  if json_check "$add_json_out" "d.get('command') == 'add' and d.get('hosts', [{}])[0].get('id') == 'claude-code' and d.get('profile', {}).get('command') == 'git'"; then
+    pass "add supports structured output and client alias"
+  else
+    fail "add structured output" "${add_json_out:0:140}"
+  fi
+
   DISCOVERY_SNAPSHOT="$TMPDIR_TEST/codebase-discovery.json"
   "$SXMC" discover codebase "$ROOT" --output "$DISCOVERY_SNAPSHOT" >/dev/null 2>&1 || true
   if [ -f "$DISCOVERY_SNAPSHOT" ] && [ -s "$DISCOVERY_SNAPSHOT" ]; then
@@ -1313,6 +1322,13 @@ if has_cmd git; then
     pass "setup previews when no hosts are configured"
   else
     fail "setup preview" "${setup_preview_out:0:120}"
+  fi
+
+  setup_json_out=$("$SXMC" setup --tool git,ls --client claude-code --root "$SETUP_ROOT" --format json-pretty 2>&1 || true)
+  if json_check "$setup_json_out" "d.get('command') == 'setup' and len(d.get('results', [])) == 2 and d.get('hosts', [{}])[0].get('id') == 'claude-code'"; then
+    pass "setup supports structured output and client alias"
+  else
+    fail "setup structured output" "${setup_json_out:0:140}"
   fi
 
   REGISTER_ROOT="$TMPDIR_TEST/register-root"

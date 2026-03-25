@@ -52,8 +52,12 @@ These are the core product paths we should treat as stable:
 ### 5. CLI -> AI Startup Surfaces
 
 - `sxmc inspect cli <command>` is supported for deterministic help-based inspection
+- `sxmc add <command>` is supported as the one-step inspect/save/onboard workflow
+- `sxmc setup` is supported as the multi-tool onboarding workflow
 - `sxmc init ai --from-cli <command> --client <profile>` is supported for generating startup-facing artifacts
 - `sxmc init ai --from-cli <command> --coverage full` is supported for generating multi-host startup coverage
+- `sxmc doctor` is supported for startup-file health and repair guidance
+- `sxmc status` is supported as the unified machine-readable host/setup state surface
 - `sxmc scaffold agent-doc --from-profile ...` is supported
 - `sxmc scaffold client-config --from-profile ...` is supported
 - `sxmc scaffold skill --from-profile ...` is supported
@@ -75,6 +79,11 @@ These are the core product paths we should treat as stable:
 - preview, sidecar, patch, and apply modes are supported
 - apply mode updates managed markdown blocks or mergeable config files only
 - full-coverage apply updates only the explicitly selected `--host` targets and sidecars the rest
+- `sxmc add`, `sxmc setup`, `sxmc doctor`, and `sxmc status` all support explicit
+  structured output via `--pretty` / `--format ...`
+- `sxmc add --client ...` / `sxmc setup --client ...` and
+  `sxmc doctor --host ...` / `sxmc status --host ...` are stable naming aliases
+  for the primary host-selection flags
 
 ## Should Fail Gracefully
 

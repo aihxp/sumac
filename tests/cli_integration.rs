@@ -1157,6 +1157,38 @@ fn test_status_reports_ai_knowledge_and_recovery_for_stale_host() {
 }
 
 #[test]
+fn test_status_host_alias_matches_only_filter() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    let profile = command_json_with_config_home(
+        temp.path(),
+        &["inspect", "cli", "git", "--format", "json-pretty"],
+    );
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--host",
+            "claude-code",
+            "--pretty",
+        ],
+    );
+    assert_eq!(value["checked_hosts"][0], Value::from("claude-code"));
+    assert!(value["startup_files"]["claude_code"].is_object());
+    assert!(value["startup_files"]["cursor"].is_null());
+}
+
+#[test]
 fn test_status_reports_unconfigured_host_with_profiles_present() {
     let temp = tempfile::tempdir().unwrap();
     let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
@@ -3233,6 +3265,38 @@ fn test_add_without_detected_hosts_previews_full_plan() {
 }
 
 #[test]
+fn test_add_supports_structured_output_and_client_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("CLAUDE.md"),
+        "# Existing Claude guidance\n",
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "add",
+            "git",
+            "--client",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+
+    assert_eq!(value["command"], Value::from("add"));
+    assert_eq!(value["tool"], Value::from("git"));
+    assert_eq!(value["effective_mode"], Value::from("apply"));
+    assert_eq!(value["auto_detected_hosts"], Value::from(false));
+    assert_eq!(value["hosts"][0]["id"], Value::from("claude-code"));
+    assert_eq!(value["profile"]["command"], Value::from("git"));
+    assert!(value["outcome_summary"]["total"].as_u64().unwrap_or(0) > 0);
+}
+
+#[test]
 fn test_setup_applies_multiple_tools_to_detected_hosts() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(
@@ -3264,6 +3328,43 @@ fn test_setup_applies_multiple_tools_to_detected_hosts() {
 }
 
 #[test]
+fn test_setup_supports_structured_output_and_client_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("CLAUDE.md"),
+        "# Existing Claude guidance\n",
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "setup",
+            "--tool",
+            "git,ls",
+            "--client",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+
+    assert_eq!(value["command"], Value::from("setup"));
+    assert_eq!(value["effective_mode"], Value::from("apply"));
+    assert_eq!(value["auto_detected_tools"], Value::from(false));
+    assert_eq!(value["auto_detected_hosts"], Value::from(false));
+    assert_eq!(value["hosts"][0]["id"], Value::from("claude-code"));
+    assert_eq!(value["results"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        value["results"][0]["profile"]["command"],
+        Value::from("git")
+    );
+    assert_eq!(value["results"][1]["profile"]["command"], Value::from("ls"));
+}
+
+#[test]
 fn test_setup_previews_when_no_hosts_are_configured() {
     let temp = tempfile::tempdir().unwrap();
 
@@ -3282,6 +3383,27 @@ fn test_setup_previews_when_no_hosts_are_configured() {
         .stdout(predicate::str::contains("Would create CLI profile:"));
 
     assert!(!temp.path().join(".sxmc/ai/profiles/git.json").exists());
+}
+
+#[test]
+fn test_doctor_host_alias_matches_only_filter() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "doctor",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--host",
+            "claude-code",
+            "--pretty",
+        ],
+    );
+    assert_eq!(value["checked_hosts"][0], Value::from("claude-code"));
+    assert!(value["startup_files"]["claude_code"].is_object());
+    assert!(value["startup_files"]["cursor"].is_null());
 }
 
 #[test]

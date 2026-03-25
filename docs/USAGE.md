@@ -228,10 +228,12 @@ If the surface is unknown, start here first:
 ```bash
 sxmc doctor
 sxmc doctor --human
+sxmc doctor --host claude-code --format json-pretty
 sxmc doctor --check --only claude-code,cursor
 sxmc doctor --check --fix --only claude-code,cursor --from-cli gh
 sxmc doctor --remove --only claude-code --from-cli gh
 sxmc status --human
+sxmc status --host claude-code --format json-pretty
 sxmc status --health --format json-pretty
 sxmc status --health --exit-code
 sxmc status --compare-hosts claude-code,cursor --format json-pretty
@@ -307,6 +309,8 @@ Notes:
   structured JSON when stdout is piped or redirected.
 - `sxmc doctor --human` forces the readable report even when you are capturing
   output off-TTY.
+- `sxmc doctor --host ...` is a naming alias for `--only ...`, so the
+  onboarding and health commands can all scope hosts the same way.
 - `sxmc doctor --check --only claude-code,cursor` turns doctor into a scoped CI
   gate for the specific AI hosts a repo actually uses.
 - `sxmc doctor --check --fix --only claude-code,cursor --from-cli gh` repairs
@@ -335,6 +339,8 @@ Notes:
   degraded integrations are easier to spot without digging through raw entries.
 - `sxmc status --health --exit-code` turns baked health into a CI-friendly gate
   that fails whenever unhealthy integrations are present.
+- `sxmc status --host ...` is a naming alias for `--only ...`, so status
+  filtering matches `add`, `setup`, and `wrap` terminology.
 - `sxmc status --compare-hosts claude-code,cursor` highlights readiness,
   doc-presence, and config-presence differences across selected AI hosts.
 - `sxmc watch` polls the same status surface over time, flushes the first frame
@@ -460,8 +466,10 @@ Generate startup-facing artifacts for a host profile:
 ```bash
 sxmc add gh
 sxmc add gh --preview
+sxmc add gh --client claude-code --format json-pretty
 sxmc add gh --host claude-code,cursor
 sxmc setup --tool git,gh,docker --root .
+sxmc setup --tool git,gh --client claude-code --format json-pretty
 sxmc setup --tool git --host claude-code,cursor --root .
 
 sxmc wrap gh --register-host cursor --register-root .
@@ -481,9 +489,16 @@ sxmc init discovery codebase.json --coverage full --host claude-code,cursor --mo
 - `sxmc add <tool>` is the one-step onboarding path:
   it inspects the CLI, saves the profile, detects already-configured AI hosts in
   the repo, and applies startup artifacts for those hosts.
+- `sxmc add --format json-pretty` and `sxmc add --pretty` now expose an
+  explicit machine-readable result object with the resolved hosts, profile
+  summary, outcomes, and a recommended next command when onboarding is previewed.
 - `sxmc setup` is the multi-tool onboarding path:
   it scans a curated set of common tools when `--tool` is omitted, then runs the
   same inspect/save/init pipeline for each selected tool.
+- `sxmc setup --format json-pretty` and `sxmc setup --pretty` expose the same
+  stable machine-readable contract across all selected tools.
+- `sxmc add --client ...` and `sxmc setup --client ...` are naming aliases for
+  `--host ...` when you want onboarding terminology that matches `init ai`.
 - If no host-native files are present yet, `sxmc add` falls back to a full
   preview so you can see the onboarding plan before choosing hosts explicitly.
 - `sxmc setup` follows the same safety rule: if no configured hosts are found,
