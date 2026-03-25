@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-03-25
+
 ### Added
 
 - `sxmc api|spec|graphql|discover api|discover graphql` now support
