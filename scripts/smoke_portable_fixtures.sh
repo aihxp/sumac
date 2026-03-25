@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/smoke_common.sh"
+
 BIN="${1:-target/debug/sxmc}"
 FIXTURES="${2:-tests/fixtures}"
 PORT_HTTP="${SXMC_PORTABLE_FIXTURE_HTTP_PORT:-38180}"
@@ -25,50 +28,11 @@ cleanup() {
 
 trap cleanup EXIT
 
-pick_python() {
-  if command -v python3 >/dev/null 2>&1; then
-    command -v python3
-    return
-  fi
-  if command -v python >/dev/null 2>&1; then
-    command -v python
-    return
-  fi
-  echo "python3 or python is required for ${0}" >&2
-  exit 1
-}
-
-wait_for_health() {
-  local url="$1"
-  for _ in $(seq 1 40); do
-    if curl --silent --fail "${url}" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 0.25
-  done
-  echo "Timed out waiting for ${url}" >&2
-  return 1
-}
-
 PYTHON_BIN="$(pick_python)"
-
-json_check() {
-  local file="$1"
-  local expr="$2"
-  JSON_PATH="$file" JSON_EXPR="$expr" "$PYTHON_BIN" - <<'PY'
-import json
-import os
-from pathlib import Path
-
-value = json.loads(Path(os.environ["JSON_PATH"]).read_text())
-ok = bool(eval(os.environ["JSON_EXPR"], {"__builtins__": {}}, {"d": value}))
-raise SystemExit(0 if ok else 1)
-PY
-}
 
 echo "Portable fixture smoke: skill discovery"
 "${BIN}" skills list --paths "${FIXTURES}" --json >"${TMPDIR}/skills.json"
-json_check "${TMPDIR}/skills.json" "d[0] is not None and d[1] is not None and d[2] is not None and d[3] is not None and [item['name'] for item in d].count('simple-skill') >= 1"
+json_check "${TMPDIR}/skills.json" "d[0] is not None and d[1] is not None and d[2] is not None and d[3] is not None and [item['name'] for item in d].count('simple-skill') >= 1" "$PYTHON_BIN"
 
 SPEC="$("$PYTHON_BIN" - <<PY
 import json

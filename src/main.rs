@@ -45,6 +45,7 @@ use sxmc::client::{api, codebase, database, graphql, mcp_http, mcp_stdio, openap
 use sxmc::discovery_snapshots;
 use sxmc::error::Result;
 use sxmc::output;
+use sxmc::projection::{apply_offset_limit, retain_object_fields};
 use sxmc::security;
 use sxmc::server::{self, HttpServeLimits};
 use sxmc::skills::{discovery, generator, parser};
@@ -6249,19 +6250,10 @@ fn project_discovery_value(
         if let Some(fields) = fields {
             projected = projected
                 .into_iter()
-                .map(|item| retain_discovery_fields(item, fields))
+                .map(|item| retain_object_fields(item, fields))
                 .collect();
         }
-        if let Some(offset) = offset {
-            if offset >= projected.len() {
-                projected.clear();
-            } else if offset > 0 {
-                projected.drain(0..offset);
-            }
-        }
-        if let Some(limit) = limit {
-            projected.truncate(limit);
-        }
+        apply_offset_limit(&mut projected, offset, limit);
         object.insert((*array_key).to_string(), Value::Array(projected.clone()));
         if total != projected.len() {
             object.insert(format!("total_{}", count_key), json!(total));
@@ -6278,20 +6270,6 @@ fn project_discovery_value(
 
     value
 }
-
-fn retain_discovery_fields(value: Value, fields: &[String]) -> Value {
-    let Some(object) = value.as_object() else {
-        return value;
-    };
-    let mut filtered = serde_json::Map::new();
-    for field in fields {
-        if let Some(item) = object.get(field) {
-            filtered.insert(field.clone(), item.clone());
-        }
-    }
-    Value::Object(filtered)
-}
-
 struct SetupResultContext<'a> {
     root: &'a Path,
     tools: &'a [String],

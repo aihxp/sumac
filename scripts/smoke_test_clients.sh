@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/smoke_common.sh"
+
 BIN="${1:-target/debug/sxmc}"
 FIXTURES="${2:-tests/fixtures}"
 PORT_HTTP="${SXMC_SMOKE_HTTP_PORT:-38080}"
@@ -23,31 +26,6 @@ cleanup() {
 }
 
 trap cleanup EXIT
-
-wait_for_health() {
-  local url="$1"
-  for _ in $(seq 1 40); do
-    if curl --silent --fail "${url}" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 0.25
-  done
-  echo "Timed out waiting for ${url}" >&2
-  return 1
-}
-
-tool_name_from_manifest() {
-  local manifest_path="$1"
-  MANIFEST_PATH="$manifest_path" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-manifest = json.loads(Path(os.environ["MANIFEST_PATH"]).read_text())
-name = manifest["generated_tools"][0]["name"]
-print(f"discovery__{name}")
-PY
-}
 
 echo "Smoke check: discovery-tool manifests"
 printf '%s\n' "curl https://api.example.test/v1/widgets" >"${TMPDIR}/curl-history.txt"

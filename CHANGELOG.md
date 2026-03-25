@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-03-25
+
+### Added
+
+- shared projection helpers in `src/projection.rs` now centralize offset/limit
+  trimming and field projection for API, discovery, and skills list surfaces
+- shared smoke-test helpers in `scripts/smoke_common.sh` now centralize Python
+  detection, health waits, JSON assertions, and discovery-tool manifest lookup
+
+### Changed
+
+- duplicated projection code was removed from `src/client/api.rs`,
+  `src/client/openapi.rs`, `src/client/graphql.rs`,
+  `src/command_handlers.rs`, and `src/main.rs` without changing the stable
+  output shapes
+- duplicated shell smoke plumbing was removed from
+  `scripts/smoke_portable_core.sh`,
+  `scripts/smoke_portable_fixtures.sh`, and
+  `scripts/smoke_test_clients.sh`
+
 ## [1.0.6] - 2026-03-25
 
 ### Added

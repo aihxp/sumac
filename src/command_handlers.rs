@@ -5,6 +5,7 @@ use std::process::Stdio;
 use sxmc::client::api;
 use sxmc::error::{Result, SxmcError};
 use sxmc::output;
+use sxmc::projection::{apply_offset_limit, retain_object_fields};
 
 pub struct ApiCommandOptions<'a> {
     pub list: bool,
@@ -46,13 +47,7 @@ pub fn cmd_skills_list(paths: &[PathBuf], options: SkillListOptions<'_>) -> Resu
     }
 
     skills.sort_by(|a, b| a.name.cmp(&b.name));
-    let offset = options.offset.unwrap_or(0);
-    if offset > 0 {
-        skills = skills.into_iter().skip(offset).collect();
-    }
-    if let Some(limit) = options.limit {
-        skills.truncate(limit);
-    }
+    apply_offset_limit(&mut skills, options.offset, options.limit);
 
     if options.counts_only {
         let value = serde_json::json!({
@@ -98,7 +93,7 @@ pub fn cmd_skills_list(paths: &[PathBuf], options: SkillListOptions<'_>) -> Resu
                     }
                 }
                 if let Some(fields) = options.fields {
-                    value = retain_json_fields(value, fields);
+                    value = retain_object_fields(value, fields);
                 }
                 value
             })
@@ -127,19 +122,6 @@ pub fn cmd_skills_list(paths: &[PathBuf], options: SkillListOptions<'_>) -> Resu
         }
     }
     Ok(())
-}
-
-fn retain_json_fields(value: serde_json::Value, fields: &[String]) -> serde_json::Value {
-    let Some(object) = value.as_object() else {
-        return value;
-    };
-    let mut filtered = serde_json::Map::new();
-    for field in fields {
-        if let Some(item) = object.get(field) {
-            filtered.insert(field.clone(), item.clone());
-        }
-    }
-    serde_json::Value::Object(filtered)
 }
 
 pub fn cmd_skills_info(paths: &[PathBuf], name: &str, summary_only: bool) -> Result<()> {

@@ -117,6 +117,8 @@ pub mod executor;
 pub mod output;
 /// Path resolution helpers for config/cache storage.
 pub mod paths;
+/// Shared projection helpers for list-style structured output.
+pub mod projection;
 /// Security scanners and finding/report models.
 pub mod security;
 /// MCP server construction and transport serving.

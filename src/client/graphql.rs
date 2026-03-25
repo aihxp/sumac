@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use crate::client::api::ListSelectors;
 use crate::client::commands::{CommandDef, ParamDef, ParamType};
 use crate::error::{Result, SxmcError};
+use crate::projection::apply_offset_limit;
 
 /// A GraphQL operation (query or mutation) extracted via introspection.
 #[derive(Debug, Clone)]
@@ -743,17 +744,7 @@ pub fn format_graphql_list(
         ops.iter().collect()
     };
 
-    if let Some(offset) = selectors.offset {
-        if offset >= filtered.len() {
-            filtered.clear();
-        } else if offset > 0 {
-            filtered.drain(0..offset);
-        }
-    }
-
-    if let Some(limit) = selectors.limit {
-        filtered.truncate(limit);
-    }
+    apply_offset_limit(&mut filtered, selectors.offset, selectors.limit);
 
     if filtered.is_empty() {
         if search.is_some() {
