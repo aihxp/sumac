@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-03-25
+
 ### Added
 
 - `sxmc watch --notify-template standard|compact|slack` now lets maintenance
