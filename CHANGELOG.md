@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-25
+
+### Added
+
+- the first stable `1.x` release line for Sumac (`sxmc`), with the supported
+  onboarding and maintenance lifecycle explicitly documented around
+  `setup -> add -> status -> sync`
+
+### Changed
+
+- the `1.x` support promise is now explicit instead of implied:
+  - [README](README.md)
+  - [docs/PRODUCT_CONTRACT.md](docs/PRODUCT_CONTRACT.md)
+  - [docs/STABILITY.md](docs/STABILITY.md)
+  - [docs/USAGE.md](docs/USAGE.md)
+  - [docs/VALIDATION.md](docs/VALIDATION.md)
+  - [docs/OPERATIONS.md](docs/OPERATIONS.md)
+- the release documentation now points at a `v1.0.0` validation artifact instead
+  of leaving the latest stable release disconnected from its published test
+  report
+
 ## [0.2.45] - 2026-03-25
 
 ### Changed

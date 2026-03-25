@@ -180,7 +180,7 @@ The current validation docs capture the real-world comparison set, token/turn es
 
 The product name is **Sumac**. The command stays **`sxmc`**.
 
-The maintained support boundary for the upcoming `1.0.0` line is:
+The maintained support boundary for the `1.x` line is:
 
 - stable onboarding and maintenance commands:
   - `sxmc setup`

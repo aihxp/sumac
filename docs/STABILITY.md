@@ -1,7 +1,6 @@
 # Stability Guide
 
-This document defines what the upcoming `1.0.0` line should mean for Sumac
-(`sxmc`) users.
+This document defines what the `1.x` line means for Sumac (`sxmc`) users.
 
 Read it together with:
 
