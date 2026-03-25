@@ -1,7 +1,8 @@
 # Roadmap
 
 This document captures the post-`1.0.0` product priorities for Sumac (`sxmc`).
-It intentionally avoids re-listing completed pre-`1.0.0` work.
+The originally scoped post-`1.0.0` hardening wave is now complete; this page is
+kept as a record of what was finished and as a guardrail for future work.
 
 ## Principles
 
@@ -34,6 +35,8 @@ Candidate work:
   - webhook delivery for watch events
   - richer notification payload templates and destination presets
 
+Status: complete for the originally scoped `1.x` maintenance wave.
+
 ## Priority 2: Discovery -> Delivery
 
 Goal: make discovered interfaces immediately useful to AI hosts and MCP clients.
@@ -54,6 +57,8 @@ Candidate work:
   - discovery-tool scaffolds for GraphQL/database/traffic snapshots
   - executable higher-level wrappers served directly from those snapshot manifests
 
+Status: complete for the originally scoped `1.x` discovery-delivery wave.
+
 ## Priority 3: Ecosystem Hardening
 
 Goal: improve interoperability without compromising the stable core.
@@ -71,6 +76,8 @@ Candidate work:
   - strong trust and registry workflows for local/team distribution
   - broader compatibility smoke coverage for discovery-delivery workflows
   - expanded compatibility fixtures and smoke coverage
+
+Status: complete for the originally scoped `1.x` ecosystem-hardening wave.
 
 ## Priority 4: Operational Hardening
 
@@ -92,6 +99,8 @@ Candidate work:
   - portable Linux/macOS/Windows fixture coverage for local MCP serving, baked
     MCP, hosted HTTP, and bearer-protected HTTP flows
 
+Status: complete for the originally scoped `1.x` operational-hardening wave.
+
 ## What Is Not On This Roadmap
 
 These remain intentionally out of the near-term `1.x` plan unless the product
@@ -109,3 +118,7 @@ direction changes:
 - “Interfaces we discover can be delivered directly to the AI environments that need them.”
 - “The stable onboarding and maintenance workflow remains predictable across `1.x`.”
 - “We can tell what our AI environment knows, what is stale, and how to fix it.”
+
+As of the current `1.0.x` line, the scoped items above are implemented. Future
+roadmap updates should add new work explicitly instead of silently extending
+this completed wave.

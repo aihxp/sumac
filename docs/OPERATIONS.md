@@ -71,6 +71,8 @@ Cross-platform release confidence:
 - every OS now runs:
   - `scripts/smoke_portable_core.sh`
   - `scripts/smoke_portable_fixtures.sh`
+- release certification also generates a fixture inventory via
+  `scripts/fixture_inventory.py`
 - Unix CI lanes also run `scripts/test-sxmc.sh` against the built debug binary
 - Windows CI still validates `doctor`, compact inspection, and cache stats
   through PowerShell JSON checks in addition to `cargo test`

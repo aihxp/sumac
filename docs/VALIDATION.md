@@ -44,6 +44,7 @@ The maintained product coverage now centers on three layers:
 - portable cross-platform smoke via `scripts/smoke_portable_core.sh`
 - portable fixture-based MCP smoke via `scripts/smoke_portable_fixtures.sh`
 - optional real-world MCP smoke via `scripts/smoke_real_world_mcps.sh`
+- generated fixture inventory via `scripts/fixture_inventory.py`
 
 High-value scenarios covered in this stack include:
 
@@ -64,6 +65,7 @@ High-value scenarios covered in this stack include:
 - portable discovery-to-delivery smoke for codebase and traffic snapshots
 - portable fixture MCP coverage for stdio, baked MCP, hosted HTTP, and
   bearer-protected HTTP flows
+- an inspectable inventory of the shipped local fixtures and their roles
 
 ## CI Matrix
 
@@ -102,6 +104,9 @@ The practical support boundary is defined in
 
 The intended `1.x` stability rules are summarized in
 [`STABILITY.md`](STABILITY.md).
+
+For a compact cross-platform view of what is covered where, see
+[`COMPATIBILITY_MATRIX.md`](COMPATIBILITY_MATRIX.md).
 
 ## Benchmarks
 

@@ -25,6 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `scripts/smoke_portable_fixtures.sh` now provides a portable local MCP smoke
   path for repo fixtures across stdio, baked MCP, hosted HTTP, and
   bearer-protected HTTP flows
+- `scripts/fixture_inventory.py` now emits an inspectable inventory of the
+  shipped local validation fixtures, and the repo now includes
+  `tests/fixtures/README.md` plus `docs/COMPATIBILITY_MATRIX.md`
 
 ### Changed
 
@@ -35,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   to the existing startup and release-sized validation checks
 - release certification now includes both portable smoke scripts before the
   comprehensive shell suite
+- the post-`1.0.0` roadmap and validation docs now explicitly mark the scoped
+  `1.x` hardening wave complete instead of leaving that as an implied state
 
 ## [1.0.3] - 2026-03-25
 

@@ -11,6 +11,7 @@ Additional documentation for Sumac (`sxmc`) developers and maintainers.
 | [DEMO.md](DEMO.md) | Short scripted demo path for terminal recordings or GIF capture |
 | [OPERATIONS.md](OPERATIONS.md) | Hosted deployment, release process, and distribution notes |
 | [VALIDATION.md](VALIDATION.md) | Test, smoke, compatibility, and benchmark summary |
+| [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md) | Cross-platform validation lanes and local-vs-external compatibility coverage |
 | [VALIDATION_HISTORY.md](VALIDATION_HISTORY.md) | Compact history of major validation milestones before and through `1.0.0` |
 | [CLI_TO_AI_COMPATIBILITY.md](CLI_TO_AI_COMPATIBILITY.md) | Host-by-host `CLI -> AI` coverage matrix for startup docs, native config, and apply behavior |
 | [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) | Explicit support boundary: what Sumac guarantees, degrades gracefully, or leaves out of scope |

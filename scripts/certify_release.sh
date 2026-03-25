@@ -16,6 +16,7 @@ cargo build
 
 bash scripts/startup_smoke.sh "$BIN"
 python3 scripts/benchmark_startup.py "$STARTUP_OUT"
+python3 scripts/fixture_inventory.py "$FIXTURES" --output /tmp/sxmc-fixture-inventory.md
 bash scripts/smoke_portable_core.sh "$BIN" "$ROOT"
 bash scripts/smoke_portable_fixtures.sh "$BIN" "$FIXTURES"
 bash scripts/smoke_test_clients.sh "$BIN" "$FIXTURES"
