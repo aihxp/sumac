@@ -14,6 +14,12 @@ pub enum DiffOutputFormat {
     Markdown,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum DbDiscoveryType {
+    Sqlite,
+    Postgres,
+}
+
 impl DiffOutputFormat {
     pub fn as_structured(self) -> Option<output::StructuredOutputFormat> {
         match self {
@@ -1315,9 +1321,17 @@ pub enum DiscoverAction {
         #[arg(long)]
         list: bool,
 
+        /// Force the database type instead of auto-detecting from the source
+        #[arg(long = "database-type", value_enum)]
+        database_type: Option<DbDiscoveryType>,
+
         /// Search/filter by table name or SQL definition
         #[arg(long)]
         search: Option<String>,
+
+        /// Return a compact summary without full column/index/relation arrays
+        #[arg(long)]
+        compact: bool,
 
         /// Pretty-print JSON output
         #[arg(long)]

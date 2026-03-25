@@ -739,7 +739,10 @@ fn test_doctor_reports_recommended_first_moves_as_json_off_tty() {
     let temp = tempfile::tempdir().unwrap();
     fs::write(temp.path().join("AGENTS.md"), "# Existing\n").unwrap();
 
-    let value = command_json_with_config_home(temp.path(), &["doctor", "--root", temp.path().to_str().unwrap()]);
+    let value = command_json_with_config_home(
+        temp.path(),
+        &["doctor", "--root", temp.path().to_str().unwrap()],
+    );
     assert_eq!(value["root"], temp.path().to_string_lossy().as_ref());
     assert_eq!(
         value["startup_files"]["portable_agent_doc"]["present"],
@@ -795,13 +798,16 @@ fn test_status_reports_saved_profile_drift() {
     )
     .unwrap();
 
-    let value = command_json_with_config_home(temp.path(), &[
-        "status",
-        "--root",
-        temp.path().to_str().unwrap(),
-        "--format",
-        "json-pretty",
-    ]);
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
     assert_eq!(value["saved_profiles"]["drift"]["count"], Value::from(1));
     assert_eq!(
         value["saved_profiles"]["drift"]["changed_count"],
@@ -814,14 +820,17 @@ fn test_status_reports_saved_profile_inventory_freshness() {
     let temp = tempfile::tempdir().unwrap();
     let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
     fs::create_dir_all(&profiles_dir).unwrap();
-    let mut profile = command_json_with_config_home(temp.path(), &[
-        "inspect",
-        "cli",
-        &sxmc_bin_string(),
-        "--allow-self",
-        "--format",
-        "json-pretty",
-    ]);
+    let mut profile = command_json_with_config_home(
+        temp.path(),
+        &[
+            "inspect",
+            "cli",
+            &sxmc_bin_string(),
+            "--allow-self",
+            "--format",
+            "json-pretty",
+        ],
+    );
     profile["provenance"]["generated_at"] = Value::from("2025-01-01T00:00:00Z");
     fs::write(
         profiles_dir.join("sxmc.json"),
@@ -829,13 +838,16 @@ fn test_status_reports_saved_profile_inventory_freshness() {
     )
     .unwrap();
 
-    let value = command_json_with_config_home(temp.path(), &[
-        "status",
-        "--root",
-        temp.path().to_str().unwrap(),
-        "--format",
-        "json-pretty",
-    ]);
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
     assert_eq!(
         value["saved_profiles"]["inventory"]["count"],
         Value::from(1)
@@ -969,14 +981,17 @@ fn test_status_can_compare_hosts() {
     )
     .unwrap();
 
-    let value = command_json_with_config_home(temp.path(), &[
-        "status",
-        "--root",
-        temp.path().to_str().unwrap(),
-        "--compare-hosts",
-        "claude-code,cursor",
-        "--pretty",
-    ]);
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--compare-hosts",
+            "claude-code,cursor",
+            "--pretty",
+        ],
+    );
     assert_eq!(
         value["host_capability_diff"]["difference_count"],
         Value::from(2)
@@ -2209,13 +2224,16 @@ fn test_doctor_check_only_hosts_limits_scope() {
         .assert()
         .success();
 
-    let value = command_json_with_config_home(temp.path(), &[
-        "doctor",
-        "--root",
-        temp.path().to_str().unwrap(),
-        "--only",
-        "claude-code,cursor",
-    ]);
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "doctor",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--only",
+            "claude-code,cursor",
+        ],
+    );
     assert_eq!(
         value["checked_hosts"],
         Value::from(vec!["claude-code", "cursor"])
@@ -3237,9 +3255,7 @@ fn test_inspect_cli_node_avoids_option_shaped_subcommands() {
     let summary = profile["summary"].as_str().unwrap_or_default();
     assert!(!summary.contains("interactive mode"));
     assert!(
-        summary.contains("JavaScript")
-            || summary.contains("runtime")
-            || summary.contains("node"),
+        summary.contains("JavaScript") || summary.contains("runtime") || summary.contains("node"),
         "unexpected node summary: {summary}"
     );
 }
@@ -5199,6 +5215,7 @@ fn test_discover_db_sqlite_lists_tables_and_columns() {
     let temp = tempfile::tempdir().unwrap();
     let db_path = temp.path().join("demo.sqlite");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
     conn.execute(
         "CREATE TABLE users (
             id INTEGER PRIMARY KEY,
@@ -5212,11 +5229,14 @@ fn test_discover_db_sqlite_lists_tables_and_columns() {
         "CREATE TABLE posts (
             id INTEGER PRIMARY KEY,
             user_id INTEGER NOT NULL,
-            title TEXT NOT NULL
+            title TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )",
         [],
     )
     .unwrap();
+    conn.execute("CREATE INDEX idx_posts_user_id ON posts(user_id)", [])
+        .unwrap();
     drop(conn);
 
     let value = command_json(&[
@@ -5233,6 +5253,13 @@ fn test_discover_db_sqlite_lists_tables_and_columns() {
         .unwrap()
         .iter()
         .any(|entry| entry["name"] == "users" && entry["column_count"] == 3));
+    assert!(value["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["name"] == "posts"
+            && entry["foreign_key_count"] == 1
+            && entry["index_count"].as_u64().unwrap_or(0) >= 1));
 
     let users = command_json(&[
         "discover",
@@ -5249,6 +5276,18 @@ fn test_discover_db_sqlite_lists_tables_and_columns() {
         .unwrap()
         .iter()
         .any(|column| column["name"] == "email" && column["not_null"] == Value::Bool(true)));
+
+    let compact = command_json(&[
+        "discover",
+        "db",
+        db_path.to_str().unwrap(),
+        "--compact",
+        "--format",
+        "json",
+    ]);
+    assert!(compact["entries"][0].get("columns").is_none());
+    assert!(compact["entries"][0].get("foreign_keys").is_none());
+    assert!(compact["entries"][0].get("indexes").is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

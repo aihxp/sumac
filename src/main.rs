@@ -114,10 +114,15 @@ fn print_db_discovery_report(value: &Value) {
     if let Some(entries) = value["entries"].as_array() {
         for entry in entries {
             println!(
-                "- {} ({}, {} columns)",
-                entry["name"].as_str().unwrap_or("<unknown>"),
+                "- {} ({}, {} columns, {} foreign keys, {} indexes)",
+                entry["qualified_name"]
+                    .as_str()
+                    .or_else(|| entry["name"].as_str())
+                    .unwrap_or("<unknown>"),
                 entry["object_type"].as_str().unwrap_or("object"),
-                entry["column_count"].as_u64().unwrap_or(0)
+                entry["column_count"].as_u64().unwrap_or(0),
+                entry["foreign_key_count"].as_u64().unwrap_or(0),
+                entry["index_count"].as_u64().unwrap_or(0)
             );
             if let Some(columns) = entry["columns"].as_array() {
                 for column in columns {
@@ -135,6 +140,38 @@ fn print_db_discovery_report(value: &Value) {
                         } else {
                             ""
                         }
+                    );
+                }
+            }
+            if let Some(foreign_keys) = entry["foreign_keys"].as_array() {
+                for foreign_key in foreign_keys {
+                    let references_schema = foreign_key["references_schema"]
+                        .as_str()
+                        .unwrap_or_default();
+                    let references_table = foreign_key["references_table"]
+                        .as_str()
+                        .unwrap_or("<unknown>");
+                    let references_column = foreign_key["references_column"]
+                        .as_str()
+                        .unwrap_or("<unknown>");
+                    let qualified_target = if references_schema.is_empty() {
+                        references_table.to_string()
+                    } else {
+                        format!("{references_schema}.{references_table}")
+                    };
+                    println!(
+                        "  - foreign key {} -> {}.{}",
+                        foreign_key["column"].as_str().unwrap_or("<unknown>"),
+                        qualified_target,
+                        references_column
+                    );
+                }
+            }
+            if let Some(indexes) = entry["indexes"].as_array() {
+                for index in indexes {
+                    println!(
+                        "  - index {}",
+                        index["name"].as_str().unwrap_or("<unknown>")
                     );
                 }
             }
@@ -5300,11 +5337,23 @@ async fn main() -> Result<()> {
                 source,
                 table,
                 list: _,
+                database_type,
                 search,
+                compact,
                 pretty,
                 format,
             } => {
-                let value = database::inspect_sqlite(&source, table.as_deref(), search.as_deref())?;
+                let database_type = database_type.map(|value| match value {
+                    cli_args::DbDiscoveryType::Sqlite => "sqlite",
+                    cli_args::DbDiscoveryType::Postgres => "postgres",
+                });
+                let value = database::inspect_database(
+                    &source,
+                    database_type,
+                    table.as_deref(),
+                    search.as_deref(),
+                    compact,
+                )?;
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
