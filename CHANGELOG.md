@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-03-25
+
 ### Changed
 
 - `sxmc api --format json|json-pretty|ndjson` now suppresses the non-essential
