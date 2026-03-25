@@ -52,8 +52,7 @@ Candidate work:
     through `sxmc serve`
   - discover-driven scaffolds for common team workflows
   - discovery-tool scaffolds for GraphQL/database/traffic snapshots
-- next:
-  - executable higher-level wrappers built directly from those snapshot manifests
+  - executable higher-level wrappers served directly from those snapshot manifests
 
 ## Priority 3: Ecosystem Hardening
 
@@ -70,6 +69,7 @@ Candidate work:
 - completed foundation:
   - safer execution defaults and clearer interactive-surface policy
   - strong trust and registry workflows for local/team distribution
+  - broader compatibility smoke coverage for discovery-delivery workflows
 - next:
   - expanded compatibility fixtures and smoke coverage
 

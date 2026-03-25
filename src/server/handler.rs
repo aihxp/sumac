@@ -6,7 +6,7 @@ use rmcp::model::*;
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 
-use crate::discovery_snapshots::DiscoveryResource;
+use crate::discovery_snapshots::{DiscoveryGeneratedTool, DiscoveryResource};
 use crate::executor;
 use crate::skills::models::Skill;
 use crate::skills::parser::parse_argument_hint;
@@ -20,8 +20,10 @@ pub struct SkillsServer {
     skills: Vec<Skill>,
     skill_index: HashMap<String, usize>,
     tool_index: HashMap<String, (usize, usize)>,
+    discovery_tool_index: HashMap<String, usize>,
     resource_index: HashMap<String, ResourceLookup>,
     discovery_resources: Vec<DiscoveryResource>,
+    discovery_tools: Vec<DiscoveryGeneratedTool>,
 }
 
 #[derive(Clone)]
@@ -33,15 +35,17 @@ enum ResourceLookup {
 
 impl SkillsServer {
     pub fn new(skills: Vec<Skill>) -> Self {
-        Self::new_with_resources(skills, Vec::new())
+        Self::new_with_resources(skills, Vec::new(), Vec::new())
     }
 
     pub fn new_with_resources(
         skills: Vec<Skill>,
         discovery_resources: Vec<DiscoveryResource>,
+        discovery_tools: Vec<DiscoveryGeneratedTool>,
     ) -> Self {
         let mut skill_index = HashMap::new();
         let mut tool_index = HashMap::new();
+        let mut discovery_tool_index = HashMap::new();
         let mut resource_index = HashMap::new();
 
         for (si, skill) in skills.iter().enumerate() {
@@ -58,6 +62,10 @@ impl SkillsServer {
                     ResourceLookup::SkillReference(si, ri),
                 );
             }
+        }
+
+        for (index, tool) in discovery_tools.iter().enumerate() {
+            discovery_tool_index.insert(tool.name.clone(), index);
         }
 
         if !discovery_resources.is_empty() {
@@ -77,8 +85,10 @@ impl SkillsServer {
             skills,
             skill_index,
             tool_index,
+            discovery_tool_index,
             resource_index,
             discovery_resources,
+            discovery_tools,
         }
     }
 
@@ -88,6 +98,10 @@ impl SkillsServer {
 
     pub fn discovery_resources(&self) -> &[DiscoveryResource] {
         &self.discovery_resources
+    }
+
+    pub fn discovery_tools(&self) -> &[DiscoveryGeneratedTool] {
+        &self.discovery_tools
     }
 
     fn make_tool_name(skill_name: &str, script_name: &str) -> String {
@@ -321,6 +335,15 @@ impl ServerHandler for SkillsServer {
             }
         }
 
+        let discovery_schema = Self::build_available_skills_schema();
+        for tool in &self.discovery_tools {
+            tools.push(Tool::new(
+                tool.name.clone(),
+                tool.description.clone(),
+                discovery_schema.clone(),
+            ));
+        }
+
         Ok(ListToolsResult {
             tools,
             next_cursor: None,
@@ -342,6 +365,10 @@ impl ServerHandler for SkillsServer {
                 return self.get_skill_related_file(request.arguments.as_ref())
             }
             _ => {}
+        }
+
+        if let Some(index) = self.discovery_tool_index.get(tool_name) {
+            return json_success(self.discovery_tools[*index].content.clone());
         }
 
         let (si, sci) = self.tool_index.get(tool_name).ok_or_else(|| {

@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `sxmc scaffold discovery-tools --from-snapshot <file-or-dir>` now generates
   higher-level JSON tool manifests from saved GraphQL, database, and traffic
   discovery snapshots
+- `sxmc serve --discovery-tool-manifest <file-or-dir>` now exposes those
+  generated discovery-tool manifests as callable MCP tools
 
 ## [1.0.3] - 2026-03-25
 

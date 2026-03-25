@@ -70,7 +70,8 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let paths = vec![PathBuf::from("./skills")];
 //!     let discovery_snapshots = Vec::<PathBuf>::new();
-//!     sxmc::server::serve_stdio(&paths, &discovery_snapshots, false).await?;
+//!     let discovery_tool_manifests = Vec::<PathBuf>::new();
+//!     sxmc::server::serve_stdio(&paths, &discovery_snapshots, &discovery_tool_manifests, false).await?;
 //!     Ok(())
 //! }
 //! ```

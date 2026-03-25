@@ -7603,6 +7603,7 @@ async fn main() -> Result<()> {
         Commands::Serve {
             paths,
             discovery_snapshots,
+            discovery_tool_manifests,
             watch,
             transport,
             port,
@@ -7643,6 +7644,15 @@ async fn main() -> Result<()> {
                     args.push("--discovery-snapshot".into());
                     args.push(snapshot_arg);
                 }
+                if !discovery_tool_manifests.is_empty() {
+                    let manifest_arg = discovery_tool_manifests
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    args.push("--discovery-tool-manifest".into());
+                    args.push(manifest_arg);
+                }
                 if watch {
                     args.push("--watch".into());
                 }
@@ -7672,12 +7682,19 @@ async fn main() -> Result<()> {
                             "[sxmc] Warning: remote auth flags are ignored for stdio transport"
                         );
                     }
-                    server::serve_stdio(&search_paths, &discovery_snapshots, watch).await?
+                    server::serve_stdio(
+                        &search_paths,
+                        &discovery_snapshots,
+                        &discovery_tool_manifests,
+                        watch,
+                    )
+                    .await?
                 }
                 "http" | "sse" => {
                     server::serve_http(
                         &search_paths,
                         &discovery_snapshots,
+                        &discovery_tool_manifests,
                         &host,
                         port,
                         &required_headers,

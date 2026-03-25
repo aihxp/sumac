@@ -5383,6 +5383,72 @@ fn test_scaffold_discovery_tools_apply_writes_json_bundle() {
 }
 
 #[test]
+fn test_serve_discovery_tool_manifest_exposes_mcp_tools() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest_dir = temp.path().join("manifests");
+    fs::create_dir_all(&manifest_dir).unwrap();
+
+    let manifest = json!({
+        "scaffold_schema": "sxmc_scaffold_discovery_tools_v1",
+        "source_type": "graphql",
+        "source_snapshot": "snapshots/graphql.json",
+        "title": "GRAPHQL snapshot: graphql",
+        "tool_count": 1,
+        "generated_tools": [
+            {
+                "name": "graphql-query-viewer",
+                "kind": "graphql-operation",
+                "operation_name": "viewer",
+                "operation_kind": "query",
+                "description": "Fetch the viewer",
+                "arg_count": 0,
+                "returns_composite": true,
+                "source_url": "https://example.test/graphql"
+            }
+        ]
+    });
+    fs::write(
+        manifest_dir.join("graphql.json"),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let spec = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "serve".to_string(),
+        "--discovery-tool-manifest".to_string(),
+        manifest_dir.to_string_lossy().into_owned(),
+    ])
+    .unwrap();
+
+    let listed = command_stdout(&["stdio", &spec, "--list-tools"]);
+    assert!(listed.contains("discovery__graphql-query-viewer"));
+
+    let described = command_stdout(&[
+        "stdio",
+        &spec,
+        "--describe-tool",
+        "discovery__graphql-query-viewer",
+    ]);
+    assert!(described.contains("Fetch the viewer"));
+
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "stdio",
+            &spec,
+            "discovery__graphql-query-viewer",
+            "--pretty",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["operation_name"], "viewer");
+    assert_eq!(value["source_type"], "graphql");
+    assert_eq!(value["manifest_title"], "GRAPHQL snapshot: graphql");
+}
+
+#[test]
 fn test_init_ai_remove_cleans_up_applied_files() {
     let temp = tempfile::tempdir().unwrap();
 

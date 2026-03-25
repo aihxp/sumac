@@ -568,6 +568,9 @@ sxmc init discovery codebase.json --coverage full --host claude-code,cursor --mo
 - `sxmc serve --discovery-snapshot <file-or-dir>` mounts saved discovery
   snapshots as MCP resources, so codebase/database/GraphQL/traffic discovery
   can be browsed from MCP clients instead of staying only in JSON files.
+- `sxmc serve --discovery-tool-manifest <file-or-dir>` mounts generated
+  discovery-tool manifests as callable MCP tools, so saved GraphQL/database/
+  traffic discovery can be served back to agents as higher-level helper tools.
 - mounted discovery snapshots always expose an index resource at
   `sxmc-discovery://snapshots`, with one MCP resource per snapshot beneath it.
 - `sxmc init discovery <snapshot>` bridges saved `discover codebase`, `discover db`,
@@ -583,6 +586,10 @@ sxmc init discovery codebase.json --coverage full --host claude-code,cursor --mo
 - `sxmc scaffold discovery-tools --from-snapshot <file-or-dir>` turns saved
   GraphQL, database, and traffic discovery snapshots into JSON tool manifests
   that teams can review, adapt, or feed into follow-on wrapper generation.
+- those generated discovery-tool manifests can now be served directly with
+  `sxmc serve --discovery-tool-manifest ...`, which exposes each manifest entry
+  as a read-only MCP tool returning structured metadata from the saved
+  discovery artifact.
 - `sxmc sync` is the maintained-state companion to `add` and `setup`: once a
   repo already has saved profiles and host files, `sync` keeps those derived
   artifacts honest as the underlying CLI binaries change.

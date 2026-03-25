@@ -62,6 +62,10 @@ pub enum Commands {
         #[arg(long = "discovery-snapshot", value_delimiter = ',')]
         discovery_snapshots: Vec<PathBuf>,
 
+        /// Discovery tool manifest file or directory to expose as MCP tools
+        #[arg(long = "discovery-tool-manifest", value_delimiter = ',')]
+        discovery_tool_manifests: Vec<PathBuf>,
+
         /// Watch skill files and reload the in-memory server on change
         #[arg(long)]
         watch: bool,

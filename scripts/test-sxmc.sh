@@ -1044,6 +1044,8 @@ scaffold_help=$("$SXMC" scaffold --help 2>&1)
 echo "$scaffold_help" | grep -q "ci" && pass "scaffold --help lists ci" || fail "scaffold missing ci"
 echo "$scaffold_help" | grep -q "discovery-pack" && pass "scaffold --help lists discovery-pack" || fail "scaffold missing discovery-pack"
 echo "$scaffold_help" | grep -q "discovery-tools" && pass "scaffold --help lists discovery-tools" || fail "scaffold missing discovery-tools"
+serve_help=$("$SXMC" serve --help 2>&1)
+echo "$serve_help" | grep -q "discovery-tool-manifest" && pass "serve --help lists discovery-tool-manifest" || fail "serve missing discovery-tool-manifest"
 
 if has_cmd git && [ -f "$TMPDIR_TEST/git-profile.json" ]; then
   ci_out=$("$SXMC" scaffold ci --from-profile "$TMPDIR_TEST/git-profile.json" --mode preview 2>&1)
@@ -1072,6 +1074,17 @@ if "$SXMC" discover codebase . --format json-pretty >"$DISCOVERY_PACK_ROOT/snaps
     discovery_tools_out=$("$SXMC" scaffold discovery-tools --from-snapshot "$DISCOVERY_PACK_ROOT/snapshots" --root "$DISCOVERY_PACK_ROOT" --mode apply 2>&1 || true)
     if [ -f "$DISCOVERY_PACK_ROOT/.sxmc/discovery-tools/README.md" ] && [ -f "$DISCOVERY_PACK_ROOT/.sxmc/discovery-tools/traffic-traffic.json" ]; then
       pass "scaffold discovery-tools writes json bundle"
+      serve_spec=$(python3 - <<PY
+import json
+print(json.dumps(["$SXMC","serve","--discovery-tool-manifest","$DISCOVERY_PACK_ROOT/.sxmc/discovery-tools"]))
+PY
+)
+      discovery_tool_list=$("$SXMC" stdio "$serve_spec" --list-tools 2>&1 || true)
+      if echo "$discovery_tool_list" | grep -q "discovery__traffic"; then
+        pass "serve discovery-tool-manifest exposes MCP tools"
+      else
+        fail "serve discovery-tool-manifest" "${discovery_tool_list:0:140}"
+      fi
     else
       fail "scaffold discovery-tools" "${discovery_tools_out:0:140}"
     fi
