@@ -20,7 +20,7 @@ use crate::cli_surfaces::model::{
 use crate::error::{Result, SxmcError};
 
 const CLI_PROFILE_CACHE_TTL_SECS: u64 = 60 * 60 * 24 * 14;
-const CLI_PROFILE_CACHE_SCHEMA_VERSION: u32 = 3;
+const CLI_PROFILE_CACHE_SCHEMA_VERSION: u32 = 4;
 const COMPACT_SUBCOMMAND_LIMIT: usize = 12;
 const COMPACT_OPTION_LIMIT: usize = 15;
 
@@ -612,7 +612,17 @@ pub fn inspect_cli_with_depth(
         }
     ));
 
-    let profile = inspect_parts(&parts, &command_name, executable, allow_self, depth, 0)?;
+    let source_identifier = parts.join(" ");
+    let display_command = display_command_from_parts(&parts);
+    let profile = inspect_parts(
+        &parts,
+        &command_name,
+        &source_identifier,
+        &display_command,
+        allow_self,
+        depth,
+        0,
+    )?;
     store_cached_profile(&cache_key, &profile);
     Ok(profile)
 }
@@ -940,14 +950,16 @@ fn inspect_parts(
     parts: &[String],
     command_name: &str,
     source_identifier: &str,
+    display_command: &str,
     allow_self: bool,
     remaining_depth: usize,
     generation_depth: u32,
 ) -> Result<CliSurfaceProfile> {
     let help_text = read_help_text(parts, command_name)?;
-    let mut profile = parse_help_text(command_name, source_identifier, &help_text);
-    if let Ok(man_text) = read_man_page_text(command_name) {
-        let man_profile = parse_help_text(command_name, source_identifier, &man_text);
+    let mut profile = parse_help_text(command_name, source_identifier, display_command, &help_text);
+    if let Ok(man_text) = read_man_page_text(parts, command_name) {
+        let man_profile =
+            parse_help_text(command_name, source_identifier, display_command, &man_text);
         merge_man_page_profile(&mut profile, &man_profile, command_name);
         if command_name == "brew" {
             merge_profile_options(
@@ -960,8 +972,12 @@ fn inspect_parts(
         }
     }
     if let Ok(supplemental_text) = read_supplemental_help_text(parts, command_name) {
-        let supplemental_profile =
-            parse_help_text(command_name, source_identifier, &supplemental_text);
+        let supplemental_profile = parse_help_text(
+            command_name,
+            source_identifier,
+            display_command,
+            &supplemental_text,
+        );
         merge_supplemental_profile(&mut profile, &supplemental_profile);
     }
     profile.provenance.generation_depth = generation_depth;
@@ -981,6 +997,7 @@ fn inspect_parts(
             let mut child_parts = parts.to_vec();
             child_parts.push(subcommand.name.clone());
             let child_source = format!("{source_identifier} {}", subcommand.name);
+            let child_display = format!("{display_command} {}", subcommand.name);
             let child_name = subcommand.name.clone();
             maybe_print_progress(&format!(
                 "Inspecting nested subcommand {}/{}: `{}`",
@@ -993,6 +1010,7 @@ fn inspect_parts(
                 &child_parts,
                 &child_name,
                 &child_source,
+                &child_display,
                 allow_self,
                 remaining_depth.saturating_sub(1),
                 generation_depth + 1,
@@ -1174,7 +1192,7 @@ fn read_help_text(parts: &[String], command_name: &str) -> Result<String> {
             return Ok(help);
         }
 
-        if let Ok(text) = read_man_page_text(command_name) {
+        if let Ok(text) = read_man_page_text(parts, command_name) {
             if !text.trim().is_empty() {
                 return Ok(text);
             }
@@ -1183,7 +1201,7 @@ fn read_help_text(parts: &[String], command_name: &str) -> Result<String> {
         return Ok(help);
     }
 
-    if let Ok(text) = read_man_page_text(command_name) {
+    if let Ok(text) = read_man_page_text(parts, command_name) {
         if !text.trim().is_empty() {
             return Ok(text);
         }
@@ -1196,35 +1214,76 @@ fn read_help_text(parts: &[String], command_name: &str) -> Result<String> {
 }
 
 #[cfg(not(windows))]
-fn read_man_page_text(command_name: &str) -> Result<String> {
-    let output = Command::new("sh")
-        .arg("-lc")
-        .arg("MANPAGER=cat man \"$SXMC_MAN_TARGET\" 2>/dev/null | col -b")
-        .env("SXMC_MAN_TARGET", command_name)
-        .output()
-        .map_err(|e| {
-            SxmcError::Other(format!(
-                "Failed to query man page for '{}': {}",
-                command_name, e
-            ))
-        })?;
+fn read_man_page_text(parts: &[String], command_name: &str) -> Result<String> {
+    let mut last_error = None;
+    for candidate in man_page_candidates(parts, command_name) {
+        let output = Command::new("sh")
+            .arg("-lc")
+            .arg("MANPAGER=cat man \"$SXMC_MAN_TARGET\" 2>/dev/null | col -b")
+            .env("SXMC_MAN_TARGET", &candidate)
+            .output()
+            .map_err(|e| {
+                SxmcError::Other(format!(
+                    "Failed to query man page for '{}': {}",
+                    candidate, e
+                ))
+            })?;
 
-    let text = String::from_utf8_lossy(&output.stdout).into_owned();
-    if text.trim().is_empty() {
-        return Err(SxmcError::Other(format!(
-            "No readable man page output for '{}'",
-            command_name
-        )));
+        let text = String::from_utf8_lossy(&output.stdout).into_owned();
+        if !text.trim().is_empty() {
+            return Ok(text);
+        }
+        last_error = Some(candidate);
     }
 
-    Ok(text)
+    Err(SxmcError::Other(format!(
+        "No readable man page output for '{}'",
+        last_error.unwrap_or_else(|| command_name.to_string())
+    )))
 }
 
 #[cfg(windows)]
-fn read_man_page_text(_command_name: &str) -> Result<String> {
+fn read_man_page_text(_parts: &[String], _command_name: &str) -> Result<String> {
     Err(SxmcError::Other(
         "man-page fallback is not available on Windows".into(),
     ))
+}
+
+fn man_page_candidates(parts: &[String], command_name: &str) -> Vec<String> {
+    if parts.len() <= 1 {
+        return vec![command_name.to_string()];
+    }
+
+    let mut candidates = Vec::new();
+    for end in (2..=parts.len()).rev() {
+        let candidate = parts[..end].join("-");
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+fn display_command_from_parts(parts: &[String]) -> String {
+    let Some(first) = parts.first() else {
+        return String::new();
+    };
+
+    let executable = Path::new(first)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(first)
+        .trim_end_matches(".exe")
+        .to_string();
+
+    if parts.len() == 1 {
+        return executable;
+    }
+
+    std::iter::once(executable)
+        .chain(parts.iter().skip(1).cloned())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn run_help_variant(parts: &[String], extra_args: &[&str]) -> Result<String> {
@@ -1301,7 +1360,7 @@ fn read_supplemental_help_text(parts: &[String], command_name: &str) -> Result<S
 }
 
 fn score_help_text(command_name: &str, source_identifier: &str, help: &str) -> i32 {
-    let profile = parse_help_text(command_name, source_identifier, help);
+    let profile = parse_help_text(command_name, source_identifier, source_identifier, help);
     let mut score = 0;
 
     if profile.summary != format!("{} command-line interface", command_name) {
@@ -1320,7 +1379,12 @@ fn score_help_text(command_name: &str, source_identifier: &str, help: &str) -> i
     score
 }
 
-fn parse_help_text(command_name: &str, source_identifier: &str, help: &str) -> CliSurfaceProfile {
+fn parse_help_text(
+    command_name: &str,
+    source_identifier: &str,
+    display_command: &str,
+    help: &str,
+) -> CliSurfaceProfile {
     let lines: Vec<&str> = help.lines().collect();
     let summary = select_summary(&lines, command_name);
     let description = parse_description(&lines, command_name, &summary);
@@ -1344,7 +1408,7 @@ fn parse_help_text(command_name: &str, source_identifier: &str, help: &str) -> C
 
     CliSurfaceProfile {
         profile_schema: PROFILE_SCHEMA.into(),
-        command: command_name.into(),
+        command: display_command.into(),
         summary,
         description,
         source: ProfileSource {
@@ -2768,8 +2832,9 @@ fn should_invalidate_profile_cache_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        merge_profile_options, parse_command_spec, parse_help_text, parse_specific_option_section,
-        strip_overstrike, ConfidenceLevel, ProfileOption,
+        display_command_from_parts, man_page_candidates, merge_profile_options, parse_command_spec,
+        parse_help_text, parse_specific_option_section, strip_overstrike, ConfidenceLevel,
+        ProfileOption,
     };
 
     #[test]
@@ -2812,7 +2877,7 @@ ADDITIONAL COMMANDS
 EXAMPLES
   $ gh repo clone cli/cli
 "#;
-        let profile = parse_help_text("gh", "gh", help);
+        let profile = parse_help_text("gh", "gh", "gh", help);
         assert_eq!(
             profile.summary,
             "Work seamlessly with GitHub from the command line."
@@ -2838,7 +2903,7 @@ ADDITIONAL COMMANDS
   api:           Make an authenticated GitHub API request
   config:        Manage configuration for gh
 "#;
-        let profile = parse_help_text("gh", "gh", help);
+        let profile = parse_help_text("gh", "gh", "gh", help);
         assert!(profile
             .subcommands
             .iter()
@@ -2867,7 +2932,7 @@ start a working area (see also: git help tutorial)
 collaborate (see also: git help workflows)
    fetch      Download objects and refs from another repository
 "#;
-        let profile = parse_help_text("git", "git", help);
+        let profile = parse_help_text("git", "git", "git", help);
         assert_eq!(profile.summary, "git command-line interface");
         assert_eq!(profile.subcommands.len(), 3);
         assert_eq!(profile.subcommands[0].name, "clone");
@@ -2888,7 +2953,7 @@ All commands:
     access, adduser, audit, bugs, cache, ci, completion,
     config, dedupe, doctor, exec
 "#;
-        let profile = parse_help_text("npm", "npm", help);
+        let profile = parse_help_text("npm", "npm", "npm", help);
         assert_eq!(profile.summary, "npm command-line interface");
         assert!(profile
             .subcommands
@@ -2910,7 +2975,7 @@ Options (and corresponding environment variables):
 Arguments:
 file   : program read from script file
 "#;
-        let profile = parse_help_text("python3", "python3", help);
+        let profile = parse_help_text("python3", "python3", "python3", help);
         assert_eq!(profile.summary, "python3 command-line interface");
         assert!(profile.options.iter().any(|option| option.name == "-h"));
         assert!(profile.options.iter().any(|option| option.name == "-X"));
@@ -2937,7 +3002,7 @@ Options:
                               core file to be generated for analysis
   -c, --check                 syntax check script without executing
 "#;
-        let profile = parse_help_text("node", "node", help);
+        let profile = parse_help_text("node", "node", "node", help);
         assert!(profile.auth.is_empty());
         assert!(profile
             .subcommands
@@ -2967,7 +3032,7 @@ Commands:
     build, b    Compile the current package
     check, c    Analyze the current package and report errors
 "#;
-        let profile = parse_help_text("cargo", "cargo", help);
+        let profile = parse_help_text("cargo", "cargo", "cargo", help);
         assert_eq!(profile.subcommands[0].name, "build");
         assert_eq!(profile.subcommands[1].name, "check");
     }
@@ -2987,7 +3052,7 @@ INPUT OPTIONS:
     -z, --search-zip
         Search in compressed files.
 "#;
-        let profile = parse_help_text("rg", "rg", help);
+        let profile = parse_help_text("rg", "rg", "rg", help);
         assert!(
             profile.summary.contains("recursively searches"),
             "{}",
@@ -3006,7 +3071,7 @@ INPUT OPTIONS:
      grep, egrep, fgrep, rgrep, bzgrep, bzegrep, bzfgrep, zgrep, zegrep,
      zfgrep – file pattern searcher
 "#;
-        let profile = parse_help_text("grep", "grep", help);
+        let profile = parse_help_text("grep", "grep", "grep", help);
         assert_eq!(profile.summary, "file pattern searcher");
     }
 
@@ -3017,7 +3082,7 @@ alias  Listed by `brew commands`.
 analytics  Listed by `brew commands`.
 autoremove  Listed by `brew commands`.
 "#;
-        let profile = parse_help_text("brew", "brew", help);
+        let profile = parse_help_text("brew", "brew", "brew", help);
         assert!(profile
             .subcommands
             .iter()
@@ -3040,7 +3105,7 @@ autoremove  Listed by `brew commands`.
 SYNOPSIS
        awk [ -F fs ] [ -v var=value ] [ 'prog' | -f progfile ] [ file ... ]
 "#;
-        let profile = parse_help_text("awk", "awk", help);
+        let profile = parse_help_text("awk", "awk", "awk", help);
         assert!(profile.options.iter().any(|option| option.name == "-F"));
         assert!(profile.options.iter().any(|option| option.name == "-v"));
         assert!(profile.options.iter().any(|option| option.name == "-f"));
@@ -3069,6 +3134,32 @@ SYNOPSIS
         assert!(options.iter().any(|option| option.name == "--quiet"));
         assert!(options.iter().any(|option| option.name == "--verbose"));
         assert!(options.iter().any(|option| option.name == "--help"));
+    }
+
+    #[test]
+    fn man_page_candidates_prefer_composite_nested_names() {
+        assert_eq!(man_page_candidates(&["git".into()], "git"), vec!["git"]);
+        assert_eq!(
+            man_page_candidates(&["git".into(), "log".into()], "log"),
+            vec!["git-log"]
+        );
+        assert_eq!(
+            man_page_candidates(&["git".into(), "remote".into(), "add".into()], "add"),
+            vec!["git-remote-add", "git-remote"]
+        );
+    }
+
+    #[test]
+    fn display_command_uses_executable_basename_for_nested_profiles() {
+        assert_eq!(display_command_from_parts(&["sxmc".into()]), "sxmc");
+        assert_eq!(
+            display_command_from_parts(&[
+                "/tmp/tools/fake-cli".into(),
+                "alpha".into(),
+                "beta".into(),
+            ]),
+            "fake-cli alpha beta"
+        );
     }
 
     #[test]
@@ -3112,7 +3203,7 @@ EXAMPLES
 
      will print the contents of file1 to the standard output.
 "#;
-        let profile = parse_help_text("cat", "cat", help);
+        let profile = parse_help_text("cat", "cat", "cat", help);
         assert_eq!(profile.summary, "concatenate and print files");
         assert!(profile.subcommands.is_empty());
     }
@@ -3122,7 +3213,7 @@ EXAMPLES
         let help = r#"Name
        dc - arbitrary-precision decimal reverse-Polish notation calculator
 "#;
-        let profile = parse_help_text("dc", "dc", help);
+        let profile = parse_help_text("dc", "dc", "dc", help);
         assert_eq!(
             profile.summary,
             "arbitrary-precision decimal reverse-Polish notation calculator"
@@ -3134,7 +3225,7 @@ EXAMPLES
         let help = r#"NAME
        unzip - list, test and extract compressed files in a ZIP archive
 "#;
-        let profile = parse_help_text("unzip", "unzip", help);
+        let profile = parse_help_text("unzip", "unzip", "unzip", help);
         assert_eq!(
             profile.summary,
             "list, test and extract compressed files in a ZIP archive"
@@ -3166,7 +3257,7 @@ usage: bc [options] [file...]
 bc is a command-line, arbitrary-precision calculator with a Turing-complete
 language. For details, use `man bc`.
 "#;
-        let profile = parse_help_text("bc", "bc", help);
+        let profile = parse_help_text("bc", "bc", "bc", help);
         assert!(profile.summary.starts_with("bc is a command-line"));
     }
 

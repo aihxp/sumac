@@ -3,7 +3,7 @@
 # Sumac (sxmc) comprehensive test + benchmark suite
 # Covers: ALL v0.2.10–v0.2.40 features, 10×10×10 matrix, benchmarks
 # Usage: bash scripts/test-sxmc.sh [--json results.json]
-# Env:   SXMC=path/to/sxmc (default: sxmc on PATH, or target/release/sxmc)
+# Env:   SXMC=path/to/sxmc (default: freshest repo build, then sxmc on PATH)
 #        BENCH_RUNS=5 (benchmark iterations)
 # ============================================================================
 set -uo pipefail
@@ -126,10 +126,16 @@ trap cleanup EXIT
 # --- Resolve sxmc binary ---
 if [ -n "${SXMC:-}" ]; then
   :
-elif [ -x "$ROOT/target/release/sxmc" ]; then
-  SXMC="$ROOT/target/release/sxmc"
+elif [ -x "$ROOT/target/debug/sxmc" ] && [ -x "$ROOT/target/release/sxmc" ]; then
+  if [ "$ROOT/target/debug/sxmc" -nt "$ROOT/target/release/sxmc" ]; then
+    SXMC="$ROOT/target/debug/sxmc"
+  else
+    SXMC="$ROOT/target/release/sxmc"
+  fi
 elif [ -x "$ROOT/target/debug/sxmc" ]; then
   SXMC="$ROOT/target/debug/sxmc"
+elif [ -x "$ROOT/target/release/sxmc" ]; then
+  SXMC="$ROOT/target/release/sxmc"
 elif has_cmd sxmc; then
   SXMC="sxmc"
 else
@@ -590,6 +596,11 @@ section "20. Status & Watch"
 status_out=$("$SXMC" status --pretty 2>/dev/null || true)
 if json_check "$status_out" "'startup_files' in d or 'cache' in d or 'summary' in d"; then
   pass "status outputs structured JSON"
+  if json_check "$status_out" "'ai_knowledge' in d and 'recovery_plan' in d"; then
+    pass "status includes AI knowledge and recovery plan"
+  else
+    fail "status AI knowledge" "${status_out:0:120}"
+  fi
 else
   # status may output human on TTY
   status_out2=$("$SXMC" status 2>/dev/null || true)
@@ -937,6 +948,25 @@ EOF
   fi
 fi
 
+if has_cmd git; then
+  DOCTOR_INFER_ROOT="$TMPDIR_TEST/doctor-infer-root"
+  mkdir -p "$DOCTOR_INFER_ROOT"
+  infer_add_out=$("$SXMC" add git --host claude-code --root "$DOCTOR_INFER_ROOT" 2>&1 || true)
+  if [ -f "$DOCTOR_INFER_ROOT/CLAUDE.md" ]; then
+    rm -f "$DOCTOR_INFER_ROOT/CLAUDE.md"
+    doctor_infer_out=$("$SXMC" doctor --fix --root "$DOCTOR_INFER_ROOT" 2>&1 || true)
+    if [ -f "$DOCTOR_INFER_ROOT/CLAUDE.md" ] && \
+       echo "$doctor_infer_out" | grep -q "Auto-detected AI hosts:" && \
+       echo "$doctor_infer_out" | grep -q "Using CLI surface: git"; then
+      pass "doctor --fix infers host and CLI from existing state"
+    else
+      fail "doctor inferred fix" "${doctor_infer_out:0:120}"
+    fi
+  else
+    fail "doctor inference setup" "${infer_add_out:0:120}"
+  fi
+fi
+
 # ── Section 30: CI Scaffold ──
 section "30. CI Scaffold"
 
@@ -1145,6 +1175,130 @@ else
   skip "discover graphql live tests" "no network or GraphQL endpoint unreachable"
 fi
 
+# ── Section 33: Add Pipeline ──
+section "33. Add Pipeline"
+
+if has_cmd git; then
+  ADD_ROOT="$TMPDIR_TEST/add-root"
+  mkdir -p "$ADD_ROOT"
+  printf "# Existing Claude guidance\n" > "$ADD_ROOT/CLAUDE.md"
+
+  add_apply_out=$("$SXMC" add git --root "$ADD_ROOT" 2>&1 || true)
+  if echo "$add_apply_out" | grep -q "Detected configured AI hosts: Claude Code"; then
+    pass "add detects configured Claude host"
+  else
+    fail "add host detection" "${add_apply_out:0:120}"
+  fi
+
+  if [ -f "$ADD_ROOT/.sxmc/ai/profiles/git.json" ] && [ -f "$ADD_ROOT/.sxmc/ai/claude-code-mcp.json" ]; then
+    pass "add writes profile and Claude config"
+  else
+    fail "add apply outputs" "profile or Claude config missing"
+  fi
+
+  if grep -q "sxmc:begin cli-ai:claude-code" "$ADD_ROOT/CLAUDE.md"; then
+    pass "add updates Claude agent doc"
+  else
+    fail "add agent doc update" "managed Claude block missing"
+  fi
+
+  ADD_PREVIEW_ROOT="$TMPDIR_TEST/add-preview-root"
+  mkdir -p "$ADD_PREVIEW_ROOT"
+  add_preview_out=$("$SXMC" add git --root "$ADD_PREVIEW_ROOT" 2>&1 || true)
+  if echo "$add_preview_out" | grep -q "No configured AI hosts detected" && \
+     echo "$add_preview_out" | grep -q "Would create CLI profile:"; then
+    pass "add previews when no hosts are configured"
+  else
+    fail "add preview fallback" "${add_preview_out:0:120}"
+  fi
+
+  DISCOVERY_SNAPSHOT="$TMPDIR_TEST/codebase-discovery.json"
+  "$SXMC" discover codebase "$ROOT" --output "$DISCOVERY_SNAPSHOT" >/dev/null 2>&1 || true
+  if [ -f "$DISCOVERY_SNAPSHOT" ] && [ -s "$DISCOVERY_SNAPSHOT" ]; then
+    DISCOVERY_ROOT="$TMPDIR_TEST/discovery-init-root"
+    mkdir -p "$DISCOVERY_ROOT"
+    discovery_apply_out=$("$SXMC" init discovery "$DISCOVERY_SNAPSHOT" --client claude-code --root "$DISCOVERY_ROOT" --mode apply 2>&1 || true)
+    if [ -f "$DISCOVERY_ROOT/CLAUDE.md" ] && grep -q "sxmc:begin cli-ai:discover-codebase" "$DISCOVERY_ROOT/CLAUDE.md"; then
+      pass "init discovery applies codebase context to Claude"
+    else
+      fail "init discovery apply" "${discovery_apply_out:0:120}"
+    fi
+
+    DISCOVERY_PREVIEW_ROOT="$TMPDIR_TEST/discovery-preview-root"
+    mkdir -p "$DISCOVERY_PREVIEW_ROOT"
+    discovery_preview_out=$("$SXMC" init discovery "$DISCOVERY_SNAPSHOT" --coverage full --root "$DISCOVERY_PREVIEW_ROOT" --mode preview 2>&1 || true)
+    if echo "$discovery_preview_out" | grep -q "Would create Portable Codebase context:"; then
+      pass "init discovery previews full-coverage context"
+    else
+      fail "init discovery preview" "${discovery_preview_out:0:120}"
+    fi
+  else
+    fail "discover codebase snapshot for init discovery" "snapshot missing or empty"
+  fi
+
+  SETUP_ROOT="$TMPDIR_TEST/setup-root"
+  mkdir -p "$SETUP_ROOT"
+  printf "# Existing Claude guidance\n" > "$SETUP_ROOT/CLAUDE.md"
+  setup_apply_out=$("$SXMC" setup --tool git,ls --root "$SETUP_ROOT" 2>&1 || true)
+  if echo "$setup_apply_out" | grep -q "Selected tools: git, ls" && \
+     [ -f "$SETUP_ROOT/.sxmc/ai/profiles/git.json" ] && \
+     [ -f "$SETUP_ROOT/.sxmc/ai/profiles/ls.json" ]; then
+    pass "setup onboards multiple tools in one pass"
+  else
+    fail "setup apply" "${setup_apply_out:0:120}"
+  fi
+
+  SETUP_PREVIEW_ROOT="$TMPDIR_TEST/setup-preview-root"
+  mkdir -p "$SETUP_PREVIEW_ROOT"
+  setup_preview_out=$("$SXMC" setup --tool git --root "$SETUP_PREVIEW_ROOT" 2>&1 || true)
+  if echo "$setup_preview_out" | grep -q "No configured AI hosts detected" && \
+     echo "$setup_preview_out" | grep -q "Would create CLI profile:"; then
+    pass "setup previews when no hosts are configured"
+  else
+    fail "setup preview" "${setup_preview_out:0:120}"
+  fi
+
+  REGISTER_ROOT="$TMPDIR_TEST/register-root"
+  mkdir -p "$REGISTER_ROOT"
+  "$SXMC" wrap git --register-host cursor --register-root "$REGISTER_ROOT" >/dev/null 2>&1 &
+  WRAP_REGISTER_PID=$!
+  wrap_registered=0
+  for _ in $(seq 1 50); do
+    if [ -f "$REGISTER_ROOT/.cursor/mcp.json" ]; then
+      wrap_registered=1
+      break
+    fi
+    sleep 0.1
+  done
+  kill $WRAP_REGISTER_PID 2>/dev/null || true
+  wait $WRAP_REGISTER_PID 2>/dev/null || true
+  if [ "$wrap_registered" -eq 1 ] && grep -q '"sxmc-wrap-git"' "$REGISTER_ROOT/.cursor/mcp.json"; then
+    pass "wrap auto-registers Cursor MCP config"
+  else
+    fail "wrap auto-registration" "Cursor MCP config missing or incomplete"
+  fi
+
+  SERVE_REGISTER_ROOT="$TMPDIR_TEST/serve-register-root"
+  mkdir -p "$SERVE_REGISTER_ROOT"
+  "$SXMC" serve --paths "$FIXTURES" --register-host cursor --register-root "$SERVE_REGISTER_ROOT" >/dev/null 2>&1 &
+  SERVE_REGISTER_PID=$!
+  serve_registered=0
+  for _ in $(seq 1 50); do
+    if [ -f "$SERVE_REGISTER_ROOT/.cursor/mcp.json" ]; then
+      serve_registered=1
+      break
+    fi
+    sleep 0.1
+  done
+  kill $SERVE_REGISTER_PID 2>/dev/null || true
+  wait $SERVE_REGISTER_PID 2>/dev/null || true
+  if [ "$serve_registered" -eq 1 ] && grep -q '"sxmc-serve"' "$SERVE_REGISTER_ROOT/.cursor/mcp.json"; then
+    pass "serve auto-registers Cursor MCP config"
+  else
+    fail "serve auto-registration" "Cursor MCP config missing or incomplete"
+  fi
+fi
+
 # ============================================================================
 # PART C — 10×10×10 MATRIX
 # ============================================================================
@@ -1152,8 +1306,8 @@ printf "\n${BOLD}╔════════════════════
 printf "\n${BOLD}║  PART C — 10×10×10 MATRIX             ║${RESET}"
 printf "\n${BOLD}╚════════════════════════════════════════╝${RESET}\n"
 
-# ── Section 33: 10 Known CLIs ──
-section "33. 10 Known CLIs"
+# ── Section 34: 10 Known CLIs ──
+section "34. 10 Known CLIs"
 
 MATRIX_CLIS=(git curl ls ssh tar grep find gh python3 jq)
 CLI_PASS=0; CLI_SKIP_COUNT=0; CLI_FAIL_COUNT=0
@@ -1201,8 +1355,8 @@ done
 
 pass "CLI matrix: $CLI_PASS CLIs fully tested ($CLI_SKIP_COUNT skipped)"
 
-# ── Section 34: 10 Known Skills ──
-section "34. 10 Known Skills"
+# ── Section 35: 10 Known Skills ──
+section "35. 10 Known Skills"
 
 # Create 6 synthetic skills
 SYNTH_SKILLS="$TMPDIR_TEST/synthetic-skills"
@@ -1410,8 +1564,8 @@ fi
 
 pass "skills matrix: $SKILL_COUNT skills tested (with info, run, serve, MCP calls)"
 
-# ── Section 35: 10 Known MCPs ──
-section "35. 10 Known MCPs"
+# ── Section 36: 10 Known MCPs ──
+section "36. 10 Known MCPs"
 
 MCP_COUNT=0
 MCP_BAKE_HOME="$TMPDIR_TEST/mcp-matrix-home"
@@ -1529,8 +1683,8 @@ done
 
 pass "MCP matrix: $MCP_COUNT MCPs tested"
 
-# ── Section 36: Side-by-Side (with vs without sxmc) ──
-section "36. Side-by-Side: With vs Without sxmc"
+# ── Section 37: Side-by-Side (with vs without sxmc) ──
+section "37. Side-by-Side: With vs Without sxmc"
 
 # CLI Understanding
 if has_cmd git; then
@@ -1685,8 +1839,8 @@ printf "\n${BOLD}╔════════════════════
 printf "\n${BOLD}║  PART D — BENCHMARKS ($BENCH_RUNS runs)         ║${RESET}"
 printf "\n${BOLD}╚════════════════════════════════════════╝${RESET}\n"
 
-# ── Section 37: CLI Inspection Benchmarks ──
-section "37. CLI Inspection Benchmarks"
+# ── Section 38: CLI Inspection Benchmarks ──
+section "38. CLI Inspection Benchmarks"
 
 BENCH_CLIS=(git curl ls ssh tar)
 for cmd in "${BENCH_CLIS[@]}"; do
@@ -1749,8 +1903,8 @@ if has_cmd git && has_cmd curl && has_cmd ls; then
   pass "batch parallelism benchmarks complete"
 fi
 
-# ── Section 38: Wrap Benchmark ──
-section "38. Wrap & MCP Benchmarks"
+# ── Section 39: Wrap Benchmark ──
+section "39. Wrap & MCP Benchmarks"
 
 if has_cmd git; then
   declare -a wrap_times=()
@@ -1764,8 +1918,8 @@ if has_cmd git; then
   pass "wrap benchmark complete"
 fi
 
-# ── Section 39: Bundle Benchmark ──
-section "39. Bundle Benchmarks"
+# ── Section 40: Bundle Benchmark ──
+section "40. Bundle Benchmarks"
 
 if has_cmd git; then
   B_HOME="$TMPDIR_TEST/bench-bundle"
@@ -1808,8 +1962,8 @@ print(int((time.time() - t0) * 1000))
   pass "bundle benchmarks complete"
 fi
 
-# ── Section 40: Pipeline Benchmark ──
-section "40. End-to-End Pipeline Benchmark"
+# ── Section 41: Pipeline Benchmark ──
+section "41. End-to-End Pipeline Benchmark"
 
 PIPELINE_CLIS=(git curl ls ssh tar)
 declare -a pipeline_times=()

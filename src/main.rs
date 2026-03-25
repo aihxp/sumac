@@ -3419,6 +3419,197 @@ fn host_capability_value(root: &Path, only_hosts: &[AiClientProfile]) -> Value {
     Value::Object(host_capability_map(root, only_hosts))
 }
 
+fn first_profile_command(inventory: &Value) -> Option<String> {
+    inventory["entries"].as_array().and_then(|entries| {
+        entries.iter().find_map(|entry| {
+            entry["command"]
+                .as_str()
+                .filter(|command| !command.is_empty())
+                .map(str::to_string)
+        })
+    })
+}
+
+fn ai_knowledge_value(
+    root: &Path,
+    only_hosts: &[AiClientProfile],
+    inventory: &Value,
+    drift: &Value,
+) -> Value {
+    let hosts = resolved_hosts(only_hosts);
+    let capability_map = host_capability_map(root, &hosts);
+    let profile_count = inventory["count"].as_u64().unwrap_or(0);
+    let ready_profile_count = inventory["ready_count"].as_u64().unwrap_or(0);
+    let stale_profile_count = inventory["stale_count"].as_u64().unwrap_or(0);
+    let changed_profile_count = drift["changed_count"].as_u64().unwrap_or(0);
+    let first_command = first_profile_command(inventory);
+
+    let mut entries = serde_json::Map::new();
+    let mut configured_count = 0u64;
+    let mut stale_host_count = 0u64;
+    let mut unconfigured_count = 0u64;
+
+    for host in hosts {
+        let spec = cli_surfaces::host_profile_spec(host);
+        let key = spec.sidecar_scope;
+        let details = capability_map
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let doc_present = details["doc_present"].as_bool().unwrap_or(false);
+        let config_present = details["config_present"].as_bool().unwrap_or(false);
+        let ready = details["ready"].as_bool().unwrap_or(false);
+        let missing_targets = [
+            (!doc_present && spec.native_doc_target.is_some()).then_some("doc"),
+            (!config_present && spec.native_config_target.is_some()).then_some("config"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        let (state, summary, recommended_command) = if ready {
+            configured_count += 1;
+            if profile_count == 0 {
+                (
+                    "configured_without_profiles",
+                    format!(
+                        "{} is configured, but Sumac has not saved any CLI profiles yet.",
+                        spec.label
+                    ),
+                    Some(format!(
+                        "sxmc add <tool> --host {} --root {}",
+                        key,
+                        root.display()
+                    )),
+                )
+            } else if stale_profile_count > 0 || changed_profile_count > 0 {
+                stale_host_count += 1;
+                (
+                    "configured_but_stale",
+                    format!(
+                        "{} is configured, but {} saved profile(s) are stale and {} drifted from the installed tools.",
+                        spec.label, stale_profile_count, changed_profile_count
+                    ),
+                    Some(format!(
+                        "sxmc inspect drift {} --recursive --format json-pretty",
+                        default_saved_profiles_dir(root).display()
+                    )),
+                )
+            } else if ready_profile_count == 0 {
+                (
+                    "configured_with_low_confidence_profiles",
+                    format!(
+                        "{} is configured, but the saved profiles are not yet ready for startup-facing agent docs.",
+                        spec.label
+                    ),
+                    Some(format!(
+                        "sxmc add <tool> --host {} --root {} --allow-low-confidence",
+                        key,
+                        root.display()
+                    )),
+                )
+            } else {
+                (
+                    "configured",
+                    format!(
+                        "{} is configured and has {} ready saved profile(s) backing its AI context.",
+                        spec.label, ready_profile_count
+                    ),
+                    None,
+                )
+            }
+        } else if profile_count > 0 {
+            unconfigured_count += 1;
+            let command_hint = first_command
+                .clone()
+                .unwrap_or_else(|| "<tool>".to_string());
+            (
+                "profiles_present_but_host_not_configured",
+                format!(
+                    "{} has {} saved profile(s), but its startup files are not configured yet.",
+                    spec.label, profile_count
+                ),
+                Some(format!(
+                    "sxmc add {} --host {} --root {}",
+                    command_hint,
+                    key,
+                    root.display()
+                )),
+            )
+        } else {
+            unconfigured_count += 1;
+            (
+                "not_configured",
+                format!(
+                    "{} is not configured and there are no saved profiles yet.",
+                    spec.label
+                ),
+                Some(format!(
+                    "sxmc add <tool> --host {} --root {}",
+                    key,
+                    root.display()
+                )),
+            )
+        };
+
+        entries.insert(
+            key.into(),
+            json!({
+                "label": spec.label,
+                "doc_present": doc_present,
+                "config_present": config_present,
+                "ready": ready,
+                "state": state,
+                "saved_profile_count": profile_count,
+                "ready_profile_count": ready_profile_count,
+                "stale_profile_count": stale_profile_count,
+                "changed_profile_count": changed_profile_count,
+                "missing_targets": missing_targets,
+                "summary": summary,
+                "recommended_command": recommended_command,
+            }),
+        );
+    }
+
+    json!({
+        "configured_host_count": configured_count,
+        "stale_host_count": stale_host_count,
+        "unconfigured_host_count": unconfigured_count,
+        "hosts": entries,
+    })
+}
+
+fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value) -> Value {
+    let mut items = Vec::new();
+    if let Some(hosts) = ai_knowledge["hosts"].as_object() {
+        let mut entries = hosts.iter().collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        for (key, details) in entries {
+            let state = details["state"].as_str().unwrap_or("unknown");
+            if state == "configured" {
+                continue;
+            }
+            let command = details["recommended_command"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    format!("sxmc add <tool> --host {} --root {}", key, root.display())
+                });
+            items.push(json!({
+                "host": key,
+                "label": details["label"],
+                "state": state,
+                "summary": details["summary"],
+                "command": command,
+            }));
+        }
+    }
+    json!({
+        "count": items.len(),
+        "items": items,
+    })
+}
+
 fn compare_host_capabilities(root: &Path, compare_hosts: &[AiClientProfile]) -> Value {
     let hosts = resolved_hosts(compare_hosts);
     let capability_map = host_capability_map(root, &hosts);
@@ -3631,9 +3822,25 @@ async fn status_value_with_health(
 ) -> Result<Value> {
     let mut value = status_value(root, only_hosts)?;
     if let Some(object) = value.as_object_mut() {
+        let host_capabilities = host_capability_value(root, only_hosts);
+        object.insert("host_capabilities".into(), host_capabilities);
+        let saved_profiles = object
+            .get("saved_profiles")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let inventory = saved_profiles
+            .get("inventory")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let drift = saved_profiles
+            .get("drift")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        let ai_knowledge = ai_knowledge_value(root, only_hosts, &inventory, &drift);
+        object.insert("ai_knowledge".into(), ai_knowledge.clone());
         object.insert(
-            "host_capabilities".into(),
-            host_capability_value(root, only_hosts),
+            "recovery_plan".into(),
+            status_recovery_plan_value(root, &ai_knowledge),
         );
         if compare_hosts.len() >= 2 {
             object.insert(
@@ -3777,6 +3984,35 @@ fn print_doctor_report(value: &Value) {
 
 fn format_status_report(value: &Value) -> String {
     let mut lines = vec![format_doctor_report(value)];
+    if let Some(ai_hosts) = value["ai_knowledge"]["hosts"].as_object() {
+        let configured = value["ai_knowledge"]["configured_host_count"]
+            .as_u64()
+            .unwrap_or(0);
+        let stale = value["ai_knowledge"]["stale_host_count"]
+            .as_u64()
+            .unwrap_or(0);
+        let unconfigured = value["ai_knowledge"]["unconfigured_host_count"]
+            .as_u64()
+            .unwrap_or(0);
+        lines.push(String::new());
+        lines.push("AI knowledge status".into());
+        lines.push(format!(
+            "Hosts: {} configured, {} stale, {} needing setup",
+            configured, stale, unconfigured
+        ));
+        let mut entries = ai_hosts.iter().collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        for (_, details) in entries {
+            lines.push(format!(
+                "- {}: {}",
+                details["label"].as_str().unwrap_or("<unknown>"),
+                details["summary"].as_str().unwrap_or("status unavailable")
+            ));
+            if let Some(command) = details["recommended_command"].as_str() {
+                lines.push(format!("  next: `{}`", command));
+            }
+        }
+    }
     let saved_profiles = &value["saved_profiles"];
     lines.push(String::new());
     lines.push("Saved CLI profiles".into());
@@ -3883,6 +4119,23 @@ fn format_status_report(value: &Value) -> String {
                 lines.push(format!(
                     "- {}: true on [{}], false on [{}]",
                     field, hosts_true, hosts_false
+                ));
+            }
+        }
+    }
+    if let Some(items) = value["recovery_plan"]["items"].as_array() {
+        if !items.is_empty() {
+            lines.push(String::new());
+            lines.push("Suggested fixes".into());
+            for item in items {
+                lines.push(format!(
+                    "- {}: {}",
+                    item["label"].as_str().unwrap_or("<unknown>"),
+                    item["summary"].as_str().unwrap_or("repair needed")
+                ));
+                lines.push(format!(
+                    "  run: `{}`",
+                    item["command"].as_str().unwrap_or("sxmc status")
                 ));
             }
         }
@@ -4903,6 +5156,82 @@ fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     }
 }
 
+fn print_preview_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
+    for outcome in outcomes {
+        let verb = match outcome.status {
+            cli_surfaces::WriteStatus::Created => "Would create",
+            cli_surfaces::WriteStatus::Updated => "Would update",
+            cli_surfaces::WriteStatus::Skipped => "Would leave unchanged",
+            cli_surfaces::WriteStatus::Removed => "Would remove",
+        };
+        println!("{} {}: {}", verb, outcome.label, outcome.path.display());
+    }
+}
+
+fn eprint_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
+    let mut created = 0usize;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut removed = 0usize;
+
+    for outcome in outcomes {
+        match outcome.mode {
+            ArtifactMode::Preview => {}
+            ArtifactMode::WriteSidecar => {
+                let verb = match outcome.status {
+                    cli_surfaces::WriteStatus::Created => "Created sidecar for",
+                    cli_surfaces::WriteStatus::Updated => "Updated sidecar for",
+                    cli_surfaces::WriteStatus::Skipped => "Skipped unchanged sidecar for",
+                    cli_surfaces::WriteStatus::Removed => "Removed sidecar for",
+                };
+                eprintln!("{} {}: {}", verb, outcome.label, outcome.path.display());
+                match outcome.status {
+                    cli_surfaces::WriteStatus::Created => created += 1,
+                    cli_surfaces::WriteStatus::Updated => updated += 1,
+                    cli_surfaces::WriteStatus::Skipped => skipped += 1,
+                    cli_surfaces::WriteStatus::Removed => removed += 1,
+                }
+            }
+            ArtifactMode::Patch => {}
+            ArtifactMode::Apply => {
+                let verb = match outcome.status {
+                    cli_surfaces::WriteStatus::Created => "Created",
+                    cli_surfaces::WriteStatus::Updated => "Updated",
+                    cli_surfaces::WriteStatus::Skipped => "Skipped unchanged",
+                    cli_surfaces::WriteStatus::Removed => "Removed",
+                };
+                eprintln!("{} {}: {}", verb, outcome.label, outcome.path.display());
+                match outcome.status {
+                    cli_surfaces::WriteStatus::Created => created += 1,
+                    cli_surfaces::WriteStatus::Updated => updated += 1,
+                    cli_surfaces::WriteStatus::Skipped => skipped += 1,
+                    cli_surfaces::WriteStatus::Removed => removed += 1,
+                }
+            }
+        }
+    }
+
+    let total = created + updated + skipped + removed;
+    if total > 0 {
+        eprintln!(
+            "Summary: Created {}, Updated {}, Skipped unchanged {}, Removed {}",
+            created, updated, skipped, removed
+        );
+    }
+}
+
+fn eprint_preview_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
+    for outcome in outcomes {
+        let verb = match outcome.status {
+            cli_surfaces::WriteStatus::Created => "Would create",
+            cli_surfaces::WriteStatus::Updated => "Would update",
+            cli_surfaces::WriteStatus::Skipped => "Would leave unchanged",
+            cli_surfaces::WriteStatus::Removed => "Would remove",
+        };
+        eprintln!("{} {}: {}", verb, outcome.label, outcome.path.display());
+    }
+}
+
 fn print_remove_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     for outcome in outcomes {
         match outcome.mode {
@@ -4952,21 +5281,85 @@ struct DoctorRepairOptions<'a> {
     remove: bool,
 }
 
+fn extract_managed_cli_command(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let marker = "sxmc CLI Surface: `";
+        let (_, tail) = line.split_once(marker)?;
+        let command = tail.split('`').next()?.trim();
+        (!command.is_empty()).then(|| command.to_string())
+    })
+}
+
+fn infer_doctor_hosts(
+    root: &std::path::Path,
+    only_hosts: &[AiClientProfile],
+) -> Result<Vec<AiClientProfile>> {
+    if !only_hosts.is_empty() {
+        return Ok(only_hosts.to_vec());
+    }
+    let detected = auto_detect_add_hosts(root);
+    if detected.is_empty() {
+        return Err(sxmc::error::SxmcError::Other(
+            "Could not infer which AI hosts to repair. Re-run with `--only <host>` or create host files first with `sxmc add <tool>`.".into(),
+        ));
+    }
+    Ok(detected)
+}
+
+fn infer_doctor_from_cli(
+    root: &std::path::Path,
+    only_hosts: &[AiClientProfile],
+    explicit: Option<&str>,
+) -> Result<String> {
+    if let Some(explicit) = explicit {
+        return Ok(explicit.to_string());
+    }
+
+    let mut commands = std::collections::BTreeSet::new();
+    for (_, path) in doctor_startup_targets(root, only_hosts) {
+        if path.exists() {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if let Some(command) = extract_managed_cli_command(&contents) {
+                    commands.insert(command);
+                }
+            }
+        }
+    }
+    if commands.len() == 1 {
+        return Ok(commands.into_iter().next().unwrap());
+    }
+
+    let profile_dir = default_saved_profiles_dir(root);
+    if profile_dir.exists() {
+        let profile_paths = collect_profile_paths(std::slice::from_ref(&profile_dir), true)?;
+        let mut profile_commands = std::collections::BTreeSet::new();
+        for path in profile_paths {
+            if let Ok(profile) = cli_surfaces::load_profile(&path) {
+                if !profile.command.trim().is_empty() {
+                    profile_commands.insert(profile.command);
+                }
+            }
+        }
+        if profile_commands.len() == 1 {
+            return Ok(profile_commands.into_iter().next().unwrap());
+        }
+    }
+
+    Err(sxmc::error::SxmcError::Other(
+        "Could not infer which CLI profile to repair from. Re-run with `--from-cli <tool>` or save a single profile first with `sxmc add <tool>`.".into(),
+    ))
+}
+
 fn repair_doctor_startup_files(
     options: DoctorRepairOptions<'_>,
 ) -> Result<Vec<cli_surfaces::WriteOutcome>> {
-    if options.only_hosts.is_empty() {
-        return Err(sxmc::error::SxmcError::Other(
-            "`sxmc doctor --fix` requires at least one `--only <host>` selection".into(),
-        ));
-    }
-
+    let selected_hosts = infer_doctor_hosts(options.root, options.only_hosts)?;
     let profile = cli_surfaces::inspect_cli_with_depth(options.from_cli, true, options.depth)?;
     let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
         &profile,
         AiCoverage::Full,
         None,
-        options.only_hosts,
+        &selected_hosts,
         options.root,
         options.skills_path,
         ArtifactMode::Apply,
@@ -5048,6 +5441,587 @@ fn ai_client_display_name(client: AiClientProfile) -> &'static str {
         AiClientProfile::OpenaiCodex => "OpenAI/Codex",
         AiClientProfile::GenericStdioMcp => "Generic stdio MCP",
         AiClientProfile::GenericHttpMcp => "Generic HTTP MCP",
+    }
+}
+
+fn auto_detect_add_hosts(root: &std::path::Path) -> Vec<AiClientProfile> {
+    cli_surfaces::AI_HOST_SPECS
+        .iter()
+        .filter_map(|spec| match spec.client {
+            AiClientProfile::GenericStdioMcp | AiClientProfile::GenericHttpMcp => None,
+            client => {
+                let has_config = spec
+                    .native_config_target
+                    .map(|path| root.join(path).exists())
+                    .unwrap_or(false);
+                let has_doc = spec
+                    .native_doc_target
+                    .map(|path| root.join(path).exists())
+                    .unwrap_or(false);
+                let shared_doc_only = matches!(
+                    client,
+                    AiClientProfile::OpenCode | AiClientProfile::OpenaiCodex
+                );
+
+                if has_config || (has_doc && !shared_doc_only) {
+                    Some(client)
+                } else {
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn command_exists_on_path(command: &str) -> bool {
+    let candidate = std::path::Path::new(command);
+    if candidate.components().count() > 1 {
+        return candidate.is_file();
+    }
+
+    let path_var = match std::env::var_os("PATH") {
+        Some(path) => path,
+        None => return false,
+    };
+    let path_exts = if cfg!(windows) {
+        std::env::var_os("PATHEXT")
+            .map(|value| {
+                value
+                    .to_string_lossy()
+                    .split(';')
+                    .map(|item| item.trim().trim_start_matches('.').to_ascii_lowercase())
+                    .filter(|item| !item.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec!["exe".into(), "cmd".into(), "bat".into()])
+    } else {
+        Vec::new()
+    };
+
+    for dir in std::env::split_paths(&path_var) {
+        let direct = dir.join(command);
+        if direct.is_file() {
+            return true;
+        }
+        if cfg!(windows) {
+            for ext in &path_exts {
+                if dir.join(format!("{command}.{}", ext)).is_file() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn detect_setup_tools(limit: usize) -> Vec<String> {
+    const COMMON_SETUP_TOOLS: &[&str] = &[
+        "git",
+        "gh",
+        "docker",
+        "kubectl",
+        "terraform",
+        "cargo",
+        "npm",
+        "python3",
+        "jq",
+        "curl",
+    ];
+
+    COMMON_SETUP_TOOLS
+        .iter()
+        .filter(|tool| command_exists_on_path(tool))
+        .take(limit)
+        .map(|tool| (*tool).to_string())
+        .collect()
+}
+
+fn host_label_list(hosts: &[AiClientProfile]) -> String {
+    hosts
+        .iter()
+        .map(|host| ai_client_display_name(*host))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn slugify_label(input: &str) -> String {
+    let mut slug = String::new();
+    let mut previous_dash = false;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            previous_dash = false;
+        } else if !previous_dash {
+            slug.push('-');
+            previous_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+#[derive(Clone)]
+enum RuntimeMcpRegistration {
+    Stdio { command: String, args: Vec<String> },
+}
+
+fn render_runtime_client_config(
+    client: AiClientProfile,
+    server_name: &str,
+    registration: &RuntimeMcpRegistration,
+) -> String {
+    match (client, registration) {
+        (AiClientProfile::OpenaiCodex, RuntimeMcpRegistration::Stdio { command, args }) => {
+            let args_json = serde_json::to_string(args).unwrap_or_else(|_| "[]".into());
+            format!(
+                "# sxmc MCP registration\n[mcp_servers.{server_name}]\ncommand = {command:?}\nargs = {args_json}\n"
+            )
+        }
+        (AiClientProfile::OpenCode, RuntimeMcpRegistration::Stdio { command, args }) => {
+            let mut full = vec![command.clone()];
+            full.extend(args.clone());
+            serde_json::to_string_pretty(&json!({
+                "mcp": {
+                    server_name: {
+                        "type": "local",
+                        "command": full,
+                    }
+                }
+            }))
+            .unwrap()
+        }
+        (_, RuntimeMcpRegistration::Stdio { command, args }) => {
+            serde_json::to_string_pretty(&json!({
+                "mcpServers": {
+                    server_name: {
+                        "command": command,
+                        "args": args,
+                    }
+                }
+            }))
+            .unwrap()
+        }
+    }
+}
+
+fn runtime_registration_artifact(
+    client: AiClientProfile,
+    root: &Path,
+    server_name: &str,
+    registration: &RuntimeMcpRegistration,
+) -> Result<cli_surfaces::GeneratedArtifact> {
+    let spec = cli_surfaces::host_profile_spec(client);
+    let target = spec.native_config_target.ok_or_else(|| {
+        sxmc::error::SxmcError::Other(format!(
+            "{} does not have a native MCP config target in sxmc",
+            ai_client_display_name(client)
+        ))
+    })?;
+    let apply_strategy = match spec.config_shape {
+        Some(cli_surfaces::ConfigShape::JsonMcpServers)
+        | Some(cli_surfaces::ConfigShape::JsonMcp) => cli_surfaces::ApplyStrategy::JsonMcpConfig,
+        Some(cli_surfaces::ConfigShape::TomlMcpServers) => {
+            cli_surfaces::ApplyStrategy::TomlManagedBlock
+        }
+        None => {
+            return Err(sxmc::error::SxmcError::Other(format!(
+                "{} does not have a native MCP config target in sxmc",
+                ai_client_display_name(client)
+            )))
+        }
+    };
+
+    Ok(cli_surfaces::GeneratedArtifact {
+        label: format!("{} MCP registration", spec.label),
+        target_path: root.join(target),
+        content: render_runtime_client_config(client, server_name, registration),
+        apply_strategy,
+        audience: cli_surfaces::ArtifactAudience::Client(client),
+        sidecar_scope: spec.sidecar_scope.into(),
+    })
+}
+
+fn apply_runtime_registration(
+    root: &Path,
+    register_hosts: &[AiClientProfile],
+    register_mode: ArtifactMode,
+    register_name: Option<&str>,
+    default_name: &str,
+    registration: &RuntimeMcpRegistration,
+) -> Result<()> {
+    if register_hosts.is_empty() {
+        return Ok(());
+    }
+    let server_name = register_name.unwrap_or(default_name);
+    let artifacts = register_hosts
+        .iter()
+        .map(|host| runtime_registration_artifact(*host, root, server_name, registration))
+        .collect::<Result<Vec<_>>>()?;
+
+    if register_mode == ArtifactMode::Preview {
+        let outcomes = cli_surfaces::preview_artifacts_with_apply_selection(
+            &artifacts,
+            ArtifactMode::Apply,
+            root,
+            register_hosts,
+        )?;
+        eprint_preview_outcomes(&outcomes);
+    } else {
+        let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+            &artifacts,
+            register_mode,
+            root,
+            register_hosts,
+        )?;
+        eprint_write_outcomes(&outcomes);
+    }
+    Ok(())
+}
+
+fn load_discovery_snapshot(path: &Path) -> Result<Value> {
+    let raw = fs::read_to_string(path).map_err(|error| {
+        sxmc::error::SxmcError::Other(format!(
+            "Failed to read discovery snapshot '{}': {}",
+            path.display(),
+            error
+        ))
+    })?;
+    let value: Value = serde_json::from_str(&raw).map_err(|error| {
+        sxmc::error::SxmcError::Other(format!(
+            "Discovery snapshot '{}' is not valid JSON: {}",
+            path.display(),
+            error
+        ))
+    })?;
+    if value["discovery_schema"].is_null() || value["source_type"].is_null() {
+        return Err(sxmc::error::SxmcError::Other(format!(
+            "Discovery snapshot '{}' is missing `discovery_schema` or `source_type`. Save it with `sxmc discover ... --output <file>` first.",
+            path.display()
+        )));
+    }
+    Ok(value)
+}
+
+fn discovery_source_type(snapshot: &Value) -> &str {
+    snapshot["source_type"].as_str().unwrap_or("unknown")
+}
+
+fn discovery_label(snapshot: &Value) -> String {
+    match discovery_source_type(snapshot) {
+        "codebase" => format!(
+            "codebase at {}",
+            snapshot["root"].as_str().unwrap_or("<unknown>")
+        ),
+        "db" => format!(
+            "{} database {}",
+            snapshot["database_type"].as_str().unwrap_or("unknown"),
+            snapshot["source"].as_str().unwrap_or("<unknown>")
+        ),
+        "graphql" => format!(
+            "GraphQL schema {}",
+            snapshot["url"].as_str().unwrap_or("<unknown>")
+        ),
+        "traffic" => format!(
+            "{} traffic {}",
+            snapshot["capture_kind"].as_str().unwrap_or("saved"),
+            snapshot["source"].as_str().unwrap_or("<unknown>")
+        ),
+        other => other.to_string(),
+    }
+}
+
+fn discovery_kind_title(snapshot: &Value) -> &'static str {
+    match discovery_source_type(snapshot) {
+        "codebase" => "Codebase",
+        "db" => "Database",
+        "graphql" => "GraphQL",
+        "traffic" => "Traffic",
+        _ => "Discovery",
+    }
+}
+
+fn discovery_sidecar_scope(snapshot: &Value) -> String {
+    format!("discover-{}", discovery_source_type(snapshot))
+}
+
+fn discovery_summary_lines(snapshot: &Value) -> Vec<String> {
+    match discovery_source_type(snapshot) {
+        "codebase" => {
+            let kinds = snapshot["project_kinds"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let commands = snapshot["recommended_commands"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item["command"].as_str())
+                        .take(6)
+                        .map(|command| format!("- `{}`", command))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            let mut lines = vec![format!(
+                "- Project kinds: {}",
+                if kinds.is_empty() {
+                    "unknown".into()
+                } else {
+                    kinds
+                }
+            )];
+            lines.push(format!(
+                "- Manifests: {}, entrypoints: {}, configs: {}",
+                snapshot["manifest_count"].as_u64().unwrap_or(0),
+                snapshot["entrypoint_count"].as_u64().unwrap_or(0),
+                snapshot["config_count"].as_u64().unwrap_or(0)
+            ));
+            if !commands.is_empty() {
+                lines.push("- Recommended commands:".into());
+                lines.extend(commands);
+            }
+            lines
+        }
+        "db" => {
+            let entries = snapshot["entries"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .take(8)
+                        .map(|entry| {
+                            format!(
+                                "- `{}`: {} columns, {} foreign keys, {} indexes",
+                                entry["qualified_name"]
+                                    .as_str()
+                                    .or_else(|| entry["name"].as_str())
+                                    .unwrap_or("<unknown>"),
+                                entry["column_count"].as_u64().unwrap_or(0),
+                                entry["foreign_key_count"].as_u64().unwrap_or(0),
+                                entry["index_count"].as_u64().unwrap_or(0)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let mut lines = vec![format!(
+                "- {} discovered tables/views",
+                snapshot["count"].as_u64().unwrap_or(0)
+            )];
+            lines.extend(entries);
+            lines
+        }
+        "graphql" => {
+            let operations = snapshot["operations"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .take(10)
+                        .map(|operation| {
+                            format!(
+                                "- `{}` {} ({} args)",
+                                operation["kind"].as_str().unwrap_or("op"),
+                                operation["name"].as_str().unwrap_or("<unknown>"),
+                                operation["arg_count"].as_u64().unwrap_or(0)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let mut lines = vec![format!(
+                "- Query root: `{}`, mutation root: `{}`",
+                snapshot["query_type"].as_str().unwrap_or("Query"),
+                snapshot["mutation_type"].as_str().unwrap_or("Mutation")
+            )];
+            lines.push(format!(
+                "- {} operations across {} types",
+                snapshot["operation_count"].as_u64().unwrap_or(0),
+                snapshot["type_count"].as_u64().unwrap_or(0)
+            ));
+            lines.extend(operations);
+            lines
+        }
+        "traffic" => {
+            let endpoints = snapshot["endpoints"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .take(10)
+                        .map(|endpoint| {
+                            format!(
+                                "- `{}` {}{} ({} requests)",
+                                endpoint["method"].as_str().unwrap_or("GET"),
+                                endpoint["host"].as_str().unwrap_or("<host>"),
+                                endpoint["path"].as_str().unwrap_or("/"),
+                                endpoint["count"].as_u64().unwrap_or(0)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let mut lines = vec![format!(
+                "- {} requests grouped into {} endpoints",
+                snapshot["request_count"].as_u64().unwrap_or(0),
+                snapshot["endpoint_count"].as_u64().unwrap_or(0)
+            )];
+            lines.extend(endpoints);
+            lines
+        }
+        _ => vec![format!(
+            "- Snapshot schema: `{}`",
+            snapshot["discovery_schema"].as_str().unwrap_or("<unknown>")
+        )],
+    }
+}
+
+fn render_discovery_agent_doc(snapshot: &Value, client: AiClientProfile) -> String {
+    let spec = cli_surfaces::host_profile_spec(client);
+    let mut lines = vec![
+        format!(
+            "## sxmc Discovery Context: {}",
+            discovery_source_type(snapshot)
+        ),
+        String::new(),
+        format!(
+            "Use this discovered {} context as supporting repo knowledge for {}.",
+            discovery_source_type(snapshot),
+            spec.label
+        ),
+        String::new(),
+        format!("Source: {}", discovery_label(snapshot)),
+        String::new(),
+        "Highlights:".into(),
+    ];
+    lines.extend(discovery_summary_lines(snapshot));
+    lines.push(String::new());
+    lines.push("Guidance:".into());
+    lines.push(
+        "- Treat this as discovered context, not as a replacement for live verification before write actions."
+            .into(),
+    );
+    lines.push(
+        "- Re-run the matching `sxmc discover ... --output <file>` command when the interface may have changed."
+            .into(),
+    );
+    lines.push(
+        "- Prefer the concrete commands, tables, operations, and endpoints listed here over guessed names."
+            .into(),
+    );
+    lines.push(format!("- Reference: {}", spec.official_reference_url));
+    lines.join("\n")
+}
+
+fn render_discovery_portable_agent_doc(snapshot: &Value) -> String {
+    let mut lines = vec![
+        format!(
+            "## sxmc Discovery Context: {}",
+            discovery_source_type(snapshot)
+        ),
+        String::new(),
+        format!(
+            "Use this discovered {} context as portable startup knowledge across AI tools in this repo.",
+            discovery_source_type(snapshot)
+        ),
+        String::new(),
+        format!("Source: {}", discovery_label(snapshot)),
+        String::new(),
+        "Highlights:".into(),
+    ];
+    lines.extend(discovery_summary_lines(snapshot));
+    lines.push(String::new());
+    lines.push("Recommended flow:".into());
+    lines.push(
+        "- Refresh the snapshot with `sxmc discover ... --output <file>` when the underlying surface changes."
+            .into(),
+    );
+    lines.push(
+        "- Keep bulky discovery JSON in files and feed concise context into startup docs.".into(),
+    );
+    lines.push(
+        "- Use the discovered names here before improvising tables, operations, or endpoints."
+            .into(),
+    );
+    lines.join("\n")
+}
+
+fn generate_discovery_portable_agent_doc_artifact(
+    snapshot: &Value,
+    root: &Path,
+) -> cli_surfaces::GeneratedArtifact {
+    cli_surfaces::GeneratedArtifact {
+        label: format!("Portable {} context", discovery_kind_title(snapshot)),
+        target_path: root.join("AGENTS.md"),
+        content: render_discovery_portable_agent_doc(snapshot),
+        apply_strategy: cli_surfaces::ApplyStrategy::ManagedMarkdownBlock,
+        audience: cli_surfaces::ArtifactAudience::Portable,
+        sidecar_scope: discovery_sidecar_scope(snapshot),
+    }
+}
+
+fn generate_discovery_agent_doc_artifact(
+    snapshot: &Value,
+    client: AiClientProfile,
+    root: &Path,
+) -> cli_surfaces::GeneratedArtifact {
+    let spec = cli_surfaces::host_profile_spec(client);
+    cli_surfaces::GeneratedArtifact {
+        label: format!("{} {} context", spec.label, discovery_kind_title(snapshot)),
+        target_path: root.join(spec.native_doc_target.unwrap_or("AGENTS.md")),
+        content: render_discovery_agent_doc(snapshot, client),
+        apply_strategy: cli_surfaces::ApplyStrategy::ManagedMarkdownBlock,
+        audience: cli_surfaces::ArtifactAudience::Client(client),
+        sidecar_scope: discovery_sidecar_scope(snapshot),
+    }
+}
+
+fn generate_discovery_host_native_agent_doc_artifacts(
+    snapshot: &Value,
+    root: &Path,
+) -> Vec<cli_surfaces::GeneratedArtifact> {
+    cli_surfaces::AI_HOST_SPECS
+        .iter()
+        .filter(|spec| spec.native_doc_target.is_some())
+        .map(|spec| generate_discovery_agent_doc_artifact(snapshot, spec.client, root))
+        .collect()
+}
+
+fn resolve_discovery_init_artifacts(
+    snapshot: &Value,
+    coverage: AiCoverage,
+    client: Option<AiClientProfile>,
+    hosts: &[AiClientProfile],
+    root: &Path,
+    mode: ArtifactMode,
+) -> Result<(Vec<cli_surfaces::GeneratedArtifact>, Vec<AiClientProfile>)> {
+    validate_full_apply_hosts(mode, coverage, hosts)?;
+    match coverage {
+        AiCoverage::Single => {
+            let client = require_cli_ai_client(coverage, client)?;
+            Ok((
+                vec![generate_discovery_agent_doc_artifact(
+                    snapshot, client, root,
+                )],
+                vec![client],
+            ))
+        }
+        AiCoverage::Full => Ok((
+            std::iter::once(generate_discovery_portable_agent_doc_artifact(
+                snapshot, root,
+            ))
+            .chain(generate_discovery_host_native_agent_doc_artifacts(
+                snapshot, root,
+            ))
+            .collect(),
+            hosts.to_vec(),
+        )),
     }
 }
 
@@ -5180,8 +6154,45 @@ async fn main() -> Result<()> {
             bearer_token,
             max_concurrency,
             max_request_bytes,
+            register_hosts,
+            register_root,
+            register_mode,
+            register_name,
         } => {
             let search_paths = resolve_paths(paths);
+            if !register_hosts.is_empty() && transport != "stdio" {
+                return Err(sxmc::error::SxmcError::Other(
+                    "Automatic MCP registration currently supports stdio transport only for `sxmc serve`. Use `--transport stdio` or register the HTTP endpoint manually.".into(),
+                ));
+            }
+            if !register_hosts.is_empty() {
+                let root = resolve_generation_root(register_root)?;
+                let search_paths_arg = search_paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let mut args = vec!["serve".to_string()];
+                if !search_paths_arg.is_empty() {
+                    args.push("--paths".into());
+                    args.push(search_paths_arg);
+                }
+                if watch {
+                    args.push("--watch".into());
+                }
+                let registration = RuntimeMcpRegistration::Stdio {
+                    command: "sxmc".into(),
+                    args,
+                };
+                apply_runtime_registration(
+                    &root,
+                    &register_hosts,
+                    register_mode,
+                    register_name.as_deref(),
+                    "sxmc-serve",
+                    &registration,
+                )?;
+            }
             let required_headers = parse_headers(&require_headers)?;
             let bearer_token = parse_optional_secret(bearer_token)?;
             let limits = HttpServeLimits {
@@ -5239,8 +6250,88 @@ async fn main() -> Result<()> {
             max_concurrency,
             max_request_bytes,
             allow_self,
+            register_hosts,
+            register_root,
+            register_mode,
+            register_name,
         } => {
             let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
+            if !register_hosts.is_empty() && transport != "stdio" {
+                return Err(sxmc::error::SxmcError::Other(
+                    "Automatic MCP registration currently supports stdio transport only for `sxmc wrap`. Use the default stdio transport or register the HTTP endpoint manually.".into(),
+                ));
+            }
+            if !register_hosts.is_empty() {
+                let root = resolve_generation_root(register_root)?;
+                let mut args = vec!["wrap".to_string(), command.clone()];
+                if depth != 1 {
+                    args.push("--depth".into());
+                    args.push(depth.to_string());
+                }
+                if timeout_seconds != 30 {
+                    args.push("--timeout-seconds".into());
+                    args.push(timeout_seconds.to_string());
+                }
+                if progress_seconds != 0 {
+                    args.push("--progress-seconds".into());
+                    args.push(progress_seconds.to_string());
+                }
+                if let Some(path) = &working_dir {
+                    args.push("--working-dir".into());
+                    args.push(path.display().to_string());
+                }
+                if max_stdout_bytes != 256 * 1024 {
+                    args.push("--max-stdout-bytes".into());
+                    args.push(max_stdout_bytes.to_string());
+                }
+                if max_stderr_bytes != 128 * 1024 {
+                    args.push("--max-stderr-bytes".into());
+                    args.push(max_stderr_bytes.to_string());
+                }
+                if execution_history_limit != 25 {
+                    args.push("--execution-history-limit".into());
+                    args.push(execution_history_limit.to_string());
+                }
+                if !allow_tools.is_empty() {
+                    args.push("--allow-tool".into());
+                    args.push(allow_tools.join(","));
+                }
+                if !deny_tools.is_empty() {
+                    args.push("--deny-tool".into());
+                    args.push(deny_tools.join(","));
+                }
+                if !allow_options.is_empty() {
+                    args.push("--allow-option".into());
+                    args.push(allow_options.join(","));
+                }
+                if !deny_options.is_empty() {
+                    args.push("--deny-option".into());
+                    args.push(deny_options.join(","));
+                }
+                if !allow_positionals.is_empty() {
+                    args.push("--allow-positional".into());
+                    args.push(allow_positionals.join(","));
+                }
+                if !deny_positionals.is_empty() {
+                    args.push("--deny-positional".into());
+                    args.push(deny_positionals.join(","));
+                }
+                if allow_self {
+                    args.push("--allow-self".into());
+                }
+                let registration = RuntimeMcpRegistration::Stdio {
+                    command: "sxmc".into(),
+                    args,
+                };
+                apply_runtime_registration(
+                    &root,
+                    &register_hosts,
+                    register_mode,
+                    register_name.as_deref(),
+                    &format!("sxmc-wrap-{}", slugify_label(&profile.command)),
+                    &registration,
+                )?;
+            }
             let working_dir = working_dir.map(|path| {
                 if path.is_absolute() {
                     path
@@ -7295,6 +8386,179 @@ async fn main() -> Result<()> {
             }
         }
 
+        Commands::Add {
+            command,
+            depth,
+            root,
+            skills_path,
+            hosts,
+            preview,
+            allow_low_confidence,
+            allow_self,
+        } => {
+            let root = resolve_generation_root(root)?;
+            let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
+            ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
+
+            let selected_hosts = if hosts.is_empty() {
+                auto_detect_add_hosts(&root)
+            } else {
+                hosts
+            };
+            let has_selected_hosts = !selected_hosts.is_empty();
+            let apply = has_selected_hosts && !preview;
+
+            if apply {
+                println!(
+                    "Detected configured AI hosts: {}",
+                    host_label_list(&selected_hosts)
+                );
+            } else if has_selected_hosts {
+                println!(
+                    "Previewing onboarding for configured AI hosts: {}",
+                    host_label_list(&selected_hosts)
+                );
+            } else {
+                println!(
+                    "No configured AI hosts detected under {}. Previewing the full onboarding plan instead.",
+                    root.display()
+                );
+                println!(
+                    "Tip: create a host-native file first or pass --host <name> to apply directly."
+                );
+            }
+
+            let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
+                &profile,
+                AiCoverage::Full,
+                None,
+                &selected_hosts,
+                &root,
+                &skills_path,
+                if apply {
+                    ArtifactMode::Apply
+                } else {
+                    ArtifactMode::Preview
+                },
+            )?;
+
+            if apply {
+                let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                    &artifacts,
+                    ArtifactMode::Apply,
+                    &root,
+                    &selected_hosts,
+                )?;
+                print_write_outcomes(&outcomes);
+            } else {
+                let outcomes = if has_selected_hosts {
+                    cli_surfaces::preview_artifacts_with_apply_selection(
+                        &artifacts,
+                        ArtifactMode::Apply,
+                        &root,
+                        &selected_hosts,
+                    )?
+                } else {
+                    cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
+                };
+                print_preview_outcomes(&outcomes);
+            }
+        }
+
+        Commands::Setup {
+            tools,
+            limit,
+            depth,
+            root,
+            skills_path,
+            hosts,
+            preview,
+            allow_low_confidence,
+            allow_self,
+        } => {
+            let root = resolve_generation_root(root)?;
+            let tools = if tools.is_empty() {
+                detect_setup_tools(limit)
+            } else {
+                tools
+            };
+            if tools.is_empty() {
+                return Err(sxmc::error::SxmcError::Other(
+                    "No CLI tools were selected or auto-detected. Re-run with `--tool <name>` or install one of the common tools Sumac scans for.".into(),
+                ));
+            }
+
+            let selected_hosts = if hosts.is_empty() {
+                auto_detect_add_hosts(&root)
+            } else {
+                hosts
+            };
+            let has_selected_hosts = !selected_hosts.is_empty();
+            let apply = has_selected_hosts && !preview;
+
+            println!("Selected tools: {}", tools.join(", "));
+            if apply {
+                println!(
+                    "Detected configured AI hosts: {}",
+                    host_label_list(&selected_hosts)
+                );
+            } else if has_selected_hosts {
+                println!(
+                    "Previewing onboarding for configured AI hosts: {}",
+                    host_label_list(&selected_hosts)
+                );
+            } else {
+                println!(
+                    "No configured AI hosts detected under {}. Previewing the full onboarding plan instead.",
+                    root.display()
+                );
+                println!(
+                    "Tip: create a host-native file first or pass --host <name> to apply directly."
+                );
+            }
+
+            for command in tools {
+                println!("Onboarding tool: {}", command);
+                let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
+                ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
+                let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
+                    &profile,
+                    AiCoverage::Full,
+                    None,
+                    &selected_hosts,
+                    &root,
+                    &skills_path,
+                    if apply {
+                        ArtifactMode::Apply
+                    } else {
+                        ArtifactMode::Preview
+                    },
+                )?;
+
+                if apply {
+                    let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                        &artifacts,
+                        ArtifactMode::Apply,
+                        &root,
+                        &selected_hosts,
+                    )?;
+                    print_write_outcomes(&outcomes);
+                } else {
+                    let outcomes = if has_selected_hosts {
+                        cli_surfaces::preview_artifacts_with_apply_selection(
+                            &artifacts,
+                            ArtifactMode::Apply,
+                            &root,
+                            &selected_hosts,
+                        )?
+                    } else {
+                        cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
+                    };
+                    print_preview_outcomes(&outcomes);
+                }
+            }
+        }
+
         Commands::Init { action } => match action {
             InitAction::Ai {
                 from_cli,
@@ -7331,6 +8595,45 @@ async fn main() -> Result<()> {
                         &selected_hosts,
                     )?;
                     print_remove_outcomes(&outcomes);
+                } else {
+                    let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
+                        &artifacts,
+                        mode,
+                        &root,
+                        &selected_hosts,
+                    )?;
+                    print_write_outcomes(&outcomes);
+                }
+            }
+            InitAction::Discovery {
+                snapshot,
+                coverage,
+                client,
+                hosts,
+                root,
+                mode,
+            } => {
+                let root = resolve_generation_root(root)?;
+                let snapshot = load_discovery_snapshot(&snapshot)?;
+                let (artifacts, selected_hosts) = resolve_discovery_init_artifacts(
+                    &snapshot, coverage, client, &hosts, &root, mode,
+                )?;
+                if mode == ArtifactMode::Preview {
+                    let outcomes = if coverage == AiCoverage::Full && selected_hosts.is_empty() {
+                        cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
+                    } else {
+                        cli_surfaces::preview_artifacts_with_apply_selection(
+                            &artifacts,
+                            if coverage == AiCoverage::Full {
+                                ArtifactMode::Apply
+                            } else {
+                                ArtifactMode::Preview
+                            },
+                            &root,
+                            &selected_hosts,
+                        )?
+                    };
+                    print_preview_outcomes(&outcomes);
                 } else {
                     let outcomes = cli_surfaces::materialize_artifacts_with_apply_selection(
                         &artifacts,
@@ -7597,18 +8900,24 @@ async fn main() -> Result<()> {
             format,
         } => {
             let root = resolve_generation_root(root)?;
+            let mut report_hosts = only_hosts.clone();
             if fix || remove {
-                let from_cli = from_cli.as_deref().ok_or_else(|| {
-                    sxmc::error::SxmcError::Other(if remove {
-                        "`sxmc doctor --remove` requires `--from-cli <tool>`".into()
-                    } else {
-                        "`sxmc doctor --fix` requires `--from-cli <tool>`".into()
-                    })
-                })?;
+                let selected_hosts = infer_doctor_hosts(&root, &only_hosts)?;
+                let from_cli = infer_doctor_from_cli(&root, &selected_hosts, from_cli.as_deref())?;
+                if report_hosts.is_empty() {
+                    report_hosts = selected_hosts.clone();
+                }
+                if only_hosts.is_empty() {
+                    println!(
+                        "Auto-detected AI hosts: {}",
+                        host_label_list(&selected_hosts)
+                    );
+                }
+                println!("Using CLI surface: {}", from_cli);
                 let outcomes = repair_doctor_startup_files(DoctorRepairOptions {
                     root: &root,
-                    only_hosts: &only_hosts,
-                    from_cli,
+                    only_hosts: &selected_hosts,
+                    from_cli: &from_cli,
                     depth,
                     skills_path: &skills_path,
                     allow_low_confidence,
@@ -7617,7 +8926,7 @@ async fn main() -> Result<()> {
                 })?;
                 print_write_outcomes(&outcomes);
             }
-            let value = doctor_value(&root, &only_hosts)?;
+            let value = doctor_value(&root, &report_hosts)?;
             if should_render_doctor_human(human, format, pretty, std::io::stdout().is_terminal()) {
                 print_doctor_report(&value);
             } else if let Some(format) = output::prefer_structured_output(format, pretty) {

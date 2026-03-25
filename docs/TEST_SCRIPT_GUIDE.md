@@ -130,7 +130,7 @@ Re-validates all features from v0.2.10–v0.2.21:
 | Section | What it tests |
 |---|---|
 | 19. Wrap Execution & Filtering | --allow/deny-option/positional, progress, stdout limits, stdio bridge |
-| 20. Status & Watch | Structured JSON, --health, --exit-code, --compare-hosts, watch flags |
+| 20. Status & Watch | Structured JSON, AI knowledge/recovery plan, --health, --exit-code, --compare-hosts, watch flags |
 | 21. Publish / Pull | Help flags, signing, round-trip (publish → pull → verify profiles) |
 | 22. Bundle Export/Import/Verify | Create bundle, verify integrity, import profiles |
 | 23. Bundle Signing | Ed25519 keygen, HMAC + Ed25519 sign/verify/reject |
@@ -139,28 +139,29 @@ Re-validates all features from v0.2.10–v0.2.21:
 | 26. Trust | trust-report, trust-policy |
 | 27. Known-Good | Best profile selection |
 | 28. New Inspect Features | diff --format markdown, migrate-profile, drift, batch --retry-failed |
-| 29. Doctor Enhancements | --remove for cleanup |
+| 29. Doctor Enhancements | --remove for cleanup and inferred `doctor --fix` recovery |
 | 30. CI Scaffold | scaffold ci generates GitHub Actions workflows |
 | 31. Health Gates | --health --exit-code returns 0/1 |
 | 32. Discovery Lifecycle | GraphQL/traffic lifecycle help, curl history detection, codebase/db/traffic/graphql snapshot and diff coverage |
+| 33. Add Pipeline | one-step and multi-tool onboarding, discovery-to-doc bridging, and wrap/serve MCP auto-registration |
 
-### Part C — 10x10x10 Matrix (Sections 33–36)
+### Part C — 10x10x10 Matrix (Sections 34–37)
 
 | Section | What it tests |
 |---|---|
-| 33. 10 Known CLIs | git, curl, ls, ssh, tar, grep, find, gh, python3, jq — each: inspect, compact, scaffold, init-ai |
-| 34. 10 Known Skills | 4 fixtures + 6 synthetic — list, info, run, --script, --env, --print-body, serve (MCP tools/prompts/resources), MCP tool calls |
-| 35. 10 Known MCPs | 1 fixture + 4 npm + 1 self-host + 4 synthetic — bake, list, tools, grep, remove |
-| 36. Side-by-Side | With vs without Sumac: CLI understanding, AI host config, CLI→MCP, skill execution, serve, full pipeline — with timing |
+| 34. 10 Known CLIs | git, curl, ls, ssh, tar, grep, find, gh, python3, jq — each: inspect, compact, scaffold, init-ai |
+| 35. 10 Known Skills | 4 fixtures + 6 synthetic — list, info, run, --script, --env, --print-body, serve (MCP tools/prompts/resources), MCP tool calls |
+| 36. 10 Known MCPs | 1 fixture + 4 npm + 1 self-host + 4 synthetic — bake, list, tools, grep, remove |
+| 37. Side-by-Side | With vs without Sumac: CLI understanding, AI host config, CLI→MCP, skill execution, serve, full pipeline — with timing |
 
-### Part D — Benchmarks (Sections 37–40)
+### Part D — Benchmarks (Sections 38–41)
 
 | Section | What it measures |
 |---|---|
-| 37. CLI Inspection | Cold/warm per-tool (5 runs median), batch --parallel 1 vs 4 |
-| 38. Wrap & MCP | wrap git → stdio --list latency |
-| 39. Bundle | Export, HMAC sign timing |
-| 40. Pipeline | inspect → scaffold → init-ai for 5 CLIs end-to-end |
+| 38. CLI Inspection | Cold/warm per-tool (5 runs median), batch --parallel 1 vs 4 |
+| 39. Wrap & MCP | wrap git → stdio --list latency |
+| 40. Bundle | Export, HMAC sign timing |
+| 41. Pipeline | inspect → scaffold → init-ai for 5 CLIs end-to-end |
 
 ---
 

@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.42] - 2026-03-25
+
+### Added
+
+- `sxmc add <tool>` as a one-step CLI-to-AI onboarding command that inspects a
+  tool, saves its profile, detects already-configured AI hosts, and either
+  applies startup artifacts or previews the full onboarding plan
+- `sxmc setup` as the multi-tool onboarding command that scans a curated common
+  tool list or accepts explicit `--tool` selections and applies the same
+  startup pipeline in one pass
+- `sxmc init discovery <snapshot>` to bridge saved `discover codebase`,
+  `discover db`, `discover graphql`, and `discover traffic` snapshots into
+  startup-facing AI host docs
+- `sxmc wrap ... --register-host ...` and `sxmc serve ... --register-host ...`
+  to auto-register stdio MCP endpoints in host-native client config files
+
+### Changed
+
+- `sxmc status` now reports `ai_knowledge` and `recovery_plan` so the host
+  setup/staleness story is visible in one place with next-step commands
+- `sxmc doctor --fix` and `sxmc doctor --remove` now infer configured hosts and
+  the saved CLI surface when a repo already has Sumac-managed state
+- wrapped nested subcommands now keep parent-tool descriptions like `git log`
+  instead of drifting to unrelated system commands such as macOS `log`
+- generated CLI profiles now write to real saved profile files during apply
+  flows instead of landing as `.sxmc.snippet` sidecars
+- validation coverage now includes the `sxmc add` onboarding path and the new
+  `init discovery` bridge plus wrap/serve MCP auto-registration in the shell
+  suite
+
 ## [0.2.41] - 2026-03-25
 
 ### Added

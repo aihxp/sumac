@@ -28,7 +28,7 @@ pub fn generate_profile_artifact(
         label: "CLI profile".into(),
         target_path,
         content,
-        apply_strategy: ApplyStrategy::SidecarOnly,
+        apply_strategy: ApplyStrategy::DirectWrite,
         audience: ArtifactAudience::Shared,
         sidecar_scope: "profiles".into(),
     })

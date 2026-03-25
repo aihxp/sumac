@@ -82,6 +82,22 @@ pub enum Commands {
         /// Maximum HTTP request body size in bytes
         #[arg(long, default_value_t = 1024 * 1024)]
         max_request_bytes: usize,
+
+        /// AI hosts whose MCP client config should be updated before serving
+        #[arg(long = "register-host", value_enum, value_delimiter = ',')]
+        register_hosts: Vec<AiClientProfile>,
+
+        /// Project root used when writing MCP client config
+        #[arg(long = "register-root")]
+        register_root: Option<PathBuf>,
+
+        /// Preview, patch, sidecar, or apply the MCP registration
+        #[arg(long = "register-mode", value_enum, default_value = "apply")]
+        register_mode: ArtifactMode,
+
+        /// Optional MCP server name to register instead of the default
+        #[arg(long = "register-name")]
+        register_name: Option<String>,
     },
 
     /// Wrap a CLI as a focused MCP server
@@ -181,6 +197,22 @@ pub enum Commands {
         /// Allow wrapping sxmc itself
         #[arg(long)]
         allow_self: bool,
+
+        /// AI hosts whose MCP client config should be updated before serving
+        #[arg(long = "register-host", value_enum, value_delimiter = ',')]
+        register_hosts: Vec<AiClientProfile>,
+
+        /// Project root used when writing MCP client config
+        #[arg(long = "register-root")]
+        register_root: Option<PathBuf>,
+
+        /// Preview, patch, sidecar, or apply the MCP registration
+        #[arg(long = "register-mode", value_enum, default_value = "apply")]
+        register_mode: ArtifactMode,
+
+        /// Optional MCP server name to register instead of the default
+        #[arg(long = "register-name")]
+        register_name: Option<String>,
     },
 
     /// Manage skills
@@ -612,6 +644,79 @@ pub enum Commands {
         /// Structured output format
         #[arg(long, value_enum)]
         format: Option<output::StructuredOutputFormat>,
+    },
+
+    /// Inspect a CLI and add it to your AI host setup in one step
+    Add {
+        /// Command spec to inspect and onboard
+        command: String,
+
+        /// Inspection depth used to derive nested CLI context
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
+
+        /// Project root to write profiles and AI-host artifacts into
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Skills path used when generating MCP client config artifacts
+        #[arg(long, default_value = ".claude/skills")]
+        skills_path: PathBuf,
+
+        /// Explicit AI hosts to apply to instead of auto-detecting from the repo
+        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
+
+        /// Preview changes instead of writing them
+        #[arg(long)]
+        preview: bool,
+
+        /// Allow low-confidence CLI profiles to be written into AI host artifacts
+        #[arg(long)]
+        allow_low_confidence: bool,
+
+        /// Allow inspecting sxmc itself
+        #[arg(long)]
+        allow_self: bool,
+    },
+
+    /// Scan common tools or explicit selections and onboard them in one pass
+    Setup {
+        /// Explicit CLI tools to onboard; when omitted, Sumac scans a curated common-tool list
+        #[arg(long = "tool", value_delimiter = ',')]
+        tools: Vec<String>,
+
+        /// Maximum number of auto-detected tools to onboard when --tool is omitted
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+
+        /// Inspection depth used to derive nested CLI context
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
+
+        /// Project root to write profiles and AI-host artifacts into
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Skills path used when generating MCP client config artifacts
+        #[arg(long, default_value = ".claude/skills")]
+        skills_path: PathBuf,
+
+        /// Explicit AI hosts to apply to instead of auto-detecting from the repo
+        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
+
+        /// Preview changes instead of writing them
+        #[arg(long)]
+        preview: bool,
+
+        /// Allow low-confidence CLI profiles to be written into AI host artifacts
+        #[arg(long)]
+        allow_low_confidence: bool,
+
+        /// Allow inspecting sxmc itself
+        #[arg(long)]
+        allow_self: bool,
     },
 
     /// Initialize startup-facing AI artifacts from an inspected CLI
@@ -1543,6 +1648,30 @@ pub enum InitAction {
         allow_low_confidence: bool,
         #[arg(long)]
         allow_self: bool,
+    },
+    Discovery {
+        /// Saved discovery snapshot from `sxmc discover ... --output`
+        snapshot: PathBuf,
+
+        /// Target a single AI host or all supported hosts
+        #[arg(long, value_enum, default_value = "single")]
+        coverage: AiCoverage,
+
+        /// Single AI host to target
+        #[arg(long, value_enum)]
+        client: Option<AiClientProfile>,
+
+        /// Hosts to apply when using full coverage in apply mode
+        #[arg(long = "host", value_enum, value_delimiter = ',')]
+        hosts: Vec<AiClientProfile>,
+
+        /// Project root to write docs/config into
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        /// Preview, patch, sidecar, or apply the generated artifacts
+        #[arg(long, value_enum, default_value = "preview")]
+        mode: ArtifactMode,
     },
 }
 

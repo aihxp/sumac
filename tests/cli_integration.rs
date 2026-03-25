@@ -71,6 +71,16 @@ fn wait_for_http_server(port: u16) {
     panic!("timed out waiting for HTTP server on port {}", port);
 }
 
+fn wait_for_path(path: &Path) {
+    for _ in 0..100 {
+        if path.exists() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("timed out waiting for {}", path.display());
+}
+
 fn spawn_http_server(extra_args: &[&str]) -> (Child, u16) {
     let mut child = ProcessCommand::new(sxmc_bin_string())
         .args([
@@ -1005,6 +1015,109 @@ fn test_status_can_compare_hosts() {
     assert!(differences
         .iter()
         .any(|entry| entry["field"] == "config_present"));
+}
+
+#[test]
+fn test_status_reports_ai_knowledge_and_recovery_for_stale_host() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    let mut profile = command_json_with_config_home(
+        temp.path(),
+        &[
+            "inspect",
+            "cli",
+            &sxmc_bin_string(),
+            "--allow-self",
+            "--format",
+            "json-pretty",
+        ],
+    );
+    profile["provenance"]["generated_at"] = Value::from("2025-01-01T00:00:00Z");
+    fs::write(
+        profiles_dir.join("sxmc.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--only",
+            "claude-code",
+            "--pretty",
+        ],
+    );
+    assert_eq!(
+        value["ai_knowledge"]["hosts"]["claude-code"]["state"],
+        Value::from("configured_but_stale")
+    );
+    assert_eq!(
+        value["ai_knowledge"]["hosts"]["claude-code"]["stale_profile_count"],
+        Value::from(1)
+    );
+    assert!(
+        value["ai_knowledge"]["hosts"]["claude-code"]["recommended_command"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("sxmc inspect drift")
+    );
+    assert_eq!(value["recovery_plan"]["count"], Value::from(1));
+}
+
+#[test]
+fn test_status_reports_unconfigured_host_with_profiles_present() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let profile = command_json_with_config_home(
+        temp.path(),
+        &["inspect", "cli", "git", "--format", "json-pretty"],
+    );
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--only",
+            "cursor",
+            "--pretty",
+        ],
+    );
+    assert_eq!(
+        value["ai_knowledge"]["hosts"]["cursor"]["state"],
+        Value::from("profiles_present_but_host_not_configured")
+    );
+    assert!(
+        value["ai_knowledge"]["hosts"]["cursor"]["recommended_command"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("sxmc add git --host cursor")
+    );
+}
+
+#[test]
+fn test_status_human_report_includes_ai_knowledge_section() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = sxmc_with_config_home(temp.path())
+        .args(["status", "--root", temp.path().to_str().unwrap(), "--human"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("AI knowledge status"));
+    assert!(stdout.contains("Suggested fixes"));
 }
 
 #[test]
@@ -2140,6 +2253,84 @@ fn test_doctor_fix_dry_run_does_not_write_files() {
 }
 
 #[test]
+fn test_doctor_fix_can_infer_hosts_and_cli_from_existing_state() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "add",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::remove_file(temp.path().join("CLAUDE.md")).unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args(["doctor", "--fix", "--root", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Auto-detected AI hosts: Claude Code",
+        ))
+        .stdout(predicate::str::contains("Using CLI surface: git"));
+
+    assert!(temp.path().join("CLAUDE.md").exists());
+}
+
+#[test]
+fn test_doctor_remove_can_infer_hosts_and_cli_from_existing_state() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "add",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(temp.path().join("CLAUDE.md").exists());
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "doctor",
+            "--remove",
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Auto-detected AI hosts: Claude Code",
+        ))
+        .stdout(predicate::str::contains("Using CLI surface: git"));
+
+    assert!(!temp.path().join("CLAUDE.md").exists());
+}
+
+#[test]
+fn test_doctor_fix_without_inferable_hosts_has_helpful_error() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args(["doctor", "--fix", "--root", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Could not infer which AI hosts to repair",
+        ));
+}
+
+#[test]
 #[cfg(not(windows))]
 fn test_doctor_remove_cleans_selected_hosts() {
     let temp = tempfile::tempdir().unwrap();
@@ -2702,7 +2893,9 @@ fn test_inspect_cli_depth_one_collects_nested_profiles() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let nested = value["subcommand_profiles"].as_array().unwrap();
     assert!(!nested.is_empty());
-    assert!(nested.iter().any(|profile| profile["command"] == "serve"));
+    assert!(nested
+        .iter()
+        .any(|profile| profile["command"] == "sxmc serve"));
 }
 
 #[cfg(not(windows))]
@@ -2715,12 +2908,71 @@ fn test_inspect_cli_depth_two_collects_grandchild_profiles() {
     let nested = value["subcommand_profiles"].as_array().unwrap();
     let alpha = nested
         .iter()
-        .find(|profile| profile["command"] == "alpha")
+        .find(|profile| profile["command"] == "fake-nested-cli alpha")
         .expect("alpha nested profile");
     let grandchild = alpha["subcommand_profiles"].as_array().unwrap();
     assert!(grandchild
         .iter()
-        .any(|profile| profile["command"] == "beta"));
+        .any(|profile| profile["command"] == "fake-nested-cli alpha beta"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_wrap_git_uses_git_subcommand_descriptions() {
+    let profile = command_json(&["inspect", "cli", "git", "--depth", "1", "--format", "json"]);
+    let nested = profile["subcommand_profiles"].as_array().unwrap();
+
+    let log = nested
+        .iter()
+        .find(|entry| entry["command"] == "git log")
+        .expect("git log nested profile");
+    let reset = nested
+        .iter()
+        .find(|entry| entry["command"] == "git reset")
+        .expect("git reset nested profile");
+    let rm = nested
+        .iter()
+        .find(|entry| entry["command"] == "git rm")
+        .expect("git rm nested profile");
+
+    let log_summary = log["summary"]
+        .as_str()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let reset_summary = reset["summary"]
+        .as_str()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let rm_summary = rm["summary"]
+        .as_str()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    assert!(!log_summary.contains("os_log"));
+    assert!(!log_summary.contains("system wide log messages"));
+    assert!(!reset_summary.contains("terminfo"));
+    assert!(!reset_summary.contains("initialize a terminal"));
+    assert!(!rm_summary.contains("remove directory entries"));
+
+    let spec = serde_json::to_string(&vec![
+        sxmc_bin_string(),
+        "wrap".to_string(),
+        "git".to_string(),
+    ])
+    .unwrap();
+    let described_log = command_stdout(&["stdio", &spec, "--describe-tool", "log"]);
+    let described_reset = command_stdout(&["stdio", &spec, "--describe-tool", "reset"]);
+    let described_rm = command_stdout(&["stdio", &spec, "--describe-tool", "rm"]);
+
+    let described_log_lower = described_log.to_ascii_lowercase();
+    let described_reset_lower = described_reset.to_ascii_lowercase();
+    let described_rm_lower = described_rm.to_ascii_lowercase();
+
+    assert!(!described_log_lower.contains("os_log"));
+    assert!(!described_log_lower.contains("system wide log messages"));
+    assert!(!described_reset_lower.contains("terminfo"));
+    assert!(!described_reset_lower.contains("initialize a terminal"));
+    assert!(!described_rm_lower.contains("remove directory entries"));
 }
 
 #[cfg(not(windows))]
@@ -2775,6 +3027,307 @@ fn test_init_ai_blocks_low_confidence_profiles_without_override() {
         .assert()
         .success()
         .stdout(predicate::str::contains("sxmc CLI Surface"));
+}
+
+#[test]
+fn test_add_applies_to_detected_hosts_and_saves_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("CLAUDE.md"),
+        "# Existing Claude guidance\n",
+    )
+    .unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args(["add", "git", "--root", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Detected configured AI hosts: Claude Code",
+        ))
+        .stdout(predicate::str::contains("Created CLI profile:"))
+        .stdout(predicate::str::contains("Claude Code agent doc:"));
+
+    let profile_path = temp
+        .path()
+        .join(".sxmc")
+        .join("ai")
+        .join("profiles")
+        .join("git.json");
+    assert!(profile_path.exists(), "expected git profile to be written");
+    assert!(
+        temp.path()
+            .join(".sxmc")
+            .join("ai")
+            .join("claude-code-mcp.json")
+            .exists(),
+        "expected Claude MCP config to be written"
+    );
+
+    let claude = fs::read_to_string(temp.path().join("CLAUDE.md")).unwrap();
+    assert!(claude.contains("sxmc:begin cli-ai:claude-code"));
+    assert!(claude.contains("git"));
+}
+
+#[test]
+fn test_add_without_detected_hosts_previews_full_plan() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args(["add", "git", "--root", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No configured AI hosts detected"))
+        .stdout(predicate::str::contains("Would create CLI profile:"))
+        .stdout(predicate::str::contains(
+            "Would create Claude Code agent doc:",
+        ));
+
+    let profile_path = temp
+        .path()
+        .join(".sxmc")
+        .join("ai")
+        .join("profiles")
+        .join("git.json");
+    assert!(
+        !profile_path.exists(),
+        "preview path should not write the profile yet"
+    );
+}
+
+#[test]
+fn test_setup_applies_multiple_tools_to_detected_hosts() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(
+        temp.path().join("CLAUDE.md"),
+        "# Existing Claude guidance\n",
+    )
+    .unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "setup",
+            "--tool",
+            "git,ls",
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Selected tools: git, ls"))
+        .stdout(predicate::str::contains(
+            "Detected configured AI hosts: Claude Code",
+        ))
+        .stdout(predicate::str::contains("Onboarding tool: git"))
+        .stdout(predicate::str::contains("Onboarding tool: ls"));
+
+    assert!(temp.path().join(".sxmc/ai/profiles/git.json").exists());
+    assert!(temp.path().join(".sxmc/ai/profiles/ls.json").exists());
+    assert!(temp.path().join(".sxmc/ai/claude-code-mcp.json").exists());
+}
+
+#[test]
+fn test_setup_previews_when_no_hosts_are_configured() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "setup",
+            "--tool",
+            "git",
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Selected tools: git"))
+        .stdout(predicate::str::contains("No configured AI hosts detected"))
+        .stdout(predicate::str::contains("Would create CLI profile:"));
+
+    assert!(!temp.path().join(".sxmc/ai/profiles/git.json").exists());
+}
+
+#[test]
+fn test_init_discovery_applies_snapshot_to_host_doc() {
+    let temp = tempfile::tempdir().unwrap();
+    let snapshot = temp.path().join("codebase.json");
+
+    sxmc()
+        .args([
+            "discover",
+            "codebase",
+            env!("CARGO_MANIFEST_DIR"),
+            "--output",
+            snapshot.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "init",
+            "discovery",
+            snapshot.to_str().unwrap(),
+            "--client",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Claude Code Codebase context:"));
+
+    let claude = fs::read_to_string(temp.path().join("CLAUDE.md")).unwrap();
+    assert!(claude.contains("sxmc:begin cli-ai:discover-codebase"));
+    assert!(claude.contains("## sxmc Discovery Context: codebase"));
+    assert!(claude.contains("Highlights:"));
+}
+
+#[test]
+fn test_init_discovery_previews_full_coverage_without_hosts() {
+    let temp = tempfile::tempdir().unwrap();
+    let snapshot = temp.path().join("codebase.json");
+
+    sxmc()
+        .args([
+            "discover",
+            "codebase",
+            env!("CARGO_MANIFEST_DIR"),
+            "--output",
+            snapshot.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "init",
+            "discovery",
+            snapshot.to_str().unwrap(),
+            "--coverage",
+            "full",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "preview",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Would create Portable Codebase context:",
+        ))
+        .stdout(predicate::str::contains(
+            "Would create Claude Code Codebase context:",
+        ));
+}
+
+#[test]
+fn test_wrap_register_host_writes_cursor_mcp_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_path = temp.path().join(".cursor").join("mcp.json");
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "wrap",
+            "git",
+            "--register-host",
+            "cursor",
+            "--register-root",
+            temp.path().to_str().unwrap(),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+
+    wait_for_path(&config_path);
+    child.kill().ok();
+    let _ = child.wait();
+
+    let contents = fs::read_to_string(&config_path).unwrap();
+    assert!(contents.contains("\"sxmc-wrap-git\""));
+    assert!(contents.contains("\"command\": \"sxmc\""));
+    assert!(contents.contains("\"wrap\""));
+    assert!(contents.contains("\"git\""));
+}
+
+#[test]
+fn test_serve_register_host_writes_cursor_mcp_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let config_path = temp.path().join(".cursor").join("mcp.json");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures");
+    let mut child = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "serve",
+            "--paths",
+            fixtures.to_str().unwrap(),
+            "--register-host",
+            "cursor",
+            "--register-root",
+            temp.path().to_str().unwrap(),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+
+    wait_for_path(&config_path);
+    child.kill().ok();
+    let _ = child.wait();
+
+    let contents = fs::read_to_string(&config_path).unwrap();
+    assert!(contents.contains("\"sxmc-serve\""));
+    assert!(contents.contains("\"command\": \"sxmc\""));
+    assert!(contents.contains("\"serve\""));
+    assert!(contents.contains(fixtures.to_str().unwrap()));
+}
+
+#[test]
+fn test_wrap_register_host_rejects_http_transport() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc()
+        .args([
+            "wrap",
+            "git",
+            "--transport",
+            "http",
+            "--register-host",
+            "cursor",
+            "--register-root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Automatic MCP registration currently supports stdio transport only for `sxmc wrap`",
+        ));
+}
+
+#[test]
+fn test_serve_register_host_rejects_http_transport() {
+    let temp = tempfile::tempdir().unwrap();
+
+    sxmc()
+        .args([
+            "serve",
+            "--transport",
+            "http",
+            "--register-host",
+            "cursor",
+            "--register-root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Automatic MCP registration currently supports stdio transport only for `sxmc serve`",
+        ));
 }
 
 #[test]

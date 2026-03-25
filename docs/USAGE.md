@@ -308,6 +308,9 @@ Notes:
 - `sxmc doctor --check --fix --only claude-code,cursor --from-cli gh` repairs
   missing startup files for the selected hosts by running the same generation
   path as `init ai`.
+- `sxmc doctor --fix --root .` can now infer both the configured hosts and the
+  CLI surface to repair when the repo already has Sumac-managed host files and
+  saved profiles.
 - `sxmc doctor --remove --only claude-code --from-cli gh` removes generated
   startup files or managed snippets for the selected hosts.
 - `sxmc status` extends doctor with saved-profile drift so you can see whether
@@ -315,6 +318,9 @@ Notes:
 - `sxmc status` also includes saved-profile inventory metadata so you can spot
   stale profiles, freshness gaps, and profiles that are not yet ready for
   startup-doc generation.
+- `sxmc status` now also reports `ai_knowledge` and `recovery_plan` so you can
+  see which hosts are configured, which are stale, which still need setup, and
+  the next Sumac command to run for each.
 - saved-profile inventory and exported corpus entries now include a quality
   score/level in addition to the boolean ready/not-ready signal.
 - `sxmc status --health` also validates baked MCP/API connections and adds a
@@ -448,17 +454,49 @@ Notes:
 Generate startup-facing artifacts for a host profile:
 
 ```bash
+sxmc add gh
+sxmc add gh --preview
+sxmc add gh --host claude-code,cursor
+sxmc setup --tool git,gh,docker --root .
+sxmc setup --tool git --host claude-code,cursor --root .
+
+sxmc wrap gh --register-host cursor --register-root .
+sxmc serve --paths .claude/skills --register-host claude-code --register-root .
+
 sxmc init ai --from-cli gh --client claude-code --mode preview
 sxmc init ai --from-cli gh --client cursor --mode preview
 sxmc init ai --from-cli gh --coverage full --mode preview
 sxmc init ai --from-cli gh --coverage full --host claude-code,cursor --mode apply
 sxmc init ai --from-cli gh --coverage full --host claude-code --mode apply --remove
+
+sxmc discover codebase . --output codebase.json
+sxmc init discovery codebase.json --client claude-code --mode preview
+sxmc init discovery codebase.json --coverage full --host claude-code,cursor --mode apply
 ```
+
+- `sxmc add <tool>` is the one-step onboarding path:
+  it inspects the CLI, saves the profile, detects already-configured AI hosts in
+  the repo, and applies startup artifacts for those hosts.
+- `sxmc setup` is the multi-tool onboarding path:
+  it scans a curated set of common tools when `--tool` is omitted, then runs the
+  same inspect/save/init pipeline for each selected tool.
+- If no host-native files are present yet, `sxmc add` falls back to a full
+  preview so you can see the onboarding plan before choosing hosts explicitly.
+- `sxmc setup` follows the same safety rule: if no configured hosts are found,
+  it previews the onboarding plan instead of writing files unexpectedly.
+- `sxmc wrap ... --register-host ...` and `sxmc serve ... --register-host ...`
+  can update host-native MCP client config files automatically, so the wrapped
+  or served MCP endpoint is wired into Cursor, Claude Code, and other supported
+  hosts without manual JSON edits.
+- `sxmc init discovery <snapshot>` bridges saved `discover codebase`, `discover db`,
+  `discover graphql`, and `discover traffic` snapshots into startup docs for AI
+  hosts, so discovery output can flow into CLAUDE.md/AGENTS.md instead of
+  staying stranded as raw JSON.
 
 Pipeline summary:
 
 ```text
-CLI binary -> sxmc inspect cli -> JSON profile -> sxmc init ai / scaffold -> AI-ready files
+CLI binary -> sxmc add / inspect cli -> JSON profile -> sxmc init ai / scaffold -> AI-ready files
 ```
 
 Generate from an existing saved profile:
