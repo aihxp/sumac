@@ -1,8 +1,8 @@
 class Sxmc < Formula
   desc "Sumac: bring out what your tools can do (Skills x MCP x CLI)"
   homepage "https://github.com/aihxp/sumac"
-  url "https://github.com/aihxp/sumac/archive/refs/tags/v1.0.5.tar.gz"
-  sha256 "4bf03ac14ce2bd387cac4cfe7c53d6ce6143a5d6fff3e1e470a67f6198c73c7a"
+  url "https://github.com/aihxp/sumac/archive/refs/tags/v1.0.6.tar.gz"
+  sha256 "886c8f8eeb37ae52103d77e703f88efa0d6ae3478e5eda2402e6a1273eb09383"
   license "MIT"
   head "https://github.com/aihxp/sumac.git", branch: "master"
 
