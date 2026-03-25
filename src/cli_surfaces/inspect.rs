@@ -20,7 +20,7 @@ use crate::cli_surfaces::model::{
 use crate::error::{Result, SxmcError};
 
 const CLI_PROFILE_CACHE_TTL_SECS: u64 = 60 * 60 * 24 * 14;
-const CLI_PROFILE_CACHE_SCHEMA_VERSION: u32 = 4;
+const CLI_PROFILE_CACHE_SCHEMA_VERSION: u32 = 6;
 const COMPACT_SUBCOMMAND_LIMIT: usize = 12;
 const COMPACT_OPTION_LIMIT: usize = 15;
 
@@ -1424,8 +1424,9 @@ fn parse_help_text(
     help: &str,
 ) -> CliSurfaceProfile {
     let lines: Vec<&str> = help.lines().collect();
-    let summary = select_summary(&lines, command_name);
-    let description = parse_description(&lines, command_name, &summary);
+    let summary = collapse_wrapped_unicode_hyphenation(&select_summary(&lines, command_name));
+    let description = parse_description(&lines, command_name, &summary)
+        .map(|value| collapse_wrapped_unicode_hyphenation(&value));
     let subcommands = parse_subcommands(&lines, command_name);
     let options = parse_options(&lines, command_name);
     let positionals = parse_positionals(&lines, command_name);
@@ -1915,6 +1916,7 @@ fn infer_requirements(help: &str) -> (Vec<AuthRequirement>, Vec<EnvironmentRequi
 
 fn infer_interactive_reasons(help: &str, summary: &str) -> Vec<String> {
     let mut reasons = Vec::new();
+    let summary_lower = summary.to_ascii_lowercase();
     let lowered = format!("{}\n{}", summary, help).to_ascii_lowercase();
 
     let mut push_reason = |reason: &str| {
@@ -1947,8 +1949,8 @@ fn infer_interactive_reasons(help: &str, summary: &str) -> Vec<String> {
     {
         push_reason("tty_required");
     }
-    if lowered.contains("interactive mode")
-        || lowered.contains("interactive session")
+    if summary_lower.contains("interactive mode")
+        || summary_lower.contains("interactive session")
         || lowered.contains("use arrow keys")
         || lowered.contains("press q")
         || lowered.contains("press enter")
@@ -2249,11 +2251,12 @@ fn looks_like_cli_example_line(line: &str, command_name: &str) -> bool {
 
 fn sanitize_for_profile(text: &str, command_name: &str) -> String {
     let overstrike_stripped = strip_overstrike(text);
+    let wrap_normalized = collapse_wrapped_unicode_hyphenation(&overstrike_stripped);
     let unix_path = Regex::new(r"(?P<prefix>^|[\s(])(?P<path>/[^\s:]+)").unwrap();
     let windows_path = Regex::new(r"(?P<prefix>^|[\s(])(?P<path>[A-Za-z]:\\[^\s:]+)").unwrap();
 
     let mut sanitized = unix_path
-        .replace_all(&overstrike_stripped, |caps: &regex::Captures<'_>| {
+        .replace_all(&wrap_normalized, |caps: &regex::Captures<'_>| {
             let prefix = caps.name("prefix").map(|m| m.as_str()).unwrap_or_default();
             let path = caps.name("path").map(|m| m.as_str()).unwrap_or_default();
             let replacement = Path::new(path)
@@ -2279,6 +2282,34 @@ fn sanitize_for_profile(text: &str, command_name: &str) -> String {
         .into_owned();
 
     sanitized.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn collapse_wrapped_unicode_hyphenation(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut idx = 0;
+
+    while idx < chars.len() {
+        let ch = chars[idx];
+        if idx > 0
+            && matches!(ch, '\u{00AD}' | '\u{2010}' | '\u{2011}')
+            && chars[idx - 1].is_ascii_alphabetic()
+        {
+            let mut next = idx + 1;
+            while next < chars.len() && chars[next].is_whitespace() {
+                next += 1;
+            }
+            if next < chars.len() && chars[next].is_ascii_alphabetic() {
+                idx = next;
+                continue;
+            }
+        }
+
+        out.push(ch);
+        idx += 1;
+    }
+
+    out
 }
 
 fn strip_overstrike(text: &str) -> String {
@@ -2325,7 +2356,7 @@ fn parse_man_name_summary(lines: &[&str], command_name: &str) -> Option<String> 
         return None;
     }
 
-    let joined = collected.join(" ");
+    let joined = sanitize_for_profile(&collected.join(" "), command_name);
     let separator_regex = Regex::new(r"^.+?\s+[–—-]\s+(.+)$").unwrap();
     if let Some(caps) = separator_regex.captures(&joined) {
         return caps
@@ -2364,7 +2395,7 @@ fn parse_man_description(lines: &[&str], command_name: &str) -> Option<String> {
         collected.push(sanitize_for_profile(trimmed, command_name));
     }
 
-    (!collected.is_empty()).then(|| collected.join(" "))
+    (!collected.is_empty()).then(|| sanitize_for_profile(&collected.join(" "), command_name))
 }
 
 fn parse_man_options(lines: &[&str]) -> Vec<ProfileOption> {
@@ -3443,6 +3474,36 @@ EXAMPLES
                 "S\u{0008}SU\u{0008}UM\u{0008}MM\u{0008}MA\u{0008}AR\u{0008}RY\u{0008}Y"
             ),
             "SUMMARY"
+        );
+    }
+
+    #[test]
+    fn sanitize_for_profile_collapses_wrapped_unicode_hyphenation() {
+        assert_eq!(
+            super::sanitize_for_profile(
+                "an interpreted, interactive, object-oriented programming lan\u{2010} guage",
+                "python3"
+            ),
+            "an interpreted, interactive, object-oriented programming language"
+        );
+    }
+
+    #[test]
+    fn collapse_wrapped_unicode_hyphenation_joins_split_words() {
+        assert_eq!(
+            super::collapse_wrapped_unicode_hyphenation(
+                "an interpreted, interactive, object-oriented programming lan\u{2010} guage"
+            ),
+            "an interpreted, interactive, object-oriented programming language"
+        );
+    }
+
+    #[test]
+    fn parse_man_name_summary_collapses_wrapped_words_across_lines() {
+        let lines = ["NAME", "python - programming lan\u{2010}", "guage", ""];
+        assert_eq!(
+            super::parse_man_name_summary(&lines, "python3").as_deref(),
+            Some("programming language")
         );
     }
 

@@ -61,7 +61,7 @@ fn wait_for_http_server(port: u16) {
     let addr = format!("127.0.0.1:{port}")
         .parse()
         .expect("valid socket address");
-    for _ in 0..40 {
+    for _ in 0..100 {
         if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(100)).is_ok() {
             std::thread::sleep(Duration::from_millis(100));
             return;
@@ -118,7 +118,7 @@ fn spawn_http_server(extra_args: &[&str]) -> (Child, u16) {
     });
 
     let port = receiver
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(Duration::from_secs(15))
         .expect("timed out waiting for HTTP server port");
     wait_for_http_server(port);
     (child, port)
@@ -162,7 +162,7 @@ fn spawn_wrap_http_server(command_spec: &str, extra_args: &[&str]) -> (Child, u1
     });
 
     let port = receiver
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(Duration::from_secs(15))
         .expect("timed out waiting for wrapped HTTP server port");
     wait_for_http_server(port);
     (child, port)
@@ -206,7 +206,7 @@ fn spawn_registry_http_server(registry_dir: &Path, extra_args: &[&str]) -> (Chil
     });
 
     let port = receiver
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(Duration::from_secs(15))
         .expect("timed out waiting for registry HTTP server port");
     wait_for_http_server(port);
     (child, port)

@@ -8818,22 +8818,20 @@ async fn main() -> Result<()> {
                 let value = cli_surfaces::invalidate_profile_cache_value(&command, dry_run)?;
                 if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
+                } else if value["dry_run"].as_bool().unwrap_or(false) {
+                    println!(
+                        "Would invalidate {} cached profile entries for `{}` ({} entries would remain)",
+                        value["matched_entries"].as_u64().unwrap_or(0),
+                        value["command"].as_str().unwrap_or("<unknown>"),
+                        value["remaining_entries"].as_u64().unwrap_or(0)
+                    );
                 } else {
-                    if value["dry_run"].as_bool().unwrap_or(false) {
-                        println!(
-                            "Would invalidate {} cached profile entries for `{}` ({} entries would remain)",
-                            value["matched_entries"].as_u64().unwrap_or(0),
-                            value["command"].as_str().unwrap_or("<unknown>"),
-                            value["remaining_entries"].as_u64().unwrap_or(0)
-                        );
-                    } else {
-                        println!(
-                            "Invalidated {} cached profile entries for `{}` ({} entries remain)",
-                            value["removed_entries"].as_u64().unwrap_or(0),
-                            value["command"].as_str().unwrap_or("<unknown>"),
-                            value["remaining_entries"].as_u64().unwrap_or(0)
-                        );
-                    }
+                    println!(
+                        "Invalidated {} cached profile entries for `{}` ({} entries remain)",
+                        value["removed_entries"].as_u64().unwrap_or(0),
+                        value["command"].as_str().unwrap_or("<unknown>"),
+                        value["remaining_entries"].as_u64().unwrap_or(0)
+                    );
                 }
             }
             InspectAction::CacheWarm {
@@ -9109,17 +9107,15 @@ async fn main() -> Result<()> {
                     &root,
                     &selected_hosts,
                 )?
+            } else if has_selected_hosts {
+                cli_surfaces::preview_artifacts_with_apply_selection(
+                    &artifacts,
+                    ArtifactMode::Apply,
+                    &root,
+                    &selected_hosts,
+                )?
             } else {
-                if has_selected_hosts {
-                    cli_surfaces::preview_artifacts_with_apply_selection(
-                        &artifacts,
-                        ArtifactMode::Apply,
-                        &root,
-                        &selected_hosts,
-                    )?
-                } else {
-                    cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
-                }
+                cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
             };
 
             if let Some(format) = render_format {
@@ -9229,17 +9225,15 @@ async fn main() -> Result<()> {
                         &root,
                         &selected_hosts,
                     )?
+                } else if has_selected_hosts {
+                    cli_surfaces::preview_artifacts_with_apply_selection(
+                        &artifacts,
+                        ArtifactMode::Apply,
+                        &root,
+                        &selected_hosts,
+                    )?
                 } else {
-                    if has_selected_hosts {
-                        cli_surfaces::preview_artifacts_with_apply_selection(
-                            &artifacts,
-                            ArtifactMode::Apply,
-                            &root,
-                            &selected_hosts,
-                        )?
-                    } else {
-                        cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
-                    }
+                    cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &root)?
                 };
 
                 if render_format.is_none() && apply {

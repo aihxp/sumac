@@ -1457,7 +1457,7 @@ for cmd in "${MATRIX_CLIS[@]}"; do
     ai_cmd+=( --allow-low-confidence )
   fi
   ai_out=$("${ai_cmd[@]}" 2>&1)
-  echo "$ai_out" | grep -q "Target:" && pass "$cmd: init ai claude-code" || fail "$cmd: init ai"
+  grep -q "Target:" <<<"$ai_out" && pass "$cmd: init ai claude-code" || fail "$cmd: init ai"
 
   ((CLI_PASS++))
 done
