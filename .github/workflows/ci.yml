@@ -71,7 +71,7 @@ jobs:
           $doctor = target\debug\sxmc.exe doctor --format json | ConvertFrom-Json
           if (-not $doctor.root) { throw "doctor JSON missing root" }
           $compact = target\debug\sxmc.exe inspect cli cargo --compact --format json | ConvertFrom-Json
-          if (-not $compact.subcommand_count) { throw "compact inspect missing subcommand_count" }
+          if ($null -eq $compact.subcommand_count) { throw "compact inspect missing subcommand_count" }
           $cache = target\debug\sxmc.exe inspect cache-stats --format json | ConvertFrom-Json
           if ($null -eq $cache.entry_count) { throw "cache stats missing entry_count" }
 
