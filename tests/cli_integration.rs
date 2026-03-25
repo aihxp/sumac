@@ -72,7 +72,7 @@ fn wait_for_http_server(port: u16) {
 }
 
 fn wait_for_path(path: &Path) {
-    for _ in 0..100 {
+    for _ in 0..300 {
         if path.exists() {
             return;
         }

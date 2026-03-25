@@ -66,10 +66,10 @@ This pass covers the full shipped surface through `v0.2.44`, including:
 Median snapshots from the run:
 
 - warm CLI inspection: `7–8ms`
-- `wrap git -> stdio --list`: `16ms`
+- `wrap git -> stdio --list`: `17ms`
 - bundle export (5 profiles): `16ms`
 - bundle export + HMAC sign: `20ms`
-- full `inspect -> scaffold -> init-ai` pipeline for 5 CLIs: `105ms`
+- full `inspect -> scaffold -> init-ai` pipeline for 5 CLIs: `103ms`
 
 ---
 
