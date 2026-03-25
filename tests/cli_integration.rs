@@ -1178,6 +1178,50 @@ fn test_watch_exit_on_unhealthy_fails_for_unhealthy_bakes() {
 }
 
 #[test]
+fn test_watch_notify_file_writes_unhealthy_event() {
+    let temp = tempfile::tempdir().unwrap();
+    let notify_path = temp.path().join("watch-events.ndjson");
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake",
+            "create",
+            "fixture-unhealthy-notify",
+            "--type",
+            "stdio",
+            "--source",
+            "definitely-not-a-real-command",
+            "--skip-validate",
+        ])
+        .assert()
+        .success();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "watch",
+            "--health",
+            "--exit-on-unhealthy",
+            "--notify-file",
+            notify_path.to_str().unwrap(),
+            "--format",
+            "ndjson",
+        ])
+        .assert()
+        .failure();
+
+    let line = fs::read_to_string(&notify_path).unwrap();
+    let event: Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
+    assert_eq!(event["event_schema"], Value::from("sxmc_watch_event_v1"));
+    assert_eq!(event["reason"], Value::from("unhealthy"));
+    assert!(
+        event["status"]["baked_health"]["unhealthy_count"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 1
+    );
+}
+
+#[test]
 fn test_status_can_compare_hosts() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join(".cursor")).unwrap();
@@ -1276,6 +1320,13 @@ fn test_status_reports_ai_knowledge_and_recovery_for_stale_host() {
                 .as_str()
                 .unwrap_or_default()
                 .contains("sxmc inspect drift")));
+    assert!(value["recovery_plan"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["severity"].as_str() == Some("warning")
+            && item["priority"].as_u64().unwrap_or(99) >= 1
+            && item["category"].as_str().is_some()));
 }
 
 #[test]

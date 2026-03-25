@@ -678,6 +678,8 @@ watch_help=$("$SXMC" watch --help 2>&1)
 echo "$watch_help" | grep -q "interval-seconds" && pass "watch has --interval-seconds" || fail "watch missing --interval-seconds"
 echo "$watch_help" | grep -q "exit-on-change" && pass "watch has --exit-on-change" || fail "watch missing --exit-on-change"
 echo "$watch_help" | grep -q "exit-on-unhealthy" && pass "watch has --exit-on-unhealthy" || fail "watch missing --exit-on-unhealthy"
+echo "$watch_help" | grep -q "notify-file" && pass "watch has --notify-file" || fail "watch missing --notify-file"
+echo "$watch_help" | grep -q "notify-command" && pass "watch has --notify-command" || fail "watch missing --notify-command"
 
 # ── Section 21: Publish / Pull ──
 section "21. Publish / Pull"

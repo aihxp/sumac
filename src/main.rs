@@ -22,6 +22,7 @@ use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 use std::time::{Duration, Instant};
 
 use std::collections::{HashMap, HashSet};
@@ -3602,10 +3603,14 @@ fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value, sync_state: &Va
                 .unwrap_or_else(|| {
                     format!("sxmc add <tool> --host {} --root {}", key, root.display())
                 });
+            let (priority, severity, category) = recovery_plan_attributes(state);
             items.push(json!({
                 "host": key,
                 "label": details["label"],
                 "state": state,
+                "priority": priority,
+                "severity": severity,
+                "category": category,
                 "summary": details["summary"],
                 "command": command,
             }));
@@ -3616,6 +3621,9 @@ fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value, sync_state: &Va
             "host": Value::Null,
             "label": "Saved CLI profiles",
             "state": "sync_needed",
+            "priority": 1,
+            "severity": "warning",
+            "category": "sync",
             "summary": format!(
                 "{} saved profile(s) drifted from the installed tools.",
                 sync_state["current_drift_count"].as_u64().unwrap_or(0)
@@ -3627,6 +3635,73 @@ fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value, sync_state: &Va
         "count": items.len(),
         "items": items,
     })
+}
+
+fn recovery_plan_attributes(state: &str) -> (u64, &'static str, &'static str) {
+    match state {
+        "configured_but_stale" => (1, "warning", "refresh"),
+        "profiles_present_but_host_not_configured" => (2, "warning", "configure"),
+        "not_configured" => (3, "info", "onboard"),
+        _ => (3, "info", "repair"),
+    }
+}
+
+fn watch_event_value(root: &Path, reason: &str, value: &Value) -> Value {
+    json!({
+        "event_schema": "sxmc_watch_event_v1",
+        "reason": reason,
+        "root": root.display().to_string(),
+        "observed_at": Utc::now().to_rfc3339(),
+        "status": value,
+    })
+}
+
+fn append_watch_notification(path: &Path, event: &Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{}", serde_json::to_string(event)?)?;
+    Ok(())
+}
+
+fn run_watch_notify_command(command: &str, event: &Value) -> Result<()> {
+    let temp_path = std::env::temp_dir().join(format!(
+        "sxmc-watch-event-{}-{}.json",
+        std::process::id(),
+        Utc::now().timestamp_micros()
+    ));
+    fs::write(&temp_path, serde_json::to_string_pretty(event)?)?;
+
+    let mut child = if cfg!(windows) {
+        let mut cmd = StdCommand::new("cmd");
+        cmd.arg("/C").arg(command);
+        cmd
+    } else {
+        let mut cmd = StdCommand::new("sh");
+        cmd.arg("-lc").arg(command);
+        cmd
+    };
+
+    child
+        .env(
+            "SXMC_WATCH_REASON",
+            event["reason"].as_str().unwrap_or("change"),
+        )
+        .env("SXMC_WATCH_EVENT_PATH", temp_path.as_os_str())
+        .env("SXMC_WATCH_ROOT", event["root"].as_str().unwrap_or("."));
+
+    let status = child.status()?;
+    if !status.success() {
+        eprintln!("[sxmc] Watch notify command exited with status {}", status);
+    }
+    let _ = fs::remove_file(temp_path);
+    Ok(())
 }
 
 fn compare_host_capabilities(root: &Path, compare_hosts: &[AiClientProfile]) -> Value {
@@ -4176,9 +4251,11 @@ fn format_status_report(value: &Value) -> String {
             lines.push(String::new());
             lines.push("Suggested fixes".into());
             for item in items {
+                let severity = item["severity"].as_str().unwrap_or("info");
                 lines.push(format!(
-                    "- {}: {}",
+                    "- {} [{}]: {}",
                     item["label"].as_str().unwrap_or("<unknown>"),
+                    severity,
                     item["summary"].as_str().unwrap_or("repair needed")
                 ));
                 lines.push(format!(
@@ -9720,6 +9797,8 @@ async fn main() -> Result<()> {
             interval_seconds,
             exit_on_change,
             exit_on_unhealthy,
+            notify_file,
+            notify_command,
             pretty,
             format,
         } => {
@@ -9736,7 +9815,19 @@ async fn main() -> Result<()> {
                     println!("{rendered}");
                     println!();
                     std::io::stdout().flush()?;
-                    if exit_on_unhealthy && status_has_unhealthy_baked_health(&value) {
+                    let unhealthy = status_has_unhealthy_baked_health(&value);
+                    let should_notify = !first_frame || unhealthy;
+                    if should_notify {
+                        let reason = if unhealthy { "unhealthy" } else { "change" };
+                        let event = watch_event_value(&root, reason, &value);
+                        if let Some(path) = notify_file.as_ref() {
+                            append_watch_notification(path, &event)?;
+                        }
+                        if let Some(command) = notify_command.as_deref() {
+                            run_watch_notify_command(command, &event)?;
+                        }
+                    }
+                    if exit_on_unhealthy && unhealthy {
                         std::process::exit(1);
                     }
                     if exit_on_change && !first_frame {

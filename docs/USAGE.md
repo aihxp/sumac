@@ -376,6 +376,12 @@ Notes:
   change after the initial frame with `--exit-on-change`.
 - `sxmc watch --health --exit-on-unhealthy` exits on the first observed frame
   with unhealthy baked MCP/API integrations.
+- `sxmc watch --notify-file <events.ndjson>` appends structured watch events so
+  local automation or webhooks can react to change/unhealthy frames without
+  scraping terminal output.
+- `sxmc watch --notify-command '<shell command>'` runs a local hook when watch
+  emits a changed or unhealthy frame; the hook receives `SXMC_WATCH_REASON`,
+  `SXMC_WATCH_ROOT`, and `SXMC_WATCH_EVENT_PATH`.
 - `sxmc sync --root .` is the preview-first reconciler: it compares saved
   profiles against the installed tools, shows what would change, and suggests
   the exact `--apply` command to run next.

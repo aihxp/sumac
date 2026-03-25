@@ -29,8 +29,8 @@ Candidate work:
 - completed foundation:
   - tighter `status -> sync -> doctor` recovery loops
   - explicit local sync state tracking for saved profiles and derived host artifacts
+  - watch notification hooks for changed/unhealthy frames
 - next:
-  - optional notifications or CI hooks for stale managed artifacts
   - broader host-aware remediation suggestions
 
 ## Priority 2: Discovery -> Delivery

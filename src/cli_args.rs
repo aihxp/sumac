@@ -948,6 +948,14 @@ pub enum Commands {
         #[arg(long, requires = "health")]
         exit_on_unhealthy: bool,
 
+        /// Append notification events as NDJSON to this file when watch frames change
+        #[arg(long)]
+        notify_file: Option<PathBuf>,
+
+        /// Run this shell command when watch frames change
+        #[arg(long)]
+        notify_command: Option<String>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,

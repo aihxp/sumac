@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   them in one pass
 - discovery delivery is now part of the active post-`1.0.0` roadmap instead of
   only an implied follow-up
+- `sxmc status` recovery plan items now include additive `priority`,
+  `severity`, and `category` fields for automation and clearer human triage
+- `sxmc watch` now supports `--notify-file` and `--notify-command` hooks for
+  changed or unhealthy frames
 
 ## [1.0.1] - 2026-03-25
 
