@@ -655,6 +655,11 @@ if json_check "$status_out" "'startup_files' in d or 'cache' in d or 'summary' i
   pass "status outputs structured JSON"
   if json_check "$status_out" "'ai_knowledge' in d and 'recovery_plan' in d"; then
     pass "status includes AI knowledge and recovery plan"
+    if json_check "$status_out" "all('recommended_commands' in host for host in d['ai_knowledge']['hosts'].values())"; then
+      pass "status includes host-aware remediation suggestions"
+    else
+      fail "status remediation suggestions" "${status_out:0:160}"
+    fi
   else
     fail "status AI knowledge" "${status_out:0:120}"
   fi

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- `sxmc status` now emits additive host-aware `recommended_commands` arrays and
+  recovery-plan `alternatives`, making remediation suggestions more explicit
+  for `setup`, `add`, `sync`, and `doctor --fix`
+
 ## [1.0.2] - 2026-03-25
 
 ### Added

@@ -1305,7 +1305,21 @@ fn test_status_reports_ai_knowledge_and_recovery_for_stale_host() {
         value["ai_knowledge"]["hosts"]["claude-code"]["recommended_command"]
             .as_str()
             .unwrap_or_default()
-            .contains("sxmc inspect drift")
+            .contains("sxmc sync --root")
+    );
+    assert_eq!(
+        value["ai_knowledge"]["hosts"]["claude-code"]["recommended_commands"][0]["kind"],
+        Value::from("sync")
+    );
+    assert!(
+        value["ai_knowledge"]["hosts"]["claude-code"]["recommended_commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["command"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("sxmc inspect drift"))
     );
     assert!(value["recovery_plan"]["count"].as_u64().unwrap_or(0) >= 1);
     assert!(value["recovery_plan"]["items"]
@@ -1327,6 +1341,11 @@ fn test_status_reports_ai_knowledge_and_recovery_for_stale_host() {
         .any(|item| item["severity"].as_str() == Some("warning")
             && item["priority"].as_u64().unwrap_or(99) >= 1
             && item["category"].as_str().is_some()));
+    assert!(value["recovery_plan"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["alternatives"].is_array()));
 }
 
 #[test]
@@ -1396,6 +1415,63 @@ fn test_status_reports_unconfigured_host_with_profiles_present() {
             .as_str()
             .unwrap_or_default()
             .contains("sxmc add git --host cursor")
+    );
+    assert!(
+        value["ai_knowledge"]["hosts"]["cursor"]["recommended_commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["command"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("sxmc setup --tool git --host cursor"))
+    );
+}
+
+#[test]
+fn test_status_prefers_doctor_fix_for_partially_configured_host() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let cursor_rules_dir = temp.path().join(".cursor").join("rules");
+    fs::create_dir_all(&cursor_rules_dir).unwrap();
+    fs::write(cursor_rules_dir.join("sxmc-cli-ai.md"), "# Sumac\n").unwrap();
+
+    let profile = command_json_with_config_home(
+        temp.path(),
+        &["inspect", "cli", "git", "--format", "json-pretty"],
+    );
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--only",
+            "cursor",
+            "--pretty",
+        ],
+    );
+
+    assert_eq!(
+        value["ai_knowledge"]["hosts"]["cursor"]["state"],
+        Value::from("configured_partially")
+    );
+    assert_eq!(
+        value["ai_knowledge"]["hosts"]["cursor"]["recommended_commands"][0]["kind"],
+        Value::from("doctor-fix")
+    );
+    assert!(
+        value["ai_knowledge"]["hosts"]["cursor"]["recommended_command"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("sxmc doctor --fix")
     );
 }
 

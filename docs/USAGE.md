@@ -357,6 +357,10 @@ Notes:
 - `sxmc status` now also reports `ai_knowledge` and `recovery_plan` so you can
   see which hosts are configured, which are stale, which still need setup, and
   the next Sumac command to run for each.
+- `sxmc status` now also includes additive host-aware `recommended_commands`
+  arrays and recovery-plan `alternatives`, so automation can choose between
+  `setup`, `add`, `sync`, and `doctor --fix` instead of relying on a single
+  generic hint.
 - saved-profile inventory and exported corpus entries now include a quality
   score/level in addition to the boolean ready/not-ready signal.
 - `sxmc status --health` also validates baked MCP/API connections and adds a

@@ -3475,22 +3475,18 @@ fn ai_knowledge_value(
         .flatten()
         .collect::<Vec<_>>();
 
-        let (state, summary, recommended_command) = if ready {
-            configured_count += 1;
+        let (state, summary) = if ready {
             if profile_count == 0 {
+                configured_count += 1;
                 (
                     "configured_without_profiles",
                     format!(
                         "{} is configured, but Sumac has not saved any CLI profiles yet.",
                         spec.label
                     ),
-                    Some(format!(
-                        "sxmc add <tool> --host {} --root {}",
-                        key,
-                        root.display()
-                    )),
                 )
             } else if stale_profile_count > 0 || changed_profile_count > 0 {
+                configured_count += 1;
                 stale_host_count += 1;
                 (
                     "configured_but_stale",
@@ -3498,51 +3494,45 @@ fn ai_knowledge_value(
                         "{} is configured, but {} saved profile(s) are stale and {} drifted from the installed tools.",
                         spec.label, stale_profile_count, changed_profile_count
                     ),
-                    Some(format!(
-                        "sxmc inspect drift {} --recursive --format json-pretty",
-                        default_saved_profiles_dir(root).display()
-                    )),
                 )
             } else if ready_profile_count == 0 {
+                configured_count += 1;
                 (
                     "configured_with_low_confidence_profiles",
                     format!(
                         "{} is configured, but the saved profiles are not yet ready for startup-facing agent docs.",
                         spec.label
                     ),
-                    Some(format!(
-                        "sxmc add <tool> --host {} --root {} --allow-low-confidence",
-                        key,
-                        root.display()
-                    )),
+                )
+            } else if !missing_targets.is_empty() {
+                configured_count += 1;
+                (
+                    "configured_partially",
+                    format!(
+                        "{} has some managed host files, but it is still missing {} target(s): {}.",
+                        spec.label,
+                        missing_targets.len(),
+                        missing_targets.join(", ")
+                    ),
                 )
             } else {
+                configured_count += 1;
                 (
                     "configured",
                     format!(
                         "{} is configured and has {} ready saved profile(s) backing its AI context.",
                         spec.label, ready_profile_count
                     ),
-                    None,
                 )
             }
         } else if profile_count > 0 {
             unconfigured_count += 1;
-            let command_hint = first_command
-                .clone()
-                .unwrap_or_else(|| "<tool>".to_string());
             (
                 "profiles_present_but_host_not_configured",
                 format!(
                     "{} has {} saved profile(s), but its startup files are not configured yet.",
                     spec.label, profile_count
                 ),
-                Some(format!(
-                    "sxmc add {} --host {} --root {}",
-                    command_hint,
-                    key,
-                    root.display()
-                )),
             )
         } else {
             unconfigured_count += 1;
@@ -3552,13 +3542,24 @@ fn ai_knowledge_value(
                     "{} is not configured and there are no saved profiles yet.",
                     spec.label
                 ),
-                Some(format!(
-                    "sxmc add <tool> --host {} --root {}",
-                    key,
-                    root.display()
-                )),
             )
         };
+        let command_hint = first_command
+            .clone()
+            .unwrap_or_else(|| "<tool>".to_string());
+        let recommended_commands = host_recommended_commands(
+            root,
+            key,
+            state,
+            &command_hint,
+            doc_present,
+            config_present,
+            &missing_targets,
+        );
+        let recommended_command = recommended_commands
+            .first()
+            .and_then(|item| item["command"].as_str())
+            .map(str::to_string);
 
         entries.insert(
             key.into(),
@@ -3575,6 +3576,7 @@ fn ai_knowledge_value(
                 "missing_targets": missing_targets,
                 "summary": summary,
                 "recommended_command": recommended_command,
+                "recommended_commands": recommended_commands,
             }),
         );
     }
@@ -3603,6 +3605,10 @@ fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value, sync_state: &Va
                 .unwrap_or_else(|| {
                     format!("sxmc add <tool> --host {} --root {}", key, root.display())
                 });
+            let alternatives = details["recommended_commands"]
+                .as_array()
+                .map(|items| items.iter().skip(1).cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
             let (priority, severity, category) = recovery_plan_attributes(state);
             items.push(json!({
                 "host": key,
@@ -3613,6 +3619,7 @@ fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value, sync_state: &Va
                 "category": category,
                 "summary": details["summary"],
                 "command": command,
+                "alternatives": alternatives,
             }));
         }
     }
@@ -3640,9 +3647,142 @@ fn status_recovery_plan_value(root: &Path, ai_knowledge: &Value, sync_state: &Va
 fn recovery_plan_attributes(state: &str) -> (u64, &'static str, &'static str) {
     match state {
         "configured_but_stale" => (1, "warning", "refresh"),
+        "configured_partially" => (2, "warning", "repair"),
         "profiles_present_but_host_not_configured" => (2, "warning", "configure"),
         "not_configured" => (3, "info", "onboard"),
         _ => (3, "info", "repair"),
+    }
+}
+
+fn host_recommended_commands(
+    root: &Path,
+    host_key: &str,
+    state: &str,
+    command_hint: &str,
+    doc_present: bool,
+    config_present: bool,
+    missing_targets: &[&str],
+) -> Vec<Value> {
+    let setup_command = format!(
+        "sxmc setup --tool {} --host {} --root {}",
+        command_hint,
+        host_key,
+        root.display()
+    );
+    let add_command = format!(
+        "sxmc add {} --host {} --root {}",
+        command_hint,
+        host_key,
+        root.display()
+    );
+    let sync_command = format!("sxmc sync --root {} --apply", root.display());
+    let drift_command = format!(
+        "sxmc inspect drift {} --recursive --format json-pretty",
+        default_saved_profiles_dir(root).display()
+    );
+    let doctor_command = format!(
+        "sxmc doctor --fix --root {} --only {}",
+        root.display(),
+        host_key
+    );
+    let allow_low_confidence_command = format!(
+        "sxmc add {} --host {} --root {} --allow-low-confidence",
+        command_hint,
+        host_key,
+        root.display()
+    );
+    let partially_configured = (doc_present || config_present) && !missing_targets.is_empty();
+
+    match state {
+        "configured_without_profiles" => vec![
+            json!({
+                "kind": "add",
+                "summary": "Inspect and save a tool profile for this configured host.",
+                "command": add_command,
+            }),
+            json!({
+                "kind": "setup",
+                "summary": "Onboard one or more tools for this host in one pass.",
+                "command": setup_command,
+            }),
+        ],
+        "configured_but_stale" => vec![
+            json!({
+                "kind": "sync",
+                "summary": "Refresh saved profiles and rewrite affected host artifacts.",
+                "command": sync_command,
+            }),
+            json!({
+                "kind": "inspect-drift",
+                "summary": "Review profile drift before applying changes.",
+                "command": drift_command,
+            }),
+        ],
+        "configured_with_low_confidence_profiles" => vec![
+            json!({
+                "kind": "add",
+                "summary": "Rebuild the host profile with low-confidence output explicitly allowed.",
+                "command": allow_low_confidence_command,
+            }),
+            json!({
+                "kind": "setup",
+                "summary": "Re-run the guided onboarding flow for this host and tool.",
+                "command": setup_command,
+            }),
+        ],
+        "configured_partially" => vec![
+            json!({
+                "kind": "doctor-fix",
+                "summary": "Repair the partially configured host files in place.",
+                "command": doctor_command,
+            }),
+            json!({
+                "kind": "add",
+                "summary": "Reapply the saved tool profile to fill in the missing host targets.",
+                "command": add_command,
+            }),
+        ],
+        "profiles_present_but_host_not_configured" if partially_configured => vec![
+            json!({
+                "kind": "doctor-fix",
+                "summary": "Repair the partially configured host files in place.",
+                "command": doctor_command,
+            }),
+            json!({
+                "kind": "add",
+                "summary": "Reapply the saved tool profile to this host.",
+                "command": add_command,
+            }),
+        ],
+        "profiles_present_but_host_not_configured" => vec![
+            json!({
+                "kind": "add",
+                "summary": "Apply an existing saved profile to this host.",
+                "command": add_command,
+            }),
+            json!({
+                "kind": "setup",
+                "summary": "Onboard this host and tool from scratch.",
+                "command": setup_command,
+            }),
+        ],
+        "not_configured" => vec![
+            json!({
+                "kind": "setup",
+                "summary": "Onboard this host and tool with the stable setup flow.",
+                "command": setup_command,
+            }),
+            json!({
+                "kind": "add",
+                "summary": "Apply a single tool directly to this host.",
+                "command": add_command,
+            }),
+        ],
+        _ => vec![json!({
+            "kind": "doctor-fix",
+            "summary": "Repair generated host files using Sumac's inferred fix path.",
+            "command": doctor_command,
+        })],
     }
 }
 
@@ -4262,6 +4402,15 @@ fn format_status_report(value: &Value) -> String {
                     "  run: `{}`",
                     item["command"].as_str().unwrap_or("sxmc status")
                 ));
+                if let Some(alternatives) = item["alternatives"].as_array() {
+                    for alternative in alternatives.iter().take(2) {
+                        let command = alternative["command"].as_str().unwrap_or("sxmc status");
+                        let summary = alternative["summary"]
+                            .as_str()
+                            .unwrap_or("alternate remediation path");
+                        lines.push(format!("  also: `{}` ({})", command, summary));
+                    }
+                }
             }
         }
     }

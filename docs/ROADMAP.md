@@ -30,8 +30,9 @@ Candidate work:
   - tighter `status -> sync -> doctor` recovery loops
   - explicit local sync state tracking for saved profiles and derived host artifacts
   - watch notification hooks for changed/unhealthy frames
-- next:
   - broader host-aware remediation suggestions
+- next:
+  - better notification destinations beyond local file/command hooks
 
 ## Priority 2: Discovery -> Delivery
 
