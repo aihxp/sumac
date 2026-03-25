@@ -1424,9 +1424,14 @@ fn parse_help_text(
     help: &str,
 ) -> CliSurfaceProfile {
     let lines: Vec<&str> = help.lines().collect();
-    let summary = collapse_wrapped_unicode_hyphenation(&select_summary(&lines, command_name));
+    let mut summary = collapse_wrapped_unicode_hyphenation(&select_summary(&lines, command_name));
     let description = parse_description(&lines, command_name, &summary)
         .map(|value| collapse_wrapped_unicode_hyphenation(&value));
+    if looks_generic_summary(&summary, command_name) {
+        if let Some(fallback) = infer_summary_from_help(command_name, help) {
+            summary = fallback;
+        }
+    }
     let subcommands = parse_subcommands(&lines, command_name);
     let options = parse_options(&lines, command_name);
     let positionals = parse_positionals(&lines, command_name);
@@ -1489,6 +1494,20 @@ fn parse_help_text(
             generated_at: now_string(),
         },
     }
+}
+
+fn infer_summary_from_help(command_name: &str, help: &str) -> Option<String> {
+    let lowered_command = command_name.to_ascii_lowercase();
+    let lowered_help = help.to_ascii_lowercase();
+
+    if (lowered_command == "python" || lowered_command.starts_with("python"))
+        && lowered_help.contains("implementation-specific option")
+        && lowered_help.contains("corresponding environment variables")
+    {
+        return Some("Python programming language interpreter".into());
+    }
+
+    None
 }
 
 fn select_summary(lines: &[&str], command_name: &str) -> String {
@@ -3204,7 +3223,7 @@ Arguments:
 file   : program read from script file
 "#;
         let profile = parse_help_text("python3", "python3", "python3", help);
-        assert_eq!(profile.summary, "python3 command-line interface");
+        assert_eq!(profile.summary, "Python programming language interpreter");
         assert!(profile.options.iter().any(|option| option.name == "-h"));
         assert!(profile.options.iter().any(|option| option.name == "-X"));
         let option = profile
@@ -3217,6 +3236,22 @@ file   : program read from script file
             Some("print this help message and exit")
         );
         assert!(!profile.summary.contains("/opt/homebrew"));
+    }
+
+    #[test]
+    fn git_patch_docs_do_not_mark_reset_interactive() {
+        let help = r#"NAME
+       git-reset - Reset current HEAD to the specified state
+
+DESCRIPTION
+       git reset (-p | --patch) [<tree-ish>] [--] [<pathspec>...]
+           Interactively select hunks in the difference between the index and
+           <tree-ish>. See the "Interactive Mode" section of git-add(1).
+"#;
+        let profile = parse_help_text("reset", "git reset", "git reset", help);
+        assert_eq!(profile.summary, "Reset current HEAD to the specified state");
+        assert!(!profile.interactive);
+        assert!(profile.interactive_reasons.is_empty());
     }
 
     #[test]

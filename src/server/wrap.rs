@@ -58,6 +58,16 @@ enum WrappedExecutionEvent {
     Progress(Value),
 }
 
+fn progress_event(tool_name: &str, command: &str, elapsed_secs: u64) -> Value {
+    json!({
+        "elapsed_secs": elapsed_secs,
+        "message": format!(
+            "Wrapped tool '{}' for '{}' still running after {}s",
+            tool_name, command, elapsed_secs
+        ),
+    })
+}
+
 #[derive(Default)]
 struct WrappedStreamCapture {
     text: String,
@@ -502,16 +512,14 @@ impl ServerHandler for WrappedCliServer {
                     if done.load(Ordering::Relaxed) {
                         break;
                     }
-                    let message = format!(
-                        "Wrapped tool '{}' for '{}' still running after {}s",
-                        tool_name, command, elapsed
-                    );
+                    let event = progress_event(&tool_name, &command, elapsed);
+                    let message = event["message"]
+                        .as_str()
+                        .unwrap_or("Wrapped tool is still running")
+                        .to_string();
                     eprintln!("[sxmc] {}", message);
                     if progress_tx
-                        .send(WrappedExecutionEvent::Progress(json!({
-                            "elapsed_secs": elapsed,
-                            "message": message,
-                        })))
+                        .send(WrappedExecutionEvent::Progress(event))
                         .is_err()
                     {
                         break;
@@ -597,6 +605,17 @@ impl ServerHandler for WrappedCliServer {
                     }
                 },
                 WrappedExecutionEvent::Progress(event) => progress_events.push(event),
+            }
+        }
+
+        if timeout && progress_events.is_empty() && self.progress_secs > 0 {
+            let timeout_boundary = self.timeout_secs.max(1);
+            if timeout_boundary >= self.progress_secs {
+                progress_events.push(progress_event(
+                    &tool.name,
+                    &self.wrapped_command,
+                    self.progress_secs,
+                ));
             }
         }
 
