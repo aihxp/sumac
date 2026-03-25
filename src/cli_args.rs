@@ -425,6 +425,14 @@ pub enum Commands {
         #[arg(long)]
         search: Option<String>,
 
+        /// Show a schema summary instead of listing/calling operations
+        #[arg(long)]
+        schema: bool,
+
+        /// Inspect a specific GraphQL type by name
+        #[arg(long = "type", value_name = "TYPE")]
+        type_name: Option<String>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
@@ -1291,6 +1299,14 @@ pub enum DiscoverAction {
         /// Search/filter operations
         #[arg(long)]
         search: Option<String>,
+
+        /// Show a schema summary instead of listing/calling operations
+        #[arg(long)]
+        schema: bool,
+
+        /// Inspect a specific GraphQL type by name
+        #[arg(long = "type", value_name = "TYPE")]
+        type_name: Option<String>,
 
         /// Pretty-print JSON output
         #[arg(long)]

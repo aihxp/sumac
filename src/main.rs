@@ -5311,6 +5311,8 @@ async fn main() -> Result<()> {
                 args,
                 list,
                 search,
+                schema,
+                type_name,
                 pretty,
                 format,
                 auth_headers,
@@ -5320,18 +5322,51 @@ async fn main() -> Result<()> {
                 let gql =
                     graphql::GraphQLClient::connect(&url, &headers, parse_timeout(timeout_seconds))
                         .await?;
-                let client = api::ApiClient::GraphQL(gql);
-                let arguments = parse_string_kv_args(&args);
-                cmd_api(
-                    &client,
-                    operation,
-                    &arguments,
-                    list,
-                    search.as_deref(),
-                    pretty,
-                    format,
-                )
-                .await?;
+                if schema {
+                    let value = gql.schema_summary_value(search.as_deref());
+                    if let Some(format) = output::prefer_structured_output(format, pretty) {
+                        println!("{}", output::format_structured_value(&value, format));
+                    } else {
+                        println!(
+                            "GraphQL schema at {}: {} types, {} operations",
+                            value["url"].as_str().unwrap_or("<unknown>"),
+                            value["type_count"].as_u64().unwrap_or(0),
+                            value["operation_count"].as_u64().unwrap_or(0)
+                        );
+                    }
+                } else if let Some(type_name) = type_name {
+                    let value = gql.type_value(&type_name).ok_or_else(|| {
+                        sxmc::error::SxmcError::Other(format!(
+                            "GraphQL type '{}' was not found at '{}'.",
+                            type_name, url
+                        ))
+                    })?;
+                    if let Some(format) = output::prefer_structured_output(format, pretty) {
+                        println!("{}", output::format_structured_value(&value, format));
+                    } else {
+                        println!(
+                            "GraphQL type {} at {} ({} fields, {} input fields, {} enum values)",
+                            value["name"].as_str().unwrap_or("<unknown>"),
+                            value["url"].as_str().unwrap_or("<unknown>"),
+                            value["field_count"].as_u64().unwrap_or(0),
+                            value["input_field_count"].as_u64().unwrap_or(0),
+                            value["enum_value_count"].as_u64().unwrap_or(0)
+                        );
+                    }
+                } else {
+                    let client = api::ApiClient::GraphQL(gql);
+                    let arguments = parse_string_kv_args(&args);
+                    cmd_api(
+                        &client,
+                        operation,
+                        &arguments,
+                        list,
+                        search.as_deref(),
+                        pretty,
+                        format,
+                    )
+                    .await?;
+                }
             }
             DiscoverAction::Db {
                 source,
@@ -5426,6 +5461,8 @@ async fn main() -> Result<()> {
             args,
             list,
             search,
+            schema,
+            type_name,
             pretty,
             format,
             auth_headers,
@@ -5435,18 +5472,51 @@ async fn main() -> Result<()> {
             let gql =
                 graphql::GraphQLClient::connect(&url, &headers, parse_timeout(timeout_seconds))
                     .await?;
-            let client = api::ApiClient::GraphQL(gql);
-            let arguments = parse_string_kv_args(&args);
-            cmd_api(
-                &client,
-                operation,
-                &arguments,
-                list,
-                search.as_deref(),
-                pretty,
-                format,
-            )
-            .await?;
+            if schema {
+                let value = gql.schema_summary_value(search.as_deref());
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    println!(
+                        "GraphQL schema at {}: {} types, {} operations",
+                        value["url"].as_str().unwrap_or("<unknown>"),
+                        value["type_count"].as_u64().unwrap_or(0),
+                        value["operation_count"].as_u64().unwrap_or(0)
+                    );
+                }
+            } else if let Some(type_name) = type_name {
+                let value = gql.type_value(&type_name).ok_or_else(|| {
+                    sxmc::error::SxmcError::Other(format!(
+                        "GraphQL type '{}' was not found at '{}'.",
+                        type_name, url
+                    ))
+                })?;
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    println!(
+                        "GraphQL type {} at {} ({} fields, {} input fields, {} enum values)",
+                        value["name"].as_str().unwrap_or("<unknown>"),
+                        value["url"].as_str().unwrap_or("<unknown>"),
+                        value["field_count"].as_u64().unwrap_or(0),
+                        value["input_field_count"].as_u64().unwrap_or(0),
+                        value["enum_value_count"].as_u64().unwrap_or(0)
+                    );
+                }
+            } else {
+                let client = api::ApiClient::GraphQL(gql);
+                let arguments = parse_string_kv_args(&args);
+                cmd_api(
+                    &client,
+                    operation,
+                    &arguments,
+                    list,
+                    search.as_deref(),
+                    pretty,
+                    format,
+                )
+                .await?;
+            }
         }
 
         Commands::Scan {

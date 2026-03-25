@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use std::collections::HashMap;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::client::commands::{CommandDef, ParamDef, ParamType};
 use crate::error::{Result, SxmcError};
@@ -36,6 +36,7 @@ pub struct GraphQLClient {
     url: String,
     client: reqwest::Client,
     operations: Vec<GraphQLOperation>,
+    schema: Value,
 }
 
 impl GraphQLClient {
@@ -64,12 +65,13 @@ impl GraphQLClient {
             .build()
             .map_err(|e| SxmcError::Other(format!("Failed to build HTTP client: {}", e)))?;
 
-        let operations = introspect(&client, url).await?;
+        let (operations, schema) = introspect(&client, url).await?;
 
         Ok(Self {
             url: url.to_string(),
             client,
             operations,
+            schema,
         })
     }
 
@@ -178,10 +180,122 @@ impl GraphQLClient {
             })
             .collect()
     }
+
+    pub fn schema_summary_value(&self, search: Option<&str>) -> Value {
+        let query_type = self
+            .schema
+            .pointer("/queryType/name")
+            .and_then(Value::as_str)
+            .unwrap_or("Query");
+        let mutation_type = self
+            .schema
+            .pointer("/mutationType/name")
+            .and_then(Value::as_str);
+        let search_lower = search.map(|value| value.to_ascii_lowercase());
+
+        let mut entries = Vec::new();
+        if let Some(types) = self.schema.get("types").and_then(Value::as_array) {
+            for type_def in types {
+                let name = type_def.get("name").and_then(Value::as_str).unwrap_or("");
+                if name.is_empty() || name.starts_with("__") {
+                    continue;
+                }
+                let kind = type_def.get("kind").and_then(Value::as_str).unwrap_or("");
+                let description = type_def
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if let Some(pattern) = search_lower.as_deref() {
+                    let haystack = format!("{name} {kind} {description}").to_ascii_lowercase();
+                    if !haystack.contains(pattern) {
+                        continue;
+                    }
+                }
+                entries.push(json!({
+                    "name": name,
+                    "kind": kind,
+                    "description": if description.is_empty() { Value::Null } else { Value::String(description.to_string()) },
+                    "field_count": type_def.get("fields").and_then(Value::as_array).map(|items| items.iter().filter(|field| !field.get("name").and_then(Value::as_str).unwrap_or("").starts_with("__")).count()).unwrap_or(0),
+                    "input_field_count": type_def.get("inputFields").and_then(Value::as_array).map(|items| items.len()).unwrap_or(0),
+                    "enum_value_count": type_def.get("enumValues").and_then(Value::as_array).map(|items| items.len()).unwrap_or(0),
+                }));
+            }
+        }
+
+        json!({
+            "source_type": "graphql",
+            "url": self.url,
+            "query_type": query_type,
+            "mutation_type": mutation_type,
+            "operation_count": self.operations.len(),
+            "type_count": entries.len(),
+            "types": entries,
+        })
+    }
+
+    pub fn type_value(&self, type_name: &str) -> Option<Value> {
+        let types = self.schema.get("types").and_then(Value::as_array)?;
+        let type_def = types
+            .iter()
+            .find(|value| value.get("name").and_then(Value::as_str) == Some(type_name))?;
+
+        let fields = type_def
+            .get("fields")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|field| {
+                        !field
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .starts_with("__")
+                    })
+                    .map(graphql_field_value)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let input_fields = type_def
+            .get("inputFields")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .map(graphql_input_field_value)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let enum_values = type_def
+            .get("enumValues")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.get("name").and_then(Value::as_str))
+                    .map(|name| Value::String(name.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        Some(json!({
+            "source_type": "graphql",
+            "url": self.url,
+            "name": type_def.get("name").and_then(Value::as_str).unwrap_or(type_name),
+            "kind": type_def.get("kind").and_then(Value::as_str).unwrap_or("UNKNOWN"),
+            "description": type_def.get("description").cloned().unwrap_or(Value::Null),
+            "field_count": fields.len(),
+            "input_field_count": input_fields.len(),
+            "enum_value_count": enum_values.len(),
+            "fields": fields,
+            "input_fields": input_fields,
+            "enum_values": enum_values,
+        }))
+    }
 }
 
 /// Run introspection query against a GraphQL endpoint.
-async fn introspect(client: &reqwest::Client, url: &str) -> Result<Vec<GraphQLOperation>> {
+async fn introspect(client: &reqwest::Client, url: &str) -> Result<(Vec<GraphQLOperation>, Value)> {
     let query = r#"
     {
         __schema {
@@ -190,6 +304,7 @@ async fn introspect(client: &reqwest::Client, url: &str) -> Result<Vec<GraphQLOp
             types {
                 name
                 kind
+                description
                 fields {
                     name
                     description
@@ -207,6 +322,19 @@ async fn introspect(client: &reqwest::Client, url: &str) -> Result<Vec<GraphQLOp
                             ofType { name kind ofType { name kind ofType { name kind } } }
                         }
                     }
+                }
+                inputFields {
+                    name
+                    description
+                    type {
+                        name
+                        kind
+                        ofType { name kind ofType { name kind ofType { name kind } } }
+                    }
+                }
+                enumValues {
+                    name
+                    description
                 }
             }
         }
@@ -298,7 +426,60 @@ async fn introspect(client: &reqwest::Client, url: &str) -> Result<Vec<GraphQLOp
     }
 
     operations.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(operations)
+    Ok((operations, schema.clone()))
+}
+
+fn graphql_field_value(field: &Value) -> Value {
+    let field_type = field
+        .get("type")
+        .map(|value| resolve_graphql_type(value).0)
+        .unwrap_or_else(|| "String".to_string());
+    let required = field
+        .get("type")
+        .map(|value| resolve_graphql_type(value).1)
+        .unwrap_or(false);
+    let args = field
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let name = item.get("name").and_then(Value::as_str)?;
+                    let description = item.get("description").cloned().unwrap_or(Value::Null);
+                    let (type_name, required) =
+                        resolve_graphql_type(item.get("type").unwrap_or(&Value::Null));
+                    Some(json!({
+                        "name": name,
+                        "description": description,
+                        "type_name": type_name,
+                        "required": required,
+                    }))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "name": field.get("name").and_then(Value::as_str).unwrap_or("<unknown>"),
+        "description": field.get("description").cloned().unwrap_or(Value::Null),
+        "type_name": field_type,
+        "required": required,
+        "arg_count": args.len(),
+        "args": args,
+    })
+}
+
+fn graphql_input_field_value(field: &Value) -> Value {
+    let (type_name, required) = field
+        .get("type")
+        .map(resolve_graphql_type)
+        .unwrap_or_else(|| ("String".to_string(), false));
+    json!({
+        "name": field.get("name").and_then(Value::as_str).unwrap_or("<unknown>"),
+        "description": field.get("description").cloned().unwrap_or(Value::Null),
+        "type_name": type_name,
+        "required": required,
+    })
 }
 
 fn extract_args(args: &[Value]) -> Vec<GraphQLArg> {

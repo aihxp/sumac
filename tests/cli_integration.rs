@@ -5137,17 +5137,21 @@ async fn test_discover_graphql_local_list_and_call() {
                                     {
                                         "kind": "OBJECT",
                                         "name": "Query",
+                                        "description": "Root query type",
                                         "fields": [
                                             {
                                                 "name": "hello",
+                                                "description": "Say hello",
                                                 "args": [],
                                                 "type": { "kind": "SCALAR", "name": "String", "ofType": null }
                                             },
                                             {
                                                 "name": "echo",
+                                                "description": "Echo a message",
                                                 "args": [
                                                     {
                                                         "name": "message",
+                                                        "description": "Message to echo",
                                                         "type": { "kind": "SCALAR", "name": "String", "ofType": null },
                                                         "defaultValue": null
                                                     }
@@ -5159,11 +5163,41 @@ async fn test_discover_graphql_local_list_and_call() {
                                     {
                                         "kind": "SCALAR",
                                         "name": "String",
+                                        "description": "Built-in string",
                                         "fields": null,
                                         "inputFields": null,
-                                        "interfaces": null,
                                         "enumValues": null,
-                                        "possibleTypes": null
+                                        "possibleTypes": null,
+                                        "interfaces": null
+                                    },
+                                    {
+                                        "kind": "INPUT_OBJECT",
+                                        "name": "EchoInput",
+                                        "description": "Echo input payload",
+                                        "fields": null,
+                                        "inputFields": [
+                                            {
+                                                "name": "message",
+                                                "description": "Message to echo",
+                                                "type": { "kind": "SCALAR", "name": "String", "ofType": null }
+                                            }
+                                        ],
+                                        "enumValues": null,
+                                        "possibleTypes": null,
+                                        "interfaces": null
+                                    },
+                                    {
+                                        "kind": "ENUM",
+                                        "name": "Color",
+                                        "description": "Example color enum",
+                                        "fields": null,
+                                        "inputFields": null,
+                                        "enumValues": [
+                                            { "name": "RED", "description": "Red" },
+                                            { "name": "BLUE", "description": "Blue" }
+                                        ],
+                                        "possibleTypes": null,
+                                        "interfaces": null
                                     }
                                 ],
                                 "directives": []
@@ -5206,6 +5240,42 @@ async fn test_discover_graphql_local_list_and_call() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"echo\": \"hello\""));
+
+    let schema = command_json(&["discover", "graphql", &base, "--schema", "--format", "json"]);
+    assert_eq!(schema["query_type"], "Query");
+    assert!(schema["type_count"].as_u64().unwrap_or(0) >= 3);
+    assert!(schema["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["name"] == "Query" && entry["field_count"] == 2));
+
+    let query_type = command_json(&[
+        "discover", "graphql", &base, "--type", "Query", "--format", "json",
+    ]);
+    assert_eq!(query_type["name"], "Query");
+    assert!(query_type["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|field| field["name"] == "echo" && field["arg_count"] == 1));
+
+    let input_type = command_json(&[
+        "discover",
+        "graphql",
+        &base,
+        "--type",
+        "EchoInput",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(input_type["name"], "EchoInput");
+    assert_eq!(input_type["input_field_count"], 1);
+
+    let enum_type = command_json(&[
+        "discover", "graphql", &base, "--type", "Color", "--format", "json",
+    ]);
+    assert_eq!(enum_type["enum_value_count"], 2);
 
     handle.abort();
 }
