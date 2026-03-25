@@ -1357,6 +1357,24 @@ pub enum DiscoverAction {
         #[arg(long, value_enum)]
         format: Option<output::StructuredOutputFormat>,
     },
+
+    /// Discover manifests, task runners, workflows, and entrypoints in a codebase
+    Codebase {
+        /// Codebase root (defaults to current working directory)
+        root: Option<PathBuf>,
+
+        /// Return a compact summary without full manifest/config arrays
+        #[arg(long)]
+        compact: bool,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Structured output format
+        #[arg(long, value_enum)]
+        format: Option<output::StructuredOutputFormat>,
+    },
 }
 
 #[derive(Subcommand)]

@@ -8,10 +8,12 @@
 //! - GraphQL endpoints via [`crate::client::graphql`]
 //! - auto-detected API sources via [`crate::client::api`]
 //! - local SQLite schema sources via [`crate::client::database`]
+//! - local codebase manifests and task runners via [`crate::client::codebase`]
 
 use rmcp::model::CallToolRequestParams;
 
 pub mod api;
+pub mod codebase;
 pub mod commands;
 pub mod database;
 pub mod graphql;

@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 use axum::{extract::State, routing::get, routing::post, routing::put, Json, Router};
 use predicates::prelude::*;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -5358,6 +5358,90 @@ fn test_discover_db_sqlite_lists_tables_and_columns() {
     assert!(compact["entries"][0].get("columns").is_none());
     assert!(compact["entries"][0].get("foreign_keys").is_none());
     assert!(compact["entries"][0].get("indexes").is_none());
+}
+
+#[test]
+fn test_discover_codebase_reports_manifests_tasks_and_entrypoints() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join(".github").join("workflows")).unwrap();
+    fs::create_dir_all(temp.path().join(".cursor").join("rules")).unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        r#"[package]
+name = "demo-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "demo-cli"
+path = "src/main.rs"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("package.json"),
+        serde_json::to_string_pretty(&json!({
+            "name": "demo-web",
+            "scripts": {
+                "dev": "vite",
+                "test": "vitest run"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join(".github").join("workflows").join("ci.yml"),
+        "name: CI\non: [push]\n",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join(".cursor").join("rules").join("team.md"),
+        "# team rules\n",
+    )
+    .unwrap();
+
+    let value = command_json(&[
+        "discover",
+        "codebase",
+        temp.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(value["source_type"], "codebase");
+    assert_eq!(value["manifest_count"], 2);
+    assert!(value["task_runner_count"].as_u64().unwrap_or(0) >= 2);
+    assert!(value["entrypoints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["name"] == "demo-cli" && entry["kind"] == "cargo-bin"));
+    assert!(value["entrypoints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["name"] == "dev" && entry["kind"] == "npm-script"));
+    assert!(value["configs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["kind"] == "github-workflow"));
+
+    let compact = command_json(&[
+        "discover",
+        "codebase",
+        temp.path().to_str().unwrap(),
+        "--compact",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(compact["manifest_count"], 2);
+    assert!(compact.get("manifests").is_none());
+    assert!(compact["entrypoint_names"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry == "demo-cli"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

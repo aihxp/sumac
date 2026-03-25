@@ -37,7 +37,7 @@ use sxmc::auth::secrets::{resolve_header, resolve_secret};
 use sxmc::bake::config::SourceType;
 use sxmc::bake::{BakeConfig, BakeStore};
 use sxmc::cli_surfaces::{self, AiClientProfile, AiCoverage, ArtifactMode};
-use sxmc::client::{api, database, graphql, mcp_http, mcp_stdio, openapi};
+use sxmc::client::{api, codebase, database, graphql, mcp_http, mcp_stdio, openapi};
 use sxmc::error::Result;
 use sxmc::output;
 use sxmc::security;
@@ -175,6 +175,29 @@ fn print_db_discovery_report(value: &Value) {
                     );
                 }
             }
+        }
+    }
+}
+
+fn print_codebase_discovery_report(value: &Value) {
+    println!(
+        "Codebase: {}",
+        value["root"].as_str().unwrap_or("<unknown>")
+    );
+    println!(
+        "Discovered {} manifests, {} task runners, {} entrypoints, {} configs",
+        value["manifest_count"].as_u64().unwrap_or(0),
+        value["task_runner_count"].as_u64().unwrap_or(0),
+        value["entrypoint_count"].as_u64().unwrap_or(0),
+        value["config_count"].as_u64().unwrap_or(0)
+    );
+    if let Some(entrypoints) = value["entrypoints"].as_array() {
+        for entry in entrypoints {
+            println!(
+                "- {} ({})",
+                entry["name"].as_str().unwrap_or("<unknown>"),
+                entry["kind"].as_str().unwrap_or("entrypoint")
+            );
         }
     }
 }
@@ -5393,6 +5416,20 @@ async fn main() -> Result<()> {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
                     print_db_discovery_report(&value);
+                }
+            }
+            DiscoverAction::Codebase {
+                root,
+                compact,
+                pretty,
+                format,
+            } => {
+                let root = root.unwrap_or(std::env::current_dir()?);
+                let value = codebase::inspect_codebase(&root, compact)?;
+                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                    println!("{}", output::format_structured_value(&value, format));
+                } else {
+                    print_codebase_discovery_report(&value);
                 }
             }
         },
