@@ -2744,6 +2744,27 @@ fn test_inspect_cache_invalidate_and_clear() {
 }
 
 #[test]
+fn test_inspect_cli_compact_omits_heavy_metadata() {
+    let value = command_json(&["inspect", "cli", "git", "--compact"]);
+    assert_eq!(value["command"], "git");
+    assert!(value.get("subcommand_count").is_some());
+    assert!(value.get("option_count").is_some());
+    assert!(value.get("positional_count").is_some());
+    assert!(value.get("examples").is_none());
+    assert!(value.get("environment").is_none());
+    assert!(value.get("confidence_notes").is_none());
+    assert!(value.get("generator_version").is_none());
+    assert!(value.get("generation_depth").is_none());
+    if let Some(option) = value["options"].as_array().and_then(|items| items.first()) {
+        assert!(option.get("summary").is_none());
+    }
+    if let Some(subcommand) = value["subcommands"].as_array().and_then(|items| items.first()) {
+        assert!(subcommand.get("summary").is_none());
+        assert!(subcommand.get("confidence").is_none());
+    }
+}
+
+#[test]
 fn test_inspect_cache_warm_returns_summary() {
     let value = command_json(&["inspect", "cache-warm", "cargo", "git", "--parallel", "2"]);
     assert_eq!(value["count"], Value::from(2));
@@ -4273,6 +4294,33 @@ fn test_skills_list_json() {
 }
 
 #[test]
+fn test_skills_list_names_only_and_limit() {
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "skills",
+            "list",
+            "--paths",
+            "tests/fixtures",
+            "--names-only",
+            "--limit",
+            "2",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "command failed: {}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = value.as_array().expect("names-only skills list should be an array");
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|item| item.is_string()));
+}
+
+#[test]
 fn test_skills_info() {
     sxmc()
         .args([
@@ -4384,6 +4432,47 @@ fn test_skills_run_can_print_body_for_script_skills() {
         .assert()
         .success()
         .stdout(predicate::str::contains("This skill has tools available."));
+}
+
+#[test]
+fn test_skills_info_summary_only_omits_body_and_is_smaller() {
+    let full = ProcessCommand::new(sxmc_bin_string())
+        .args(["skills", "info", "simple-skill", "--paths", "tests/fixtures"])
+        .output()
+        .unwrap();
+    assert!(
+        full.status.success(),
+        "command failed: {}\nstderr:\n{}",
+        full.status,
+        String::from_utf8_lossy(&full.stderr)
+    );
+
+    let summary = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "skills",
+            "info",
+            "simple-skill",
+            "--paths",
+            "tests/fixtures",
+            "--summary-only",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        summary.status.success(),
+        "command failed: {}\nstderr:\n{}",
+        summary.status,
+        String::from_utf8_lossy(&summary.stderr)
+    );
+
+    let full_stdout = String::from_utf8_lossy(&full.stdout);
+    let summary_stdout = String::from_utf8_lossy(&summary.stdout);
+    assert!(summary_stdout.contains("Name: simple-skill"));
+    assert!(summary_stdout.contains("Description:"));
+    assert!(!summary_stdout.contains("--- Body ---"));
+    assert!(!summary_stdout.contains("Hello"));
+    assert!(!summary_stdout.contains("Directory:"));
+    assert!(summary_stdout.len() < full_stdout.len());
 }
 
 #[test]
@@ -6491,6 +6580,187 @@ async fn test_api_list_supports_json_output() {
     assert_eq!(value["api_type"], "OpenAPI");
     assert_eq!(value["count"], 1);
     assert_eq!(value["operations"][0]["name"], "listPets");
+
+    handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_api_list_names_only_and_limit_reduce_shape() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let spec = serde_json::json!({
+        "openapi": "3.0.0",
+        "info": { "title": "Local Pets", "version": "1.0.0" },
+        "servers": [{ "url": format!("http://{addr}") }],
+        "paths": {
+            "/pets": {
+                "get": {
+                    "operationId": "listPets",
+                    "summary": "List pets",
+                    "responses": { "200": { "description": "ok" } }
+                },
+                "post": {
+                    "operationId": "createPet",
+                    "summary": "Create pet",
+                    "responses": { "200": { "description": "ok" } }
+                }
+            }
+        }
+    });
+    let spec_clone = spec.clone();
+    let handle = tokio::spawn(async move {
+        let app = Router::new().route(
+            "/openapi.json",
+            get(move || {
+                let spec = spec_clone.clone();
+                async move { Json(spec) }
+            }),
+        );
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let base = format!("http://{addr}/openapi.json");
+    let full = ProcessCommand::new(sxmc_bin_string())
+        .args(["api", &base, "--list", "--format", "json"])
+        .output()
+        .unwrap();
+    let names_only = ProcessCommand::new(sxmc_bin_string())
+        .args([
+            "api",
+            &base,
+            "--list",
+            "--names-only",
+            "--limit",
+            "1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(full.status.success());
+    assert!(names_only.status.success());
+
+    let names_value: serde_json::Value = serde_json::from_slice(&names_only.stdout).unwrap();
+    assert_eq!(names_value["names_only"], Value::Bool(true));
+    assert_eq!(names_value["count"], Value::from(1));
+    assert_eq!(names_value["operations"][0], Value::from("createPet"));
+    assert!(names_value["operations"][0].is_string());
+    assert!(names_only.stdout.len() < full.stdout.len());
+
+    handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_api_list_json_suppresses_detection_banner_on_stderr() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let spec = serde_json::json!({
+        "openapi": "3.0.0",
+        "info": { "title": "Quiet Pets", "version": "1.0.0" },
+        "servers": [{ "url": format!("http://{addr}") }],
+        "paths": {
+            "/pets": {
+                "get": {
+                    "operationId": "listPets",
+                    "summary": "List pets",
+                    "responses": { "200": { "description": "ok" } }
+                }
+            }
+        }
+    });
+    let spec_clone = spec.clone();
+    let handle = tokio::spawn(async move {
+        let app = Router::new().route(
+            "/openapi.json",
+            get(move || {
+                let spec = spec_clone.clone();
+                async move { Json(spec) }
+            }),
+        );
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let base = format!("http://{addr}/openapi.json");
+    let output = ProcessCommand::new(sxmc_bin_string())
+        .args(["api", &base, "--list", "--compact", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "command failed: {}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).trim().is_empty(),
+        "structured api output should not emit detection banner on stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_api_list_compact_reduces_shape() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let spec = serde_json::json!({
+        "openapi": "3.0.0",
+        "info": { "title": "Compact Pets", "version": "1.0.0" },
+        "servers": [{ "url": format!("http://{addr}") }],
+        "paths": {
+            "/pets": {
+                "get": {
+                    "operationId": "listPets",
+                    "summary": "List pets",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": true,
+                            "schema": { "type": "integer" },
+                            "description": "Maximum results"
+                        },
+                        {
+                            "name": "tag",
+                            "in": "query",
+                            "required": false,
+                            "schema": { "type": "string" },
+                            "description": "Optional tag"
+                        }
+                    ],
+                    "responses": { "200": { "description": "ok" } }
+                }
+            }
+        }
+    });
+    let spec_clone = spec.clone();
+    let handle = tokio::spawn(async move {
+        let app = Router::new().route(
+            "/openapi.json",
+            get(move || {
+                let spec = spec_clone.clone();
+                async move { Json(spec) }
+            }),
+        );
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let base = format!("http://{addr}/openapi.json");
+    let full = command_json(&["api", &base, "--list", "--format", "json"]);
+    let compact = command_json(&["api", &base, "--list", "--compact", "--format", "json"]);
+
+    assert_eq!(compact["api_type"], "OpenAPI");
+    assert_eq!(compact["compact"], true);
+    assert_eq!(compact["count"], 1);
+    assert_eq!(compact["operations"][0]["name"], "listPets");
+    assert_eq!(compact["operations"][0]["method"], "GET");
+    assert_eq!(compact["operations"][0]["path"], "/pets");
+    assert_eq!(compact["operations"][0]["required_param_count"], 1);
+    assert_eq!(compact["operations"][0]["required_params"][0], "limit");
+    assert!(compact["operations"][0].get("description").is_none());
+    assert!(compact["operations"][0].get("params").is_none());
+    assert!(full.to_string().len() > compact.to_string().len());
 
     handle.abort();
 }

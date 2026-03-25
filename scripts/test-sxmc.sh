@@ -317,6 +317,8 @@ if has_cmd git; then
   json_check "$compact_out" "'subcommand_count' in d" && pass "compact has subcommand_count" || fail "compact missing subcommand_count"
   json_check "$compact_out" "'option_count' in d" && pass "compact has option_count" || fail "compact missing option_count"
   json_check "$compact_out" "'provenance' not in d" && pass "compact strips provenance" || fail "compact should not include provenance"
+  json_check "$compact_out" "'examples' not in d and 'environment' not in d and 'confidence_notes' not in d" && pass "compact strips heavy metadata" || fail "compact should omit examples/environment/confidence_notes"
+  json_check "$compact_out" "all('summary' not in item for item in d.get('options', []))" && pass "compact strips option summaries" || fail "compact should omit option summaries"
 fi
 
 if has_cmd curl; then
@@ -453,6 +455,20 @@ if has_cmd curl && curl -s --max-time 5 "$PETSTORE_URL" >/dev/null 2>&1; then
     pass "api --list finds $count operations"
   else
     fail "api --list" "${api_list:0:100}"
+  fi
+
+  api_compact=$("$SXMC" api "$PETSTORE_URL" --list --compact 2>/dev/null)
+  if [ -n "$api_compact" ] && [ ${#api_compact} -lt ${#api_list} ] && json_check "$api_compact" "d['compact'] is True and d['operations'][0].get('required_param_count') is not None"; then
+    pass "api --list --compact reduces output"
+  else
+    fail "api --list --compact" "${api_compact:0:140}"
+  fi
+
+  api_names=$("$SXMC" api "$PETSTORE_URL" --list --names-only --limit 5 2>/dev/null)
+  if [ -n "$api_names" ] && [ ${#api_names} -lt ${#api_list} ] && json_check "$api_names" "d['names_only'] is True and d['count'] == 5 and all(isinstance(item, str) for item in d['operations'])"; then
+    pass "api --list --names-only --limit reduces output"
+  else
+    fail "api --list --names-only --limit" "${api_names:0:140}"
   fi
 
   api_search=$("$SXMC" api "$PETSTORE_URL" --search pet --list 2>/dev/null)
@@ -1610,6 +1626,25 @@ if echo "$info_out" | grep -qi "description\|body\|Hello"; then
   pass "skills info shows skill body"
 else
   fail "skills info should show body"
+fi
+
+info_summary=$("$SXMC" skills info simple-skill --paths "$FIXTURES" --summary-only 2>&1)
+if [ -n "$info_summary" ] && [ "${#info_summary}" -lt "${#info_out}" ]; then
+  pass "skills info --summary-only reduces output"
+else
+  fail "skills info --summary-only size" "${info_summary:0:80}"
+fi
+if echo "$info_summary" | grep -q "Name: simple-skill" && ! echo "$info_summary" | grep -q "Hello"; then
+  pass "skills info --summary-only omits skill body"
+else
+  fail "skills info --summary-only body" "${info_summary:0:80}"
+fi
+
+skills_names=$("$SXMC" skills list --paths "$FIXTURES" --names-only --limit 2 --json 2>&1)
+if json_check "$skills_names" "isinstance(d, list) and len(d) == 2 and all(isinstance(item, str) for item in d)"; then
+  pass "skills list --names-only --limit reduces shape"
+else
+  fail "skills list --names-only --limit" "${skills_names:0:120}"
 fi
 
 # Skills run

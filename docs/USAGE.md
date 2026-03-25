@@ -81,7 +81,9 @@ Discover local skills:
 
 ```bash
 sxmc skills list --paths tests/fixtures
+sxmc skills list --paths tests/fixtures --names-only --limit 10 --json
 sxmc skills info simple-skill --paths tests/fixtures
+sxmc skills info simple-skill --paths tests/fixtures --summary-only
 ```
 
 Render a documentation-first skill body with argument interpolation:
@@ -101,6 +103,9 @@ sxmc skills run deploy-skill --paths /absolute/path/to/skills \
   --env REGION=ca-central-1 \
   -- canary
 ```
+
+Use `sxmc skills info --summary-only` when you want a leaner skill summary
+without the full Markdown body.
 
 ## Use MCP From The CLI
 
@@ -213,6 +218,8 @@ Auto-detect:
 
 ```bash
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list
+sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list --compact --format json-pretty
+sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list --names-only --limit 10 --format json
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json findPetsByStatus status=available
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --timeout-seconds 15 --list
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json findPetsByStatus status=available --format toon
@@ -662,7 +669,12 @@ Deeper inspection:
 
 - `sxmc inspect cli --depth 1` recursively inspects top-level high-confidence subcommands
 - larger values like `--depth 2` keep recursing into nested command groups for multi-layer CLIs such as `gh`
-- `sxmc inspect cli --compact` returns a lower-context summary with counts plus the top subcommands/options instead of the full profile
+- `sxmc inspect cli --compact` returns a leaner action-oriented summary with counts, top subcommand names, top option names, and positional names instead of examples, environment notes, confidence notes, and generator metadata
+- `sxmc api --list --compact` returns a smaller operation inventory with
+  operation names, method/kind, and required params instead of full
+  descriptions and parameter arrays
+- `sxmc api --list --names-only --limit N` returns the smallest API inventory shape when you only need callable names
+- `sxmc skills list --names-only --limit N` returns a smaller skill inventory that is better suited to tight token budgets
 - nested subcommand profiles are stored under `subcommand_profiles`
 - interactive or TUI-oriented commands are flagged with `interactive`,
   `interactive_reasons`, and `non_interactive_alternatives` so downstream

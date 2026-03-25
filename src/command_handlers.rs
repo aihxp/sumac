@@ -5,10 +5,25 @@ use std::process::Stdio;
 use sxmc::client::api;
 use sxmc::error::{Result, SxmcError};
 use sxmc::output;
+
+pub struct ApiCommandOptions<'a> {
+    pub list: bool,
+    pub search: Option<&'a str>,
+    pub compact: bool,
+    pub names_only: bool,
+    pub limit: Option<usize>,
+    pub pretty: bool,
+    pub format: Option<output::StructuredOutputFormat>,
+}
 use sxmc::skills::{discovery, models::Skill, parser};
 use tokio::process::Command;
 
-pub fn cmd_skills_list(paths: &[PathBuf], json_output: bool) -> Result<()> {
+pub fn cmd_skills_list(
+    paths: &[PathBuf],
+    json_output: bool,
+    names_only: bool,
+    limit: Option<usize>,
+) -> Result<()> {
     let skill_dirs = discovery::discover_skills(paths)?;
     let mut skills = Vec::new();
 
@@ -20,7 +35,26 @@ pub fn cmd_skills_list(paths: &[PathBuf], json_output: bool) -> Result<()> {
         }
     }
 
-    if json_output {
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    if let Some(limit) = limit {
+        skills.truncate(limit);
+    }
+
+    if names_only {
+        if json_output {
+            let items: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+            println!("{}", serde_json::to_string_pretty(&items)?);
+        } else if skills.is_empty() {
+            println!("No skills found.");
+            for p in paths {
+                println!("  {}", p.display());
+            }
+        } else {
+            for skill in &skills {
+                println!("{}", skill.name);
+            }
+        }
+    } else if json_output {
         let items: Vec<serde_json::Value> = skills
             .iter()
             .map(|s| {
@@ -59,7 +93,7 @@ pub fn cmd_skills_list(paths: &[PathBuf], json_output: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn cmd_skills_info(paths: &[PathBuf], name: &str) -> Result<()> {
+pub fn cmd_skills_info(paths: &[PathBuf], name: &str, summary_only: bool) -> Result<()> {
     let skill_dirs = discovery::discover_skills(paths)?;
 
     for dir in &skill_dirs {
@@ -68,11 +102,39 @@ pub fn cmd_skills_info(paths: &[PathBuf], name: &str) -> Result<()> {
             if skill.name == name {
                 println!("Name: {}", skill.name);
                 println!("Description: {}", skill.frontmatter.description);
-                println!("Source: {}", skill.source);
-                println!("Directory: {}", skill.base_dir.display());
                 if let Some(ref hint) = skill.frontmatter.argument_hint {
                     println!("Arguments: {}", hint);
                 }
+                if summary_only {
+                    if !skill.scripts.is_empty() {
+                        let script_names = skill
+                            .scripts
+                            .iter()
+                            .map(|script| script.name.as_str())
+                            .collect::<Vec<_>>();
+                        println!(
+                            "Scripts: {} ({})",
+                            skill.scripts.len(),
+                            script_names.join(", ")
+                        );
+                    }
+                    if !skill.references.is_empty() {
+                        let reference_names = skill
+                            .references
+                            .iter()
+                            .map(|reference| reference.name.as_str())
+                            .collect::<Vec<_>>();
+                        println!(
+                            "References: {} ({})",
+                            skill.references.len(),
+                            reference_names.join(", ")
+                        );
+                    }
+                    return Ok(());
+                }
+
+                println!("Source: {}", skill.source);
+                println!("Directory: {}", skill.base_dir.display());
                 if !skill.scripts.is_empty() {
                     println!("\nScripts:");
                     for s in &skill.scripts {
@@ -273,23 +335,36 @@ pub async fn cmd_api(
     client: &api::ApiClient,
     operation: Option<String>,
     arguments: &HashMap<String, String>,
-    list: bool,
-    search: Option<&str>,
-    pretty: bool,
-    format: Option<output::StructuredOutputFormat>,
+    options: ApiCommandOptions<'_>,
 ) -> Result<()> {
-    if list || search.is_some() {
-        if let Some(format) = output::prefer_structured_output(format, pretty) {
+    if options.list || options.search.is_some() {
+        if let Some(format) = output::prefer_structured_output(options.format, options.pretty) {
             println!(
                 "{}",
-                output::format_structured_value(&client.list_value(search), format)
+                output::format_structured_value(
+                    &client.list_value(
+                        options.search,
+                        options.compact,
+                        options.names_only,
+                        options.limit,
+                    ),
+                    format,
+                )
             );
         } else {
-            println!("{}", client.format_list(search));
+            println!(
+                "{}",
+                client.format_list(
+                    options.search,
+                    options.compact,
+                    options.names_only,
+                    options.limit,
+                )
+            );
         }
     } else if let Some(op_name) = operation {
         let result = client.execute(&op_name, arguments).await?;
-        let format = output::resolve_structured_format(format, pretty);
+        let format = output::resolve_structured_format(options.format, options.pretty);
         println!("{}", output::format_structured_value(&result, format));
     } else {
         eprintln!("Specify an operation name or use --list");

@@ -251,6 +251,21 @@ impl OpenApiSpec {
     }
 }
 
+impl OpenApiOperation {
+    pub fn required_param_names(&self) -> Vec<String> {
+        let mut names = self
+            .parameters
+            .iter()
+            .filter(|param| param.required)
+            .map(|param| param.name.clone())
+            .collect::<Vec<_>>();
+        if self.request_body_schema.is_some() {
+            names.push("body".to_string());
+        }
+        names
+    }
+}
+
 impl OpenApiParam {
     fn location_str(&self) -> &str {
         match self.location {
@@ -476,8 +491,14 @@ fn generate_operation_id(method: &str, path: &str) -> String {
 }
 
 /// Format operations for display.
-pub fn format_operation_list(ops: &[&OpenApiOperation], search: Option<&str>) -> String {
-    let filtered: Vec<&&OpenApiOperation> = if let Some(pattern) = search {
+pub fn format_operation_list(
+    ops: &[&OpenApiOperation],
+    search: Option<&str>,
+    compact: bool,
+    names_only: bool,
+    limit: Option<usize>,
+) -> String {
+    let mut filtered: Vec<&&OpenApiOperation> = if let Some(pattern) = search {
         let p = pattern.to_lowercase();
         ops.iter()
             .filter(|op| {
@@ -489,6 +510,10 @@ pub fn format_operation_list(ops: &[&OpenApiOperation], search: Option<&str>) ->
         ops.iter().collect()
     };
 
+    if let Some(limit) = limit {
+        filtered.truncate(limit);
+    }
+
     if filtered.is_empty() {
         if search.is_some() {
             return "No matching operations found.".to_string();
@@ -498,13 +523,35 @@ pub fn format_operation_list(ops: &[&OpenApiOperation], search: Option<&str>) ->
 
     let mut lines = Vec::new();
     for op in &filtered {
-        lines.push(format!(
-            "  {} ({} {})",
-            op.operation_id,
-            op.method.to_uppercase(),
-            op.path
-        ));
-        if !op.summary.is_empty() {
+        if names_only {
+            lines.push(format!("  {}", op.operation_id));
+        } else if compact {
+            let required = op.required_param_names();
+            if required.is_empty() {
+                lines.push(format!(
+                    "  {} ({} {})",
+                    op.operation_id,
+                    op.method.to_uppercase(),
+                    op.path
+                ));
+            } else {
+                lines.push(format!(
+                    "  {} ({} {}) required: {}",
+                    op.operation_id,
+                    op.method.to_uppercase(),
+                    op.path,
+                    required.join(", ")
+                ));
+            }
+        } else {
+            lines.push(format!(
+                "  {} ({} {})",
+                op.operation_id,
+                op.method.to_uppercase(),
+                op.path
+            ));
+        }
+        if !compact && !op.summary.is_empty() {
             lines.push(format!("    {}", op.summary));
         }
     }

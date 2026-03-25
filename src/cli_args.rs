@@ -394,6 +394,18 @@ pub enum Commands {
         #[arg(long)]
         search: Option<String>,
 
+        /// Return a compact operation listing shape
+        #[arg(long)]
+        compact: bool,
+
+        /// Return only operation names
+        #[arg(long)]
+        names_only: bool,
+
+        /// Maximum operations to return
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
@@ -436,6 +448,18 @@ pub enum Commands {
         #[arg(long)]
         search: Option<String>,
 
+        /// Return a compact operation listing shape
+        #[arg(long)]
+        compact: bool,
+
+        /// Return only operation names
+        #[arg(long)]
+        names_only: bool,
+
+        /// Maximum operations to return
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
@@ -471,6 +495,14 @@ pub enum Commands {
         /// Search/filter operations
         #[arg(long)]
         search: Option<String>,
+
+        /// Return only operation names
+        #[arg(long)]
+        names_only: bool,
+
+        /// Maximum operations to return
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
 
         /// Show a schema summary instead of listing/calling operations
         #[arg(long)]
@@ -1497,6 +1529,18 @@ pub enum DiscoverAction {
         #[arg(long)]
         search: Option<String>,
 
+        /// Return a compact operation listing shape
+        #[arg(long)]
+        compact: bool,
+
+        /// Return only operation names
+        #[arg(long)]
+        names_only: bool,
+
+        /// Maximum operations to return
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
@@ -1532,6 +1576,14 @@ pub enum DiscoverAction {
         /// Search/filter operations
         #[arg(long)]
         search: Option<String>,
+
+        /// Return only operation names
+        #[arg(long)]
+        names_only: bool,
+
+        /// Maximum operations to return
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
 
         /// Show a schema summary instead of listing/calling operations
         #[arg(long)]
@@ -2022,11 +2074,17 @@ pub enum SkillsAction {
         paths: Option<Vec<PathBuf>>,
         #[arg(long)]
         json: bool,
+        #[arg(long)]
+        names_only: bool,
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
     },
     Info {
         name: String,
         #[arg(long, value_delimiter = ',')]
         paths: Option<Vec<PathBuf>>,
+        #[arg(long)]
+        summary_only: bool,
     },
     Run {
         #[arg(long, value_delimiter = ',')]

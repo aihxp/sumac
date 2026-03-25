@@ -6,10 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- `sxmc api --format json|json-pretty|ndjson` now suppresses the non-essential
+  API detection banner on stderr so machine-mode workflows stay quieter
+- `sxmc skills info --summary-only` now emits a smaller skill summary without
+  the full Markdown body or extra path metadata
+- `sxmc inspect cli --compact` now omits examples, environment notes,
+  confidence notes, generator metadata, and per-option summaries so compact
+  output is materially smaller
+- `sxmc api|spec|graphql|discover api|discover graphql --names-only --limit N`
+  now returns smaller list surfaces when you only need operation names
+- `sxmc skills list --names-only --limit N` now returns a smaller skill
+  inventory for token-constrained workflows
+
 ## [1.0.4] - 2026-03-25
 
 ### Added
 
+- `sxmc api --list --compact` now returns a smaller operation inventory for
+  OpenAPI and GraphQL surfaces, focusing on operation names plus required
+  params/args instead of full descriptions and parameter arrays
 - `sxmc watch --notify-template standard|compact|slack` now lets maintenance
   hooks choose between the full watch event, a smaller summary payload, or a
   Slack-friendly notification body

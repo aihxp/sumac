@@ -322,6 +322,23 @@ impl GraphQLClient {
     }
 }
 
+impl GraphQLOperation {
+    pub fn kind_label(&self) -> &'static str {
+        match self.kind {
+            GraphQLOpKind::Query => "query",
+            GraphQLOpKind::Mutation => "mutation",
+        }
+    }
+
+    pub fn required_arg_names(&self) -> Vec<String> {
+        self.args
+            .iter()
+            .filter(|arg| arg.required)
+            .map(|arg| arg.name.clone())
+            .collect()
+    }
+}
+
 pub fn load_graphql_schema_snapshot(path: &std::path::Path) -> Result<Value> {
     let contents = std::fs::read_to_string(path).map_err(|e| {
         SxmcError::Other(format!(
@@ -709,8 +726,14 @@ fn build_query(op: &GraphQLOperation) -> String {
 }
 
 /// Format GraphQL operations for display.
-pub fn format_graphql_list(ops: &[&GraphQLOperation], search: Option<&str>) -> String {
-    let filtered: Vec<&&GraphQLOperation> = if let Some(pattern) = search {
+pub fn format_graphql_list(
+    ops: &[&GraphQLOperation],
+    search: Option<&str>,
+    compact: bool,
+    names_only: bool,
+    limit: Option<usize>,
+) -> String {
+    let mut filtered: Vec<&&GraphQLOperation> = if let Some(pattern) = search {
         let p = pattern.to_lowercase();
         ops.iter()
             .filter(|op| {
@@ -721,6 +744,10 @@ pub fn format_graphql_list(ops: &[&GraphQLOperation], search: Option<&str>) -> S
         ops.iter().collect()
     };
 
+    if let Some(limit) = limit {
+        filtered.truncate(limit);
+    }
+
     if filtered.is_empty() {
         if search.is_some() {
             return "No matching operations found.".to_string();
@@ -730,12 +757,29 @@ pub fn format_graphql_list(ops: &[&GraphQLOperation], search: Option<&str>) -> S
 
     let mut lines = Vec::new();
     for op in &filtered {
-        let kind_str = match op.kind {
-            GraphQLOpKind::Query => "Q",
-            GraphQLOpKind::Mutation => "M",
-        };
-        lines.push(format!("  {} [{}]", op.name, kind_str));
-        if !op.description.is_empty() {
+        let kind_str = op.kind_label();
+        if names_only {
+            lines.push(format!("  {}", op.name));
+        } else if compact {
+            let required = op.required_arg_names();
+            if required.is_empty() {
+                lines.push(format!("  {} ({})", op.name, kind_str));
+            } else {
+                lines.push(format!(
+                    "  {} ({}) required: {}",
+                    op.name,
+                    kind_str,
+                    required.join(", ")
+                ));
+            }
+        } else {
+            let short_kind = match op.kind {
+                GraphQLOpKind::Query => "Q",
+                GraphQLOpKind::Mutation => "M",
+            };
+            lines.push(format!("  {} [{}]", op.name, short_kind));
+        }
+        if !compact && !op.description.is_empty() {
             lines.push(format!("    {}", op.description));
         }
     }

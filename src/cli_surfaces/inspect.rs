@@ -778,23 +778,19 @@ pub fn compact_profile_value(profile: &CliSurfaceProfile) -> Value {
     json!({
         "command": profile.command,
         "summary": profile.summary,
-        "description": profile.description,
+        "interactive": profile.interactive,
+        "interactive_reasons": profile.interactive_reasons,
+        "non_interactive_alternatives": profile.non_interactive_alternatives,
         "subcommand_count": profile.subcommands.len(),
         "option_count": profile.options.len(),
+        "positional_count": profile.positionals.len(),
         "nested_profile_count": profile.subcommand_profiles.len(),
-        "machine_friendly": profile.output_behavior.machine_friendly,
-        "stdout_style": profile.output_behavior.stdout_style,
-        "examples": profile.examples.iter().take(3).map(|example| {
-            json!({
-                "command": example.command,
-                "summary": example.summary,
-            })
-        }).collect::<Vec<_>>(),
         "subcommands": profile.subcommands.iter().take(COMPACT_SUBCOMMAND_LIMIT).map(|subcommand| {
             json!({
                 "name": subcommand.name,
-                "summary": subcommand.summary,
-                "confidence": subcommand.confidence,
+                "interactive": subcommand.interactive,
+                "interactive_reasons": subcommand.interactive_reasons,
+                "non_interactive_alternatives": subcommand.non_interactive_alternatives,
             })
         }).collect::<Vec<_>>(),
         "options": profile.options.iter().take(COMPACT_OPTION_LIMIT).map(|option| {
@@ -803,19 +799,14 @@ pub fn compact_profile_value(profile: &CliSurfaceProfile) -> Value {
                 "short": option.short,
                 "value_name": option.value_name,
                 "required": option.required,
-                "summary": option.summary,
             })
         }).collect::<Vec<_>>(),
-        "environment": profile.environment.iter().map(|env| {
+        "positionals": profile.positionals.iter().take(8).map(|positional| {
             json!({
-                "name": env.name,
-                "required": env.required,
-                "summary": env.summary,
+                "name": positional.name,
+                "required": positional.required,
             })
         }).collect::<Vec<_>>(),
-        "confidence_notes": profile.confidence_notes,
-        "generation_depth": profile.provenance.generation_depth,
-        "generator_version": profile.provenance.generator_version,
     })
 }
 

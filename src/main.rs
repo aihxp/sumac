@@ -34,7 +34,7 @@ use cli_args::{
     McpAction, McpSessionAction, McpSessionCli, ScaffoldAction, SkillsAction,
     WatchNotificationTemplate,
 };
-use command_handlers::{cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run};
+use command_handlers::{cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run, ApiCommandOptions};
 use sxmc::auth::secrets::{resolve_header, resolve_secret};
 use sxmc::bake::config::SourceType;
 use sxmc::bake::{BakeConfig, BakeStore};
@@ -6185,6 +6185,13 @@ fn explicit_structured_format(
     }
 }
 
+fn should_print_api_detection_banner(
+    format: Option<output::StructuredOutputFormat>,
+    pretty: bool,
+) -> bool {
+    explicit_structured_format(format, pretty).is_none()
+}
+
 struct SetupResultContext<'a> {
     root: &'a Path,
     tools: &'a [String],
@@ -7880,11 +7887,20 @@ async fn main() -> Result<()> {
         }
 
         Commands::Skills { action } => match action {
-            SkillsAction::List { paths, json } => {
-                cmd_skills_list(&resolve_paths(paths), json)?;
+            SkillsAction::List {
+                paths,
+                json,
+                names_only,
+                limit,
+            } => {
+                cmd_skills_list(&resolve_paths(paths), json, names_only, limit)?;
             }
-            SkillsAction::Info { name, paths } => {
-                cmd_skills_info(&resolve_paths(paths), &name)?;
+            SkillsAction::Info {
+                name,
+                paths,
+                summary_only,
+            } => {
+                cmd_skills_info(&resolve_paths(paths), &name, summary_only)?;
             }
             SkillsAction::Run {
                 paths,
@@ -8194,6 +8210,9 @@ async fn main() -> Result<()> {
                 args,
                 list,
                 search,
+                compact,
+                names_only,
+                limit,
                 pretty,
                 format,
                 auth_headers,
@@ -8203,16 +8222,23 @@ async fn main() -> Result<()> {
                 let client =
                     api::ApiClient::connect(&source, &headers, parse_timeout(timeout_seconds))
                         .await?;
-                eprintln!("[sxmc] Detected {} API", client.api_type());
+                if should_print_api_detection_banner(format, pretty) {
+                    eprintln!("[sxmc] Detected {} API", client.api_type());
+                }
                 let arguments = parse_string_kv_args(&args);
                 cmd_api(
                     &client,
                     operation,
                     &arguments,
-                    list,
-                    search.as_deref(),
-                    pretty,
-                    format,
+                    ApiCommandOptions {
+                        list,
+                        search: search.as_deref(),
+                        compact,
+                        names_only,
+                        limit,
+                        pretty,
+                        format,
+                    },
                 )
                 .await?;
             }
@@ -8222,6 +8248,8 @@ async fn main() -> Result<()> {
                 args,
                 list,
                 search,
+                names_only,
+                limit,
                 schema,
                 type_name,
                 output,
@@ -8280,10 +8308,15 @@ async fn main() -> Result<()> {
                         &client,
                         operation,
                         &arguments,
-                        list,
-                        search.as_deref(),
-                        pretty,
-                        format,
+                        ApiCommandOptions {
+                            list,
+                            search: search.as_deref(),
+                            compact: false,
+                            names_only,
+                            limit,
+                            pretty,
+                            format,
+                        },
                     )
                     .await?;
                 }
@@ -8477,6 +8510,9 @@ async fn main() -> Result<()> {
             args,
             list,
             search,
+            compact,
+            names_only,
+            limit,
             pretty,
             format,
             auth_headers,
@@ -8485,16 +8521,23 @@ async fn main() -> Result<()> {
             let headers = parse_headers(&auth_headers)?;
             let client =
                 api::ApiClient::connect(&source, &headers, parse_timeout(timeout_seconds)).await?;
-            eprintln!("[sxmc] Detected {} API", client.api_type());
+            if should_print_api_detection_banner(format, pretty) {
+                eprintln!("[sxmc] Detected {} API", client.api_type());
+            }
             let arguments = parse_string_kv_args(&args);
             cmd_api(
                 &client,
                 operation,
                 &arguments,
-                list,
-                search.as_deref(),
-                pretty,
-                format,
+                ApiCommandOptions {
+                    list,
+                    search: search.as_deref(),
+                    compact,
+                    names_only,
+                    limit,
+                    pretty,
+                    format,
+                },
             )
             .await?;
         }
@@ -8505,6 +8548,9 @@ async fn main() -> Result<()> {
             args,
             list,
             search,
+            compact,
+            names_only,
+            limit,
             pretty,
             format,
             auth_headers,
@@ -8521,10 +8567,15 @@ async fn main() -> Result<()> {
                 &client,
                 operation,
                 &arguments,
-                list,
-                search.as_deref(),
-                pretty,
-                format,
+                ApiCommandOptions {
+                    list,
+                    search: search.as_deref(),
+                    compact,
+                    names_only,
+                    limit,
+                    pretty,
+                    format,
+                },
             )
             .await?;
         }
@@ -8535,6 +8586,8 @@ async fn main() -> Result<()> {
             args,
             list,
             search,
+            names_only,
+            limit,
             schema,
             type_name,
             output,
@@ -8593,10 +8646,15 @@ async fn main() -> Result<()> {
                     &client,
                     operation,
                     &arguments,
-                    list,
-                    search.as_deref(),
-                    pretty,
-                    format,
+                    ApiCommandOptions {
+                        list,
+                        search: search.as_deref(),
+                        compact: false,
+                        names_only,
+                        limit,
+                        pretty,
+                        format,
+                    },
                 )
                 .await?;
             }

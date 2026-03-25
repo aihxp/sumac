@@ -60,41 +60,159 @@ impl ApiClient {
     }
 
     /// Format a listing of available operations.
-    pub fn format_list(&self, search: Option<&str>) -> String {
+    pub fn format_list(
+        &self,
+        search: Option<&str>,
+        compact: bool,
+        names_only: bool,
+        limit: Option<usize>,
+    ) -> String {
         match self {
             ApiClient::OpenApi(spec) => {
                 let ops = spec.list_operations(search);
-                openapi::format_operation_list(&ops, None)
+                openapi::format_operation_list(&ops, None, compact, names_only, limit)
             }
             ApiClient::GraphQL(client) => {
                 let ops = client.list_operations(search);
-                graphql::format_graphql_list(&ops, None)
+                graphql::format_graphql_list(&ops, None, compact, names_only, limit)
             }
         }
     }
 
     /// Return a structured listing of available operations.
-    pub fn list_value(&self, search: Option<&str>) -> Value {
-        let pattern = search.map(str::to_lowercase);
-        let commands: Vec<CommandDef> = self
-            .commands()
-            .into_iter()
-            .filter(|cmd| {
-                if let Some(pattern) = &pattern {
-                    cmd.name.to_lowercase().contains(pattern)
-                        || cmd.description.to_lowercase().contains(pattern)
-                } else {
-                    true
+    pub fn list_value(
+        &self,
+        search: Option<&str>,
+        compact: bool,
+        names_only: bool,
+        limit: Option<usize>,
+    ) -> Value {
+        if names_only {
+            match self {
+                ApiClient::OpenApi(spec) => {
+                    let mut operations = spec
+                        .list_operations(search)
+                        .into_iter()
+                        .map(|op| Value::String(op.operation_id.clone()))
+                        .collect::<Vec<_>>();
+                    if let Some(limit) = limit {
+                        operations.truncate(limit);
+                    }
+                    json!({
+                        "api_type": self.api_type(),
+                        "search": search,
+                        "compact": false,
+                        "names_only": true,
+                        "limit": limit,
+                        "count": operations.len(),
+                        "operations": operations,
+                    })
                 }
-            })
-            .collect();
+                ApiClient::GraphQL(client) => {
+                    let mut operations = client
+                        .list_operations(search)
+                        .into_iter()
+                        .map(|op| Value::String(op.name.clone()))
+                        .collect::<Vec<_>>();
+                    if let Some(limit) = limit {
+                        operations.truncate(limit);
+                    }
+                    json!({
+                        "api_type": self.api_type(),
+                        "search": search,
+                        "compact": false,
+                        "names_only": true,
+                        "limit": limit,
+                        "count": operations.len(),
+                        "operations": operations,
+                    })
+                }
+            }
+        } else if compact {
+            match self {
+                ApiClient::OpenApi(spec) => {
+                    let mut operations = spec
+                        .list_operations(search)
+                        .into_iter()
+                        .map(|op| {
+                            json!({
+                                "name": op.operation_id,
+                                "method": op.method.to_uppercase(),
+                                "path": op.path,
+                                "required_params": op.required_param_names(),
+                                "required_param_count": op.parameters.iter().filter(|param| param.required).count()
+                                    + usize::from(op.request_body_schema.is_some()),
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    if let Some(limit) = limit {
+                        operations.truncate(limit);
+                    }
+                    json!({
+                        "api_type": self.api_type(),
+                        "search": search,
+                        "compact": true,
+                        "names_only": false,
+                        "limit": limit,
+                        "count": operations.len(),
+                        "operations": operations,
+                    })
+                }
+                ApiClient::GraphQL(client) => {
+                    let mut operations = client
+                        .list_operations(search)
+                        .into_iter()
+                        .map(|op| {
+                            json!({
+                                "name": op.name,
+                                "kind": op.kind_label(),
+                                "required_args": op.required_arg_names(),
+                                "required_arg_count": op.args.iter().filter(|arg| arg.required).count(),
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    if let Some(limit) = limit {
+                        operations.truncate(limit);
+                    }
+                    json!({
+                        "api_type": self.api_type(),
+                        "search": search,
+                        "compact": true,
+                        "names_only": false,
+                        "limit": limit,
+                        "count": operations.len(),
+                        "operations": operations,
+                    })
+                }
+            }
+        } else {
+            let pattern = search.map(str::to_lowercase);
+            let mut commands: Vec<CommandDef> = self
+                .commands()
+                .into_iter()
+                .filter(|cmd| {
+                    if let Some(pattern) = &pattern {
+                        cmd.name.to_lowercase().contains(pattern)
+                            || cmd.description.to_lowercase().contains(pattern)
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            if let Some(limit) = limit {
+                commands.truncate(limit);
+            }
 
-        json!({
-            "api_type": self.api_type(),
-            "search": search,
-            "count": commands.len(),
-            "operations": commands,
-        })
+            json!({
+                "api_type": self.api_type(),
+                "search": search,
+                "compact": false,
+                "names_only": false,
+                "limit": limit,
+                "count": commands.len(),
+                "operations": commands,
+            })
+        }
     }
 
     /// Get the API type label.
