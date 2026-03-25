@@ -33,7 +33,7 @@ Candidate work:
   - watch notification hooks for changed/unhealthy frames
   - broader host-aware remediation suggestions
   - webhook delivery for watch events
-  - richer notification payload templates and destination presets
+  - richer notification payload templates and Slack/webhook delivery
 
 Status: complete for the originally scoped `1.x` maintenance wave.
 

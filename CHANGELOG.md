@@ -124,8 +124,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - synced the published crate and distribution metadata with the current GitHub
   repository state after the post-`1.0.0` documentation cleanup
 - collapsed redundant per-version validation reports into
-  `docs/VALIDATION_HISTORY.md` while keeping the maintained stable report at
-  `docs/TEST_SUITE_REPORT_v1.0.0.md`
+  `docs/VALIDATION_HISTORY.md` and folded the maintained stable-major summary
+  back into `docs/VALIDATION.md`
 
 ## [1.0.0] - 2026-03-25
 
@@ -749,7 +749,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - JetBrains AI Assistant
   - Junie
   - Windsurf
-- dedicated CLI-to-AI compatibility matrix in `docs/CLI_TO_AI_COMPATIBILITY.md`
+- dedicated CLI-to-AI compatibility matrix (now folded into
+  `docs/COMPATIBILITY_MATRIX.md`)
 
 ### Changed
 

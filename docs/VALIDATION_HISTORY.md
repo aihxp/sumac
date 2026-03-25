@@ -1,12 +1,7 @@
 # Validation History
 
-This page keeps a compact record of major shipped validation milestones.
-
-The maintained detailed report is:
-
-- [TEST_SUITE_REPORT_v1.0.0.md](TEST_SUITE_REPORT_v1.0.0.md)
-
-Older per-version reports were collapsed into this summary once the `1.x`
+This page keeps a compact record of major shipped validation milestones. Older
+per-version reports were collapsed into this summary once the `1.x`
 documentation set stabilized.
 
 | Version | Date | Tests | Highlights |
@@ -23,7 +18,7 @@ documentation set stabilized.
 
 ## Reading This History
 
-- use the latest [TEST_SUITE_REPORT_v1.0.0.md](TEST_SUITE_REPORT_v1.0.0.md) for
-  the maintained deep dive
 - use [VALIDATION.md](VALIDATION.md) for current release and validation practice
 - use [CHANGELOG.md](../CHANGELOG.md) for feature-by-feature release history
+- use [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md) for maintained
+  cross-platform and host coverage

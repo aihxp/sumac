@@ -72,6 +72,31 @@ The `cli_surfaces` module uses a two-stage model:
 
 The important design choice is that JSON is the source of truth and host files are outputs. That keeps generation testable, versionable, and reviewable.
 
+The current shipped path looks like this:
+
+```text
+CLI binary
+  -> sxmc inspect cli <command>
+  -> normalized JSON profile
+  -> sxmc init ai / sxmc scaffold ...
+  -> startup-ready AI files
+```
+
+Important `CLI -> AI` rules:
+
+- generated startup docs/configs are outputs, not the source of truth
+- generated artifacts carry provenance metadata rather than pretending to be
+  handwritten source files
+- apply mode updates managed markdown/TOML/JSON blocks instead of overwriting
+  whole files
+- full-coverage apply updates only explicitly selected hosts and sidecars the
+  rest
+- inspectable real sources are preferred over recursively inspecting generated
+  artifacts
+
+That boundary is what keeps `CLI -> AI` reviewable instead of turning it into
+opaque file mutation.
+
 ## Reliability Choices
 
 - Bake writes are atomic.

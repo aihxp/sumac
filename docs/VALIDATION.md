@@ -3,11 +3,9 @@
 This guide consolidates the release checklist, compatibility notes, smoke
 tests, and benchmark summary.
 
-For the latest validation report, see
-[`TEST_SUITE_REPORT_v1.0.0.md`](TEST_SUITE_REPORT_v1.0.0.md) (296 tests, benchmarks, 10x10x10 matrix, discovery lifecycle, onboarding/status contract audit, local sync reconciliation, and the stability/support pass).
-
-For a compact release-by-release record of the pre-`1.0.0` validation milestones,
-see [`VALIDATION_HISTORY.md`](VALIDATION_HISTORY.md).
+The maintained validation record now lives in this guide plus
+[`VALIDATION_HISTORY.md`](VALIDATION_HISTORY.md), which keeps the compact
+release-by-release milestone table.
 
 ## What To Run Before A Release
 
@@ -329,7 +327,12 @@ The current validation posture is:
 
 ## Latest maintainer snapshot
 
-**[TEST_SUITE_REPORT_v1.0.0.md](TEST_SUITE_REPORT_v1.0.0.md)** — **1.0.0** pass: 296 tests, 10x10x10 matrix (10 CLIs, 10 skills, 10 MCPs), benchmarks, GraphQL/traffic/codebase/db discovery lifecycle coverage, bundle signing, registry, trust, wrap, onboarding/status contract coverage, local sync reconciliation, the new stability/support sweep, publish/pull, and side-by-side with/without comparisons.
+**Stable-major validation snapshot (`1.0.0`)** — **296** tests, **0** failed,
+**0** skipped, with a 10x10x10 matrix (10 CLIs, 10 skills, 10 MCPs),
+benchmarks, GraphQL/traffic/codebase/db discovery lifecycle coverage, bundle
+signing, registry, trust, wrap, onboarding/status contract coverage, local
+sync reconciliation, the stability/support sweep, publish/pull, and
+side-by-side with/without comparisons.
 
 Repeated standalone **`sxmc stdio …`** invocations do **not** share MCP session memory. For continuity, use **`sxmc mcp session <server>`** (see validation run §9).
 
@@ -346,5 +349,5 @@ Current CLI-to-AI coverage is automated rather than client-UI-driven:
 - JetBrains AI Assistant native rules generation
 - optional `llms.txt` export generation
 
-See [CLI_TO_AI_COMPATIBILITY.md](CLI_TO_AI_COMPATIBILITY.md) for the maintained
-host matrix.
+See [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md) for the maintained
+cross-platform and host coverage matrices.

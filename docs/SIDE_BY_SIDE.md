@@ -104,5 +104,5 @@ sxmc stdio "sxmc serve --paths tests/fixtures" skill_with_scripts__hello
 For the maintained validation story, see:
 
 - [`VALIDATION.md`](VALIDATION.md)
-- [`TEST_SUITE_REPORT_v1.0.0.md`](TEST_SUITE_REPORT_v1.0.0.md)
+- [`VALIDATION_HISTORY.md`](VALIDATION_HISTORY.md)
 - [`PRODUCT_CONTRACT.md`](PRODUCT_CONTRACT.md)

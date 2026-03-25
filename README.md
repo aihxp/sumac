@@ -199,7 +199,7 @@ See:
 
 - [Product Contract](docs/PRODUCT_CONTRACT.md)
 - [Stability Guide](docs/STABILITY.md)
-- [1.0.0 Announcement](docs/ANNOUNCEMENT_v1.0.0.md)
+- [Validation Guide](docs/VALIDATION.md)
 
 ## Command Overview
 
@@ -256,8 +256,7 @@ See:
 - [Validation](docs/VALIDATION.md): tests, smoke checks, compatibility, token/turn findings
 - [Product Contract](docs/PRODUCT_CONTRACT.md): explicit support boundary
 - [Stability](docs/STABILITY.md): what `1.0.0` will promise, what evolves additively, and what remains out of scope
-- [CLI Surfaces](docs/CLI_SURFACES.md): CLI-to-AI model, profile contract, write policy
-- [CLI to AI Compatibility](docs/CLI_TO_AI_COMPATIBILITY.md): host-by-host coverage matrix
+- [Compatibility Matrix](docs/COMPATIBILITY_MATRIX.md): cross-platform lanes and `CLI -> AI` host coverage
 
 ## Development
 
