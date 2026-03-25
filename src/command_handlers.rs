@@ -11,19 +11,29 @@ pub struct ApiCommandOptions<'a> {
     pub search: Option<&'a str>,
     pub compact: bool,
     pub names_only: bool,
+    pub required_only: bool,
+    pub counts_only: bool,
+    pub no_descriptions: bool,
+    pub offset: Option<usize>,
     pub limit: Option<usize>,
+    pub fields: Option<&'a [String]>,
     pub pretty: bool,
     pub format: Option<output::StructuredOutputFormat>,
 }
 use sxmc::skills::{discovery, models::Skill, parser};
 use tokio::process::Command;
 
-pub fn cmd_skills_list(
-    paths: &[PathBuf],
-    json_output: bool,
-    names_only: bool,
-    limit: Option<usize>,
-) -> Result<()> {
+pub struct SkillListOptions<'a> {
+    pub json_output: bool,
+    pub names_only: bool,
+    pub counts_only: bool,
+    pub no_descriptions: bool,
+    pub fields: Option<&'a [String]>,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+}
+
+pub fn cmd_skills_list(paths: &[PathBuf], options: SkillListOptions<'_>) -> Result<()> {
     let skill_dirs = discovery::discover_skills(paths)?;
     let mut skills = Vec::new();
 
@@ -36,12 +46,29 @@ pub fn cmd_skills_list(
     }
 
     skills.sort_by(|a, b| a.name.cmp(&b.name));
-    if let Some(limit) = limit {
+    let offset = options.offset.unwrap_or(0);
+    if offset > 0 {
+        skills = skills.into_iter().skip(offset).collect();
+    }
+    if let Some(limit) = options.limit {
         skills.truncate(limit);
     }
 
-    if names_only {
-        if json_output {
+    if options.counts_only {
+        let value = serde_json::json!({
+            "count": skills.len(),
+            "offset": options.offset,
+            "limit": options.limit,
+            "names_only": false,
+            "counts_only": true,
+        });
+        if options.json_output {
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        } else {
+            println!("Skills: {}", skills.len());
+        }
+    } else if options.names_only {
+        if options.json_output {
             let items: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
             println!("{}", serde_json::to_string_pretty(&items)?);
         } else if skills.is_empty() {
@@ -54,17 +81,26 @@ pub fn cmd_skills_list(
                 println!("{}", skill.name);
             }
         }
-    } else if json_output {
+    } else if options.json_output {
         let items: Vec<serde_json::Value> = skills
             .iter()
             .map(|s| {
-                serde_json::json!({
+                let mut value = serde_json::json!({
                     "name": s.name,
                     "description": s.frontmatter.description,
                     "scripts": s.scripts.iter().map(|sc| &sc.name).collect::<Vec<_>>(),
                     "references": s.references.iter().map(|r| &r.name).collect::<Vec<_>>(),
                     "source": s.source,
-                })
+                });
+                if options.no_descriptions {
+                    if let Some(object) = value.as_object_mut() {
+                        object.remove("description");
+                    }
+                }
+                if let Some(fields) = options.fields {
+                    value = retain_json_fields(value, fields);
+                }
+                value
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&items)?);
@@ -76,7 +112,7 @@ pub fn cmd_skills_list(
     } else {
         for skill in &skills {
             println!("{}", skill.name);
-            if !skill.frontmatter.description.is_empty() {
+            if !options.no_descriptions && !skill.frontmatter.description.is_empty() {
                 println!("  {}", skill.frontmatter.description);
             }
             if !skill.scripts.is_empty() {
@@ -91,6 +127,19 @@ pub fn cmd_skills_list(
         }
     }
     Ok(())
+}
+
+fn retain_json_fields(value: serde_json::Value, fields: &[String]) -> serde_json::Value {
+    let Some(object) = value.as_object() else {
+        return value;
+    };
+    let mut filtered = serde_json::Map::new();
+    for field in fields {
+        if let Some(item) = object.get(field) {
+            filtered.insert(field.clone(), item.clone());
+        }
+    }
+    serde_json::Value::Object(filtered)
 }
 
 pub fn cmd_skills_info(paths: &[PathBuf], name: &str, summary_only: bool) -> Result<()> {
@@ -338,29 +387,37 @@ pub async fn cmd_api(
     options: ApiCommandOptions<'_>,
 ) -> Result<()> {
     if options.list || options.search.is_some() {
-        if let Some(format) = output::prefer_structured_output(options.format, options.pretty) {
+        let selectors = api::ListSelectors {
+            compact: options.compact,
+            names_only: options.names_only,
+            required_only: options.required_only,
+            counts_only: options.counts_only,
+            no_descriptions: options.no_descriptions,
+            offset: options.offset,
+            limit: options.limit,
+            fields: options.fields,
+        };
+        if options.counts_only || options.fields.is_some() {
+            let format = output::resolve_structured_format(options.format, options.pretty);
             println!(
                 "{}",
                 output::format_structured_value(
-                    &client.list_value(
-                        options.search,
-                        options.compact,
-                        options.names_only,
-                        options.limit,
-                    ),
+                    &client.list_value(options.search, &selectors),
+                    format,
+                )
+            );
+        } else if let Some(format) =
+            output::prefer_structured_output(options.format, options.pretty)
+        {
+            println!(
+                "{}",
+                output::format_structured_value(
+                    &client.list_value(options.search, &selectors),
                     format,
                 )
             );
         } else {
-            println!(
-                "{}",
-                client.format_list(
-                    options.search,
-                    options.compact,
-                    options.names_only,
-                    options.limit,
-                )
-            );
+            println!("{}", client.format_list(options.search, &selectors));
         }
     } else if let Some(op_name) = operation {
         let result = client.execute(&op_name, arguments).await?;

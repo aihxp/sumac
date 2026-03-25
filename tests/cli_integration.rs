@@ -2758,7 +2758,10 @@ fn test_inspect_cli_compact_omits_heavy_metadata() {
     if let Some(option) = value["options"].as_array().and_then(|items| items.first()) {
         assert!(option.get("summary").is_none());
     }
-    if let Some(subcommand) = value["subcommands"].as_array().and_then(|items| items.first()) {
+    if let Some(subcommand) = value["subcommands"]
+        .as_array()
+        .and_then(|items| items.first())
+    {
         assert!(subcommand.get("summary").is_none());
         assert!(subcommand.get("confidence").is_none());
     }
@@ -4315,7 +4318,9 @@ fn test_skills_list_names_only_and_limit() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = value.as_array().expect("names-only skills list should be an array");
+    let items = value
+        .as_array()
+        .expect("names-only skills list should be an array");
     assert_eq!(items.len(), 2);
     assert!(items.iter().all(|item| item.is_string()));
 }
@@ -4437,7 +4442,13 @@ fn test_skills_run_can_print_body_for_script_skills() {
 #[test]
 fn test_skills_info_summary_only_omits_body_and_is_smaller() {
     let full = ProcessCommand::new(sxmc_bin_string())
-        .args(["skills", "info", "simple-skill", "--paths", "tests/fixtures"])
+        .args([
+            "skills",
+            "info",
+            "simple-skill",
+            "--paths",
+            "tests/fixtures",
+        ])
         .output()
         .unwrap();
     assert!(
@@ -4473,6 +4484,40 @@ fn test_skills_info_summary_only_omits_body_and_is_smaller() {
     assert!(!summary_stdout.contains("Hello"));
     assert!(!summary_stdout.contains("Directory:"));
     assert!(summary_stdout.len() < full_stdout.len());
+}
+
+#[test]
+fn test_skills_list_token_selectors_shape_output() {
+    let projected = command_json(&[
+        "skills",
+        "list",
+        "--paths",
+        "tests/fixtures",
+        "--json",
+        "--fields",
+        "name,source",
+        "--offset",
+        "1",
+        "--limit",
+        "1",
+    ]);
+    let items = projected.as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    let item = items[0].as_object().unwrap();
+    assert!(item.contains_key("name"));
+    assert!(item.contains_key("source"));
+    assert_eq!(item.len(), 2);
+
+    let counts = command_json(&[
+        "skills",
+        "list",
+        "--paths",
+        "tests/fixtures",
+        "--json",
+        "--counts-only",
+    ]);
+    assert_eq!(counts["counts_only"], true);
+    assert!(counts["count"].as_u64().unwrap_or(0) >= 1);
 }
 
 #[test]
@@ -6766,6 +6811,95 @@ async fn test_api_list_compact_reduces_shape() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_api_list_token_selectors_shape_output() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let spec = serde_json::json!({
+        "openapi": "3.0.0",
+        "info": { "title": "Selector Pets", "version": "1.0.0" },
+        "servers": [{ "url": format!("http://{addr}") }],
+        "paths": {
+            "/pets": {
+                "get": {
+                    "operationId": "listPets",
+                    "summary": "List pets",
+                    "parameters": [
+                        { "name": "limit", "in": "query", "required": true, "schema": { "type": "integer" } }
+                    ],
+                    "responses": { "200": { "description": "ok" } }
+                },
+                "post": {
+                    "operationId": "createPet",
+                    "summary": "Create pet",
+                    "responses": { "200": { "description": "ok" } }
+                }
+            }
+        }
+    });
+    let spec_clone = spec.clone();
+    let handle = tokio::spawn(async move {
+        let app = Router::new().route(
+            "/openapi.json",
+            get(move || {
+                let spec = spec_clone.clone();
+                async move { Json(spec) }
+            }),
+        );
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let base = format!("http://{addr}/openapi.json");
+    let no_desc = command_json(&[
+        "api",
+        &base,
+        "--list",
+        "--no-descriptions",
+        "--format",
+        "json",
+    ]);
+    assert!(no_desc["operations"][0].get("description").is_none());
+
+    let required_only = command_json(&[
+        "api",
+        &base,
+        "--list",
+        "--required-only",
+        "--offset",
+        "1",
+        "--fields",
+        "name,required_param_count",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(required_only["required_only"], true);
+    assert_eq!(required_only["offset"], 1);
+    assert_eq!(required_only["count"], 1);
+    let op = required_only["operations"][0].as_object().unwrap();
+    assert_eq!(op.get("name"), Some(&Value::from("listPets")));
+    assert_eq!(op.get("required_param_count"), Some(&Value::from(1)));
+    assert_eq!(op.len(), 2);
+
+    let counts_only = command_json(&[
+        "api",
+        &base,
+        "--list",
+        "--counts-only",
+        "--offset",
+        "1",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(counts_only["counts_only"], true);
+    assert_eq!(counts_only["total_count"], 2);
+    assert_eq!(counts_only["count"], 1);
+    assert!(counts_only.get("operations").is_none());
+
+    handle.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_graphql_local_list_and_call() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -7631,6 +7765,58 @@ demo-task = "demo.cli:main"
 }
 
 #[test]
+fn test_discover_codebase_token_selectors_shape_output() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join(".github").join("workflows")).unwrap();
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("package.json"),
+        serde_json::to_string_pretty(&json!({
+            "name": "demo-web",
+            "scripts": { "dev": "vite" }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(temp.path().join("Makefile"), "build:\n\tcargo build\n").unwrap();
+
+    let projected = command_json(&[
+        "discover",
+        "codebase",
+        temp.path().to_str().unwrap(),
+        "--fields",
+        "kind,name",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(projected["limit"], 1);
+    assert_eq!(projected["manifest_count"], 1);
+    assert_eq!(projected["total_manifest_count"], 2);
+    let manifest = projected["manifests"][0].as_object().unwrap();
+    assert!(manifest.contains_key("kind"));
+    assert!(manifest.contains_key("name"));
+    assert_eq!(manifest.len(), 2);
+
+    let counts = command_json(&[
+        "discover",
+        "codebase",
+        temp.path().to_str().unwrap(),
+        "--counts-only",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(counts["counts_only"], true);
+    assert!(counts.get("manifests").is_none());
+    assert_eq!(counts["manifest_count"], 2);
+}
+
+#[test]
 fn test_discover_traffic_har_groups_searches_and_compacts() {
     let temp = tempfile::tempdir().unwrap();
     let har_path = temp.path().join("capture.har");
@@ -7855,6 +8041,107 @@ fn test_discover_traffic_output_and_diff_report_changes() {
         ])
         .assert()
         .failure();
+}
+
+#[test]
+fn test_discover_db_and_traffic_token_selectors_shape_output() {
+    let temp = tempfile::tempdir().unwrap();
+    let db_path = temp.path().join("schema.sqlite");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, FOREIGN KEY(user_id) REFERENCES users(id))",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let db_projected = command_json(&[
+        "discover",
+        "db",
+        db_path.to_str().unwrap(),
+        "--fields",
+        "name,column_count",
+        "--offset",
+        "1",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(db_projected["count"], 1);
+    assert_eq!(db_projected["total_count"], 2);
+    let entry = db_projected["entries"][0].as_object().unwrap();
+    assert!(entry.contains_key("name"));
+    assert!(entry.contains_key("column_count"));
+    assert_eq!(entry.len(), 2);
+
+    let db_counts = command_json(&[
+        "discover",
+        "db",
+        db_path.to_str().unwrap(),
+        "--counts-only",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(db_counts["counts_only"], true);
+    assert!(db_counts.get("entries").is_none());
+
+    let har_path = temp.path().join("capture.har");
+    fs::write(
+        &har_path,
+        serde_json::to_string_pretty(&json!({
+            "log": {
+                "version": "1.2",
+                "creator": { "name": "sxmc-test", "version": "1.0" },
+                "entries": [
+                    {
+                        "request": { "method": "GET", "url": "https://api.example.com/users?page=1" },
+                        "response": { "status": 200, "content": { "mimeType": "application/json" } }
+                    },
+                    {
+                        "request": { "method": "POST", "url": "https://api.example.com/users" },
+                        "response": { "status": 201, "content": { "mimeType": "application/json" } }
+                    }
+                ]
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let traffic_projected = command_json(&[
+        "discover",
+        "traffic",
+        har_path.to_str().unwrap(),
+        "--fields",
+        "key,count",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(traffic_projected["endpoint_count"], 1);
+    assert_eq!(traffic_projected["total_endpoint_count"], 2);
+    let endpoint = traffic_projected["endpoints"][0].as_object().unwrap();
+    assert!(endpoint.contains_key("key"));
+    assert!(endpoint.contains_key("count"));
+    assert_eq!(endpoint.len(), 2);
+
+    let traffic_counts = command_json(&[
+        "discover",
+        "traffic",
+        har_path.to_str().unwrap(),
+        "--counts-only",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(traffic_counts["counts_only"], true);
+    assert!(traffic_counts.get("endpoints").is_none());
 }
 
 #[test]

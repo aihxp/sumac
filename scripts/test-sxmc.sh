@@ -471,6 +471,20 @@ if has_cmd curl && curl -s --max-time 5 "$PETSTORE_URL" >/dev/null 2>&1; then
     fail "api --list --names-only --limit" "${api_names:0:140}"
   fi
 
+  api_required=$("$SXMC" api "$PETSTORE_URL" --list --required-only --fields name,required_param_count --limit 3 2>/dev/null)
+  if json_check "$api_required" "d['required_only'] is True and d['count'] == 3 and all(set(item.keys()) <= {'name','required_param_count'} for item in d['operations'])"; then
+    pass "api --list --required-only --fields trims shape"
+  else
+    fail "api --list --required-only --fields" "${api_required:0:140}"
+  fi
+
+  api_counts=$("$SXMC" api "$PETSTORE_URL" --list --counts-only --limit 3 --format json 2>/dev/null)
+  if json_check "$api_counts" "d['counts_only'] is True and 'operations' not in d and d['count'] == 3"; then
+    pass "api --list --counts-only omits operations"
+  else
+    fail "api --list --counts-only" "${api_counts:0:140}"
+  fi
+
   api_search=$("$SXMC" api "$PETSTORE_URL" --search pet --list 2>/dev/null)
   json_check "$api_search" "d.get('count', 0) >= 3" && pass "api --search pet filters" || fail "api --search"
 
@@ -1210,6 +1224,13 @@ else
   fail "discover codebase --compact" "not smaller than full"
 fi
 
+codebase_counts=$("$SXMC" discover codebase --counts-only --format json 2>/dev/null || true)
+if json_check "$codebase_counts" "d['counts_only'] is True and 'manifests' not in d and d.get('manifest_count', 0) >= 1"; then
+  pass "discover codebase --counts-only omits arrays"
+else
+  fail "discover codebase --counts-only" "${codebase_counts:0:120}"
+fi
+
 cb_snapshot="$TMPDIR_TEST/codebase-snapshot.json"
 "$SXMC" discover codebase --output "$cb_snapshot" 2>/dev/null
 if [ -f "$cb_snapshot" ] && [ -s "$cb_snapshot" ]; then
@@ -1645,6 +1666,13 @@ if json_check "$skills_names" "isinstance(d, list) and len(d) == 2 and all(isins
   pass "skills list --names-only --limit reduces shape"
 else
   fail "skills list --names-only --limit" "${skills_names:0:120}"
+fi
+
+skills_counts=$("$SXMC" skills list --paths "$FIXTURES" --counts-only --json 2>&1)
+if json_check "$skills_counts" "d['counts_only'] is True and d.get('count', 0) >= 1"; then
+  pass "skills list --counts-only emits summary"
+else
+  fail "skills list --counts-only" "${skills_counts:0:120}"
 fi
 
 # Skills run

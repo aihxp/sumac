@@ -34,7 +34,9 @@ use cli_args::{
     McpAction, McpSessionAction, McpSessionCli, ScaffoldAction, SkillsAction,
     WatchNotificationTemplate,
 };
-use command_handlers::{cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run, ApiCommandOptions};
+use command_handlers::{
+    cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run, ApiCommandOptions, SkillListOptions,
+};
 use sxmc::auth::secrets::{resolve_header, resolve_secret};
 use sxmc::bake::config::SourceType;
 use sxmc::bake::{BakeConfig, BakeStore};
@@ -6192,6 +6194,104 @@ fn should_print_api_detection_banner(
     explicit_structured_format(format, pretty).is_none()
 }
 
+fn project_discovery_value(
+    mut value: Value,
+    counts_only: bool,
+    fields: Option<&[String]>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Value {
+    let Some(object) = value.as_object_mut() else {
+        return value;
+    };
+
+    let source_type = object
+        .get("source_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let collections: &[(&str, &str)] = match source_type {
+        "database" => &[("entries", "count")],
+        "traffic" => &[("endpoints", "endpoint_count")],
+        "codebase" => &[
+            ("manifests", "manifest_count"),
+            ("task_runners", "task_runner_count"),
+            ("entrypoints", "entrypoint_count"),
+            ("configs", "config_count"),
+            ("recommended_commands", "recommended_command_count"),
+            ("project_kinds", "project_kind_count"),
+        ],
+        _ => &[],
+    };
+
+    if counts_only {
+        let mut filtered = serde_json::Map::new();
+        for (key, item) in object.iter() {
+            if !item.is_array() {
+                filtered.insert(key.clone(), item.clone());
+            }
+        }
+        filtered.insert("counts_only".into(), Value::Bool(true));
+        if offset.is_some() {
+            filtered.insert("offset".into(), json!(offset));
+        }
+        if limit.is_some() {
+            filtered.insert("limit".into(), json!(limit));
+        }
+        return Value::Object(filtered);
+    }
+
+    for (array_key, count_key) in collections {
+        let Some(items) = object.get(*array_key).and_then(Value::as_array) else {
+            continue;
+        };
+        let total = items.len();
+        let mut projected = items.clone();
+        if let Some(fields) = fields {
+            projected = projected
+                .into_iter()
+                .map(|item| retain_discovery_fields(item, fields))
+                .collect();
+        }
+        if let Some(offset) = offset {
+            if offset >= projected.len() {
+                projected.clear();
+            } else if offset > 0 {
+                projected.drain(0..offset);
+            }
+        }
+        if let Some(limit) = limit {
+            projected.truncate(limit);
+        }
+        object.insert((*array_key).to_string(), Value::Array(projected.clone()));
+        if total != projected.len() {
+            object.insert(format!("total_{}", count_key), json!(total));
+            object.insert((*count_key).to_string(), json!(projected.len()));
+        }
+    }
+
+    if offset.is_some() {
+        object.insert("offset".into(), json!(offset));
+    }
+    if limit.is_some() {
+        object.insert("limit".into(), json!(limit));
+    }
+
+    value
+}
+
+fn retain_discovery_fields(value: Value, fields: &[String]) -> Value {
+    let Some(object) = value.as_object() else {
+        return value;
+    };
+    let mut filtered = serde_json::Map::new();
+    for field in fields {
+        if let Some(item) = object.get(field) {
+            filtered.insert(field.clone(), item.clone());
+        }
+    }
+    Value::Object(filtered)
+}
+
 struct SetupResultContext<'a> {
     root: &'a Path,
     tools: &'a [String],
@@ -7891,9 +7991,24 @@ async fn main() -> Result<()> {
                 paths,
                 json,
                 names_only,
+                counts_only,
+                no_descriptions,
+                fields,
+                offset,
                 limit,
             } => {
-                cmd_skills_list(&resolve_paths(paths), json, names_only, limit)?;
+                cmd_skills_list(
+                    &resolve_paths(paths),
+                    SkillListOptions {
+                        json_output: json,
+                        names_only,
+                        counts_only,
+                        no_descriptions,
+                        fields: fields.as_deref(),
+                        offset,
+                        limit,
+                    },
+                )?;
             }
             SkillsAction::Info {
                 name,
@@ -8212,7 +8327,12 @@ async fn main() -> Result<()> {
                 search,
                 compact,
                 names_only,
+                required_only,
+                counts_only,
+                no_descriptions,
+                offset,
                 limit,
+                fields,
                 pretty,
                 format,
                 auth_headers,
@@ -8235,7 +8355,12 @@ async fn main() -> Result<()> {
                         search: search.as_deref(),
                         compact,
                         names_only,
+                        required_only,
+                        counts_only,
+                        no_descriptions,
+                        offset,
                         limit,
+                        fields: fields.as_deref(),
                         pretty,
                         format,
                     },
@@ -8249,7 +8374,12 @@ async fn main() -> Result<()> {
                 list,
                 search,
                 names_only,
+                required_only,
+                counts_only,
+                no_descriptions,
+                offset,
                 limit,
+                fields,
                 schema,
                 type_name,
                 output,
@@ -8313,7 +8443,12 @@ async fn main() -> Result<()> {
                             search: search.as_deref(),
                             compact: false,
                             names_only,
+                            required_only,
+                            counts_only,
+                            no_descriptions,
+                            offset,
                             limit,
+                            fields: fields.as_deref(),
                             pretty,
                             format,
                         },
@@ -8367,6 +8502,10 @@ async fn main() -> Result<()> {
                 search,
                 output,
                 compact,
+                counts_only,
+                offset,
+                limit,
+                fields,
                 pretty,
                 format,
             } => {
@@ -8381,6 +8520,8 @@ async fn main() -> Result<()> {
                     search.as_deref(),
                     compact,
                 )?;
+                let value =
+                    project_discovery_value(value, counts_only, fields.as_deref(), offset, limit);
                 if let Some(path) = output.as_ref() {
                     if let Some(parent) = path.parent() {
                         if !parent.as_os_str().is_empty() {
@@ -8389,7 +8530,10 @@ async fn main() -> Result<()> {
                     }
                     fs::write(path, serde_json::to_string_pretty(&value)?)?;
                 }
-                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                if counts_only || fields.is_some() {
+                    let format = output::resolve_structured_format(format, pretty);
+                    println!("{}", output::format_structured_value(&value, format));
+                } else if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
                     print_db_discovery_report(&value);
@@ -8399,11 +8543,21 @@ async fn main() -> Result<()> {
                 root,
                 output,
                 compact,
+                counts_only,
+                offset,
+                limit,
+                fields,
                 pretty,
                 format,
             } => {
                 let root = root.unwrap_or(std::env::current_dir()?);
-                let value = codebase::inspect_codebase(&root, compact)?;
+                let value = project_discovery_value(
+                    codebase::inspect_codebase(&root, compact)?,
+                    counts_only,
+                    fields.as_deref(),
+                    offset,
+                    limit,
+                );
                 if let Some(path) = output.as_ref() {
                     if let Some(parent) = path.parent() {
                         if !parent.as_os_str().is_empty() {
@@ -8412,7 +8566,10 @@ async fn main() -> Result<()> {
                     }
                     fs::write(path, serde_json::to_string_pretty(&value)?)?;
                 }
-                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                if counts_only || fields.is_some() {
+                    let format = output::resolve_structured_format(format, pretty);
+                    println!("{}", output::format_structured_value(&value, format));
+                } else if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
                     print_codebase_discovery_report(&value);
@@ -8450,15 +8607,25 @@ async fn main() -> Result<()> {
                 list: _,
                 search,
                 compact,
+                counts_only,
+                offset,
+                limit,
+                fields,
                 pretty,
                 format,
             } => {
-                let value = traffic::inspect_traffic_source(
-                    &source,
-                    endpoint.as_deref(),
-                    search.as_deref(),
-                    compact,
-                )?;
+                let value = project_discovery_value(
+                    traffic::inspect_traffic_source(
+                        &source,
+                        endpoint.as_deref(),
+                        search.as_deref(),
+                        compact,
+                    )?,
+                    counts_only,
+                    fields.as_deref(),
+                    offset,
+                    limit,
+                );
                 if let Some(path) = output.as_ref() {
                     if let Some(parent) = path.parent() {
                         if !parent.as_os_str().is_empty() {
@@ -8467,7 +8634,10 @@ async fn main() -> Result<()> {
                     }
                     fs::write(path, serde_json::to_string_pretty(&value)?)?;
                 }
-                if let Some(format) = output::prefer_structured_output(format, pretty) {
+                if counts_only || fields.is_some() {
+                    let format = output::resolve_structured_format(format, pretty);
+                    println!("{}", output::format_structured_value(&value, format));
+                } else if let Some(format) = output::prefer_structured_output(format, pretty) {
                     println!("{}", output::format_structured_value(&value, format));
                 } else {
                     print_traffic_discovery_report(&value);
@@ -8512,7 +8682,12 @@ async fn main() -> Result<()> {
             search,
             compact,
             names_only,
+            required_only,
+            counts_only,
+            no_descriptions,
+            offset,
             limit,
+            fields,
             pretty,
             format,
             auth_headers,
@@ -8534,7 +8709,12 @@ async fn main() -> Result<()> {
                     search: search.as_deref(),
                     compact,
                     names_only,
+                    required_only,
+                    counts_only,
+                    no_descriptions,
+                    offset,
                     limit,
+                    fields: fields.as_deref(),
                     pretty,
                     format,
                 },
@@ -8550,7 +8730,12 @@ async fn main() -> Result<()> {
             search,
             compact,
             names_only,
+            required_only,
+            counts_only,
+            no_descriptions,
+            offset,
             limit,
+            fields,
             pretty,
             format,
             auth_headers,
@@ -8560,7 +8745,9 @@ async fn main() -> Result<()> {
             let spec =
                 openapi::OpenApiSpec::load(&source, &headers, parse_timeout(timeout_seconds))
                     .await?;
-            eprintln!("[sxmc] Loaded OpenAPI spec: {}", spec.title);
+            if should_print_api_detection_banner(format, pretty) {
+                eprintln!("[sxmc] Loaded OpenAPI spec: {}", spec.title);
+            }
             let client = api::ApiClient::OpenApi(spec);
             let arguments = parse_string_kv_args(&args);
             cmd_api(
@@ -8572,7 +8759,12 @@ async fn main() -> Result<()> {
                     search: search.as_deref(),
                     compact,
                     names_only,
+                    required_only,
+                    counts_only,
+                    no_descriptions,
+                    offset,
                     limit,
+                    fields: fields.as_deref(),
                     pretty,
                     format,
                 },
@@ -8587,7 +8779,12 @@ async fn main() -> Result<()> {
             list,
             search,
             names_only,
+            required_only,
+            counts_only,
+            no_descriptions,
+            offset,
             limit,
+            fields,
             schema,
             type_name,
             output,
@@ -8651,7 +8848,12 @@ async fn main() -> Result<()> {
                         search: search.as_deref(),
                         compact: false,
                         names_only,
+                        required_only,
+                        counts_only,
+                        no_descriptions,
+                        offset,
                         limit,
+                        fields: fields.as_deref(),
                         pretty,
                         format,
                     },

@@ -402,9 +402,29 @@ pub enum Commands {
         #[arg(long)]
         names_only: bool,
 
+        /// Return only required arguments/parameters for each operation
+        #[arg(long)]
+        required_only: bool,
+
+        /// Return only counts and omit full operation arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Omit descriptions/summaries from full operation listings
+        #[arg(long)]
+        no_descriptions: bool,
+
+        /// Zero-based offset into the filtered operation list
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
         /// Maximum operations to return
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+
+        /// Keep only specific fields in each returned operation object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Pretty-print JSON output
         #[arg(long)]
@@ -456,9 +476,29 @@ pub enum Commands {
         #[arg(long)]
         names_only: bool,
 
+        /// Return only required arguments/parameters for each operation
+        #[arg(long)]
+        required_only: bool,
+
+        /// Return only counts and omit full operation arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Omit descriptions/summaries from full operation listings
+        #[arg(long)]
+        no_descriptions: bool,
+
+        /// Zero-based offset into the filtered operation list
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
         /// Maximum operations to return
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+
+        /// Keep only specific fields in each returned operation object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Pretty-print JSON output
         #[arg(long)]
@@ -500,9 +540,29 @@ pub enum Commands {
         #[arg(long)]
         names_only: bool,
 
+        /// Return only required arguments for each operation
+        #[arg(long)]
+        required_only: bool,
+
+        /// Return only counts and omit full operation arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Omit descriptions from full operation listings
+        #[arg(long)]
+        no_descriptions: bool,
+
+        /// Zero-based offset into the filtered operation list
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
         /// Maximum operations to return
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+
+        /// Keep only specific fields in each returned operation object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Show a schema summary instead of listing/calling operations
         #[arg(long)]
@@ -1537,9 +1597,29 @@ pub enum DiscoverAction {
         #[arg(long)]
         names_only: bool,
 
+        /// Return only required arguments/parameters for each operation
+        #[arg(long)]
+        required_only: bool,
+
+        /// Return only counts and omit full operation arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Omit descriptions/summaries from full operation listings
+        #[arg(long)]
+        no_descriptions: bool,
+
+        /// Zero-based offset into the filtered operation list
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
         /// Maximum operations to return
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+
+        /// Keep only specific fields in each returned operation object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Pretty-print JSON output
         #[arg(long)]
@@ -1581,9 +1661,29 @@ pub enum DiscoverAction {
         #[arg(long)]
         names_only: bool,
 
+        /// Return only required arguments for each operation
+        #[arg(long)]
+        required_only: bool,
+
+        /// Return only counts and omit full operation arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Omit descriptions from full operation listings
+        #[arg(long)]
+        no_descriptions: bool,
+
+        /// Zero-based offset into the filtered operation list
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
         /// Maximum operations to return
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+
+        /// Keep only specific fields in each returned operation object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Show a schema summary instead of listing/calling operations
         #[arg(long)]
@@ -1678,6 +1778,22 @@ pub enum DiscoverAction {
         #[arg(long)]
         compact: bool,
 
+        /// Return only count metadata without full entry arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Zero-based offset into each returned entry collection
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
+        /// Maximum entries to return from each collection
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
+        /// Keep only specific fields in each returned entry object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
@@ -1699,6 +1815,22 @@ pub enum DiscoverAction {
         /// Return a compact summary without full manifest/config arrays
         #[arg(long)]
         compact: bool,
+
+        /// Return only count metadata without full collection arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Zero-based offset into each returned collection
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
+        /// Maximum items to return from each collection
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
+        /// Keep only specific fields in each returned collection item
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Pretty-print JSON output
         #[arg(long)]
@@ -1732,6 +1864,22 @@ pub enum DiscoverAction {
         /// Return a compact summary without full endpoint arrays
         #[arg(long)]
         compact: bool,
+
+        /// Return only count metadata without full endpoint arrays
+        #[arg(long)]
+        counts_only: bool,
+
+        /// Zero-based offset into the filtered endpoint list
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
+
+        /// Maximum endpoints to return
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
+        /// Keep only specific fields in each returned endpoint object
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
 
         /// Pretty-print JSON output
         #[arg(long)]
@@ -2076,6 +2224,14 @@ pub enum SkillsAction {
         json: bool,
         #[arg(long)]
         names_only: bool,
+        #[arg(long)]
+        counts_only: bool,
+        #[arg(long)]
+        no_descriptions: bool,
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
+        #[arg(long, value_name = "N")]
+        offset: Option<usize>,
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
     },

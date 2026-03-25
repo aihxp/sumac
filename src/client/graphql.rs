@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
+use crate::client::api::ListSelectors;
 use crate::client::commands::{CommandDef, ParamDef, ParamType};
 use crate::error::{Result, SxmcError};
 
@@ -729,9 +730,7 @@ fn build_query(op: &GraphQLOperation) -> String {
 pub fn format_graphql_list(
     ops: &[&GraphQLOperation],
     search: Option<&str>,
-    compact: bool,
-    names_only: bool,
-    limit: Option<usize>,
+    selectors: &ListSelectors<'_>,
 ) -> String {
     let mut filtered: Vec<&&GraphQLOperation> = if let Some(pattern) = search {
         let p = pattern.to_lowercase();
@@ -744,7 +743,15 @@ pub fn format_graphql_list(
         ops.iter().collect()
     };
 
-    if let Some(limit) = limit {
+    if let Some(offset) = selectors.offset {
+        if offset >= filtered.len() {
+            filtered.clear();
+        } else if offset > 0 {
+            filtered.drain(0..offset);
+        }
+    }
+
+    if let Some(limit) = selectors.limit {
         filtered.truncate(limit);
     }
 
@@ -755,12 +762,23 @@ pub fn format_graphql_list(
         return "No operations available.".to_string();
     }
 
+    if selectors.counts_only {
+        return format!("Operations: {}", filtered.len());
+    }
+
     let mut lines = Vec::new();
     for op in &filtered {
         let kind_str = op.kind_label();
-        if names_only {
+        if selectors.names_only {
             lines.push(format!("  {}", op.name));
-        } else if compact {
+        } else if selectors.required_only {
+            let required = op.required_arg_names();
+            if required.is_empty() {
+                lines.push(format!("  {}", op.name));
+            } else {
+                lines.push(format!("  {} required: {}", op.name, required.join(", ")));
+            }
+        } else if selectors.compact {
             let required = op.required_arg_names();
             if required.is_empty() {
                 lines.push(format!("  {} ({})", op.name, kind_str));
@@ -779,7 +797,11 @@ pub fn format_graphql_list(
             };
             lines.push(format!("  {} [{}]", op.name, short_kind));
         }
-        if !compact && !op.description.is_empty() {
+        if !selectors.compact
+            && !selectors.required_only
+            && !selectors.no_descriptions
+            && !op.description.is_empty()
+        {
             lines.push(format!("    {}", op.description));
         }
     }

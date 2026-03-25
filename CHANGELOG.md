@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- `sxmc api|spec|graphql|discover api|discover graphql` now support
+  `--required-only`, `--counts-only`, `--no-descriptions`, `--offset`, and
+  `--fields` so token-constrained agent flows can request only the smallest
+  operation shape they actually need
+- `sxmc skills list` now supports `--counts-only`, `--no-descriptions`,
+  `--offset`, and `--fields` for smaller inventory reads
+- `sxmc discover db|codebase|traffic` now support `--counts-only`, `--offset`,
+  `--limit`, and `--fields` so saved discovery artifacts can be projected down
+  before they reach model context
+
+### Changed
+
+- `sxmc spec --format json|json-pretty|ndjson` now suppresses the OpenAPI load
+  banner on stderr so explicit machine-mode OpenAPI listings stay quiet too
+- token-efficiency guidance now treats `sxmc` as a workflow-compression tool
+  first, and recommends projection selectors for large list surfaces instead of
+  implying all API payloads shrink equally
+
 ## [1.0.5] - 2026-03-25
 
 ### Changed

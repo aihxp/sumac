@@ -9,6 +9,18 @@ use crate::client::graphql;
 use crate::client::openapi;
 use crate::error::{Result, SxmcError};
 
+#[derive(Clone, Debug, Default)]
+pub struct ListSelectors<'a> {
+    pub compact: bool,
+    pub names_only: bool,
+    pub required_only: bool,
+    pub counts_only: bool,
+    pub no_descriptions: bool,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+    pub fields: Option<&'a [String]>,
+}
+
 /// The detected API type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ApiType {
@@ -60,34 +72,22 @@ impl ApiClient {
     }
 
     /// Format a listing of available operations.
-    pub fn format_list(
-        &self,
-        search: Option<&str>,
-        compact: bool,
-        names_only: bool,
-        limit: Option<usize>,
-    ) -> String {
+    pub fn format_list(&self, search: Option<&str>, selectors: &ListSelectors<'_>) -> String {
         match self {
             ApiClient::OpenApi(spec) => {
                 let ops = spec.list_operations(search);
-                openapi::format_operation_list(&ops, None, compact, names_only, limit)
+                openapi::format_operation_list(&ops, None, selectors)
             }
             ApiClient::GraphQL(client) => {
                 let ops = client.list_operations(search);
-                graphql::format_graphql_list(&ops, None, compact, names_only, limit)
+                graphql::format_graphql_list(&ops, None, selectors)
             }
         }
     }
 
     /// Return a structured listing of available operations.
-    pub fn list_value(
-        &self,
-        search: Option<&str>,
-        compact: bool,
-        names_only: bool,
-        limit: Option<usize>,
-    ) -> Value {
-        if names_only {
+    pub fn list_value(&self, search: Option<&str>, selectors: &ListSelectors<'_>) -> Value {
+        if selectors.names_only {
             match self {
                 ApiClient::OpenApi(spec) => {
                     let mut operations = spec
@@ -95,15 +95,16 @@ impl ApiClient {
                         .into_iter()
                         .map(|op| Value::String(op.operation_id.clone()))
                         .collect::<Vec<_>>();
-                    if let Some(limit) = limit {
-                        operations.truncate(limit);
-                    }
+                    apply_offset_limit(&mut operations, selectors.offset, selectors.limit);
                     json!({
                         "api_type": self.api_type(),
                         "search": search,
                         "compact": false,
                         "names_only": true,
-                        "limit": limit,
+                        "required_only": false,
+                        "counts_only": false,
+                        "offset": selectors.offset,
+                        "limit": selectors.limit,
                         "count": operations.len(),
                         "operations": operations,
                     })
@@ -114,46 +115,86 @@ impl ApiClient {
                         .into_iter()
                         .map(|op| Value::String(op.name.clone()))
                         .collect::<Vec<_>>();
-                    if let Some(limit) = limit {
-                        operations.truncate(limit);
-                    }
+                    apply_offset_limit(&mut operations, selectors.offset, selectors.limit);
                     json!({
                         "api_type": self.api_type(),
                         "search": search,
                         "compact": false,
                         "names_only": true,
-                        "limit": limit,
+                        "required_only": false,
+                        "counts_only": false,
+                        "offset": selectors.offset,
+                        "limit": selectors.limit,
                         "count": operations.len(),
                         "operations": operations,
                     })
                 }
             }
-        } else if compact {
+        } else if selectors.counts_only {
+            let total_count = match self {
+                ApiClient::OpenApi(spec) => spec.list_operations(search).len(),
+                ApiClient::GraphQL(client) => client.list_operations(search).len(),
+            };
+            let count = selectors
+                .limit
+                .map(|limit| {
+                    total_count
+                        .saturating_sub(selectors.offset.unwrap_or(0))
+                        .min(limit)
+                })
+                .unwrap_or_else(|| total_count.saturating_sub(selectors.offset.unwrap_or(0)));
+            json!({
+                "api_type": self.api_type(),
+                "search": search,
+                "compact": selectors.compact,
+                "names_only": false,
+                "required_only": selectors.required_only,
+                "counts_only": true,
+                "offset": selectors.offset,
+                "limit": selectors.limit,
+                "total_count": total_count,
+                "count": count,
+            })
+        } else if selectors.compact || selectors.required_only {
             match self {
                 ApiClient::OpenApi(spec) => {
                     let mut operations = spec
                         .list_operations(search)
                         .into_iter()
                         .map(|op| {
-                            json!({
-                                "name": op.operation_id,
-                                "method": op.method.to_uppercase(),
-                                "path": op.path,
-                                "required_params": op.required_param_names(),
-                                "required_param_count": op.parameters.iter().filter(|param| param.required).count()
-                                    + usize::from(op.request_body_schema.is_some()),
-                            })
+                            let mut value = if selectors.required_only {
+                                json!({
+                                    "name": op.operation_id,
+                                    "required_params": op.required_param_names(),
+                                    "required_param_count": op.parameters.iter().filter(|param| param.required).count()
+                                        + usize::from(op.request_body_schema.is_some()),
+                                })
+                            } else {
+                                json!({
+                                    "name": op.operation_id,
+                                    "method": op.method.to_uppercase(),
+                                    "path": op.path,
+                                    "required_params": op.required_param_names(),
+                                    "required_param_count": op.parameters.iter().filter(|param| param.required).count()
+                                        + usize::from(op.request_body_schema.is_some()),
+                                })
+                            };
+                            if let Some(fields) = selectors.fields {
+                                value = retain_fields(value, fields);
+                            }
+                            value
                         })
                         .collect::<Vec<_>>();
-                    if let Some(limit) = limit {
-                        operations.truncate(limit);
-                    }
+                    apply_offset_limit(&mut operations, selectors.offset, selectors.limit);
                     json!({
                         "api_type": self.api_type(),
                         "search": search,
-                        "compact": true,
+                        "compact": selectors.compact,
                         "names_only": false,
-                        "limit": limit,
+                        "required_only": selectors.required_only,
+                        "counts_only": false,
+                        "offset": selectors.offset,
+                        "limit": selectors.limit,
                         "count": operations.len(),
                         "operations": operations,
                     })
@@ -163,23 +204,36 @@ impl ApiClient {
                         .list_operations(search)
                         .into_iter()
                         .map(|op| {
-                            json!({
-                                "name": op.name,
-                                "kind": op.kind_label(),
-                                "required_args": op.required_arg_names(),
-                                "required_arg_count": op.args.iter().filter(|arg| arg.required).count(),
-                            })
+                            let mut value = if selectors.required_only {
+                                json!({
+                                    "name": op.name,
+                                    "required_args": op.required_arg_names(),
+                                    "required_arg_count": op.args.iter().filter(|arg| arg.required).count(),
+                                })
+                            } else {
+                                json!({
+                                    "name": op.name,
+                                    "kind": op.kind_label(),
+                                    "required_args": op.required_arg_names(),
+                                    "required_arg_count": op.args.iter().filter(|arg| arg.required).count(),
+                                })
+                            };
+                            if let Some(fields) = selectors.fields {
+                                value = retain_fields(value, fields);
+                            }
+                            value
                         })
                         .collect::<Vec<_>>();
-                    if let Some(limit) = limit {
-                        operations.truncate(limit);
-                    }
+                    apply_offset_limit(&mut operations, selectors.offset, selectors.limit);
                     json!({
                         "api_type": self.api_type(),
                         "search": search,
-                        "compact": true,
+                        "compact": selectors.compact,
                         "names_only": false,
-                        "limit": limit,
+                        "required_only": selectors.required_only,
+                        "counts_only": false,
+                        "offset": selectors.offset,
+                        "limit": selectors.limit,
                         "count": operations.len(),
                         "operations": operations,
                     })
@@ -187,7 +241,7 @@ impl ApiClient {
             }
         } else {
             let pattern = search.map(str::to_lowercase);
-            let mut commands: Vec<CommandDef> = self
+            let mut commands: Vec<Value> = self
                 .commands()
                 .into_iter()
                 .filter(|cmd| {
@@ -198,17 +252,30 @@ impl ApiClient {
                         true
                     }
                 })
+                .map(|cmd| {
+                    let mut value = serde_json::to_value(cmd).unwrap_or_else(|_| json!({}));
+                    if selectors.no_descriptions {
+                        if let Some(object) = value.as_object_mut() {
+                            object.remove("description");
+                        }
+                    }
+                    if let Some(fields) = selectors.fields {
+                        value = retain_fields(value, fields);
+                    }
+                    value
+                })
                 .collect();
-            if let Some(limit) = limit {
-                commands.truncate(limit);
-            }
+            apply_offset_limit(&mut commands, selectors.offset, selectors.limit);
 
             json!({
                 "api_type": self.api_type(),
                 "search": search,
                 "compact": false,
                 "names_only": false,
-                "limit": limit,
+                "required_only": false,
+                "counts_only": false,
+                "offset": selectors.offset,
+                "limit": selectors.limit,
                 "count": commands.len(),
                 "operations": commands,
             })
@@ -222,6 +289,32 @@ impl ApiClient {
             ApiClient::GraphQL(_) => "GraphQL",
         }
     }
+}
+
+fn apply_offset_limit<T>(items: &mut Vec<T>, offset: Option<usize>, limit: Option<usize>) {
+    if let Some(offset) = offset {
+        if offset >= items.len() {
+            items.clear();
+        } else if offset > 0 {
+            items.drain(0..offset);
+        }
+    }
+    if let Some(limit) = limit {
+        items.truncate(limit);
+    }
+}
+
+fn retain_fields(value: Value, fields: &[String]) -> Value {
+    let Some(object) = value.as_object() else {
+        return value;
+    };
+    let mut filtered = serde_json::Map::new();
+    for field in fields {
+        if let Some(item) = object.get(field) {
+            filtered.insert(field.clone(), item.clone());
+        }
+    }
+    Value::Object(filtered)
 }
 
 /// Detect the API type from a source URL or file path.

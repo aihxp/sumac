@@ -208,31 +208,48 @@ Across this comparison set, the gains fall into three practical buckets:
 
 ## Token Utilization Summary
 
-Across the current 10-scenario comparison set:
+The stable lesson is narrower and more useful than a single blended headline:
+`sxmc` saves the most tokens when it replaces protocol glue, spec-reading, or
+multi-step discovery, and it saves much less when the dominant cost is a large
+payload that still has to be shown to the model.
 
-| Metric | Without `sxmc` | With `sxmc` | Savings |
-|---|---|---|---|
-| Total tokens | ~20,671 | ~11,894 | ~8,777 fewer tokens (~42%) |
-| Total agent turns | ~30-47 | ~10 | ~20-37 fewer turns |
-| Estimated input cost at $3/M | ~$0.062 | ~$0.036 | ~42% lower |
+Historical and recent measurements both support that:
 
-Notable scenario-level takeaways:
+- older 10-scenario validation runs showed large blended savings when the
+  manual path involved repeated JSON-RPC framing, spec reading, and startup
+  glue
+- a later 8-task Linux comparison found only modest blended savings once a
+  single huge direct API payload dominated the total, but still found much
+  stronger savings when that outlier was excluded
 
-- biggest token wins:
-  - API discovery
-  - MCP tool invocation
-  - security scanning
-- biggest turn wins:
-  - serve plus inspect workflows
-  - cross-server grep across baked MCP inventories
-- important outlier:
-  - direct API invocation saves much less because the response payload is still the same size; the main savings there come from avoiding spec-reading overhead
-- uncounted downside of the manual path:
-  - retry turns from broken JSON-RPC scripts or hand-built protocol glue are not included in these totals
+The practical read:
+
+- strongest token wins:
+  - discovery-heavy flows
+  - MCP inspection and protocol glue replacement
+  - CLI and codebase summarization
+- weakest token wins:
+  - large direct API responses where the payload itself dominates
+- biggest non-token win:
+  - fewer turns, fewer retries, and less shell/protocol scaffolding
+
+For token-constrained agent use, prefer these selectors first:
+
+- `sxmc api|spec|graphql --list --compact`
+- `sxmc api|spec|graphql --list --names-only --limit N`
+- `sxmc api|spec|graphql --list --required-only --fields ...`
+- `sxmc api|spec|graphql --list --counts-only --offset N --limit N`
+- `sxmc skills list --names-only --limit N`
+- `sxmc skills list --counts-only`
+- `sxmc skills info --summary-only`
+- `sxmc inspect cli --compact`
+- `sxmc discover db|codebase|traffic --counts-only`
+- `sxmc discover db|codebase|traffic --fields ... --offset N --limit N --format json`
 
 These numbers are best read as workflow-efficiency estimates, not billing-grade
 measurements. The stable product lesson is the same: `sxmc` helps most when it
-replaces protocol glue, spec-reading, or multi-step discovery flows.
+compresses workflows and lets the model ask for smaller views of a surface
+instead of dumping the entire surface into context.
 
 ## Why Manual JSON-RPC Retries Happen
 

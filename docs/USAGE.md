@@ -220,6 +220,8 @@ Auto-detect:
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list --compact --format json-pretty
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list --names-only --limit 10 --format json
+sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list --required-only --fields name,required_param_count --format json
+sxmc api https://petstore3.swagger.io/api/v3/openapi.json --list --counts-only --offset 10 --limit 10 --format json
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json findPetsByStatus status=available
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json --timeout-seconds 15 --list
 sxmc api https://petstore3.swagger.io/api/v3/openapi.json findPetsByStatus status=available --format toon
@@ -245,10 +247,15 @@ Network timeout notes:
 - `sxmc discover traffic capture.har --output traffic.json` snapshots grouped
   request surfaces from HAR exports, while `sxmc discover traffic curl.log`
   does the same for saved `curl`/shell history
+- `sxmc discover traffic capture.har --counts-only --format json` keeps only
+  endpoint/request counts when you want a drift summary without the full
+  endpoint array
 - `sxmc discover traffic-diff --before traffic.json --source capture.har`
   compares a saved traffic snapshot against a new HAR or curl-history source
 - `sxmc discover db database.sqlite --output db.json` snapshots SQLite or
   PostgreSQL schema discovery for later review or sharing
+- `sxmc discover db database.sqlite --fields name,column_count --limit 10 --format json`
+  projects discovery output down to just the table fields you need
 
 ## Turn CLIs Into AI Startup Surfaces
 
@@ -674,7 +681,15 @@ Deeper inspection:
   operation names, method/kind, and required params instead of full
   descriptions and parameter arrays
 - `sxmc api --list --names-only --limit N` returns the smallest API inventory shape when you only need callable names
+- `sxmc api|spec|graphql --list --required-only` keeps just operation names plus required args/params
+- `sxmc api|spec|graphql --list --counts-only` returns only counts, which is useful for pagination or drift checks
+- `sxmc api|spec|graphql --list --offset N --limit N` pages large inventories without dumping the full surface
+- `sxmc api|spec|graphql --list --fields a,b,c` projects each returned operation object down to the exact fields you want
 - `sxmc skills list --names-only --limit N` returns a smaller skill inventory that is better suited to tight token budgets
+- `sxmc skills list --counts-only` returns only the skill count
+- `sxmc skills list --fields name,source --offset N --limit N --json` returns a projected slice of the inventory instead of the whole shape
+- `sxmc discover db|codebase|traffic --counts-only` keeps only summary counts and source metadata
+- `sxmc discover db|codebase|traffic --fields ... --offset N --limit N --format json` projects and paginates discovery artifacts before they hit model context
 - nested subcommand profiles are stored under `subcommand_profiles`
 - interactive or TUI-oriented commands are flagged with `interactive`,
   `interactive_reasons`, and `non_interactive_alternatives` so downstream

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+use crate::client::api::ListSelectors;
 use crate::client::commands::{CommandDef, ParamDef, ParamType};
 use crate::error::{Result, SxmcError};
 
@@ -494,9 +495,7 @@ fn generate_operation_id(method: &str, path: &str) -> String {
 pub fn format_operation_list(
     ops: &[&OpenApiOperation],
     search: Option<&str>,
-    compact: bool,
-    names_only: bool,
-    limit: Option<usize>,
+    selectors: &ListSelectors<'_>,
 ) -> String {
     let mut filtered: Vec<&&OpenApiOperation> = if let Some(pattern) = search {
         let p = pattern.to_lowercase();
@@ -510,7 +509,14 @@ pub fn format_operation_list(
         ops.iter().collect()
     };
 
-    if let Some(limit) = limit {
+    if let Some(offset) = selectors.offset {
+        if offset >= filtered.len() {
+            filtered.clear();
+        } else if offset > 0 {
+            filtered.drain(0..offset);
+        }
+    }
+    if let Some(limit) = selectors.limit {
         filtered.truncate(limit);
     }
 
@@ -521,11 +527,26 @@ pub fn format_operation_list(
         return "No operations available.".to_string();
     }
 
+    if selectors.counts_only {
+        return format!("Operations: {}", filtered.len());
+    }
+
     let mut lines = Vec::new();
     for op in &filtered {
-        if names_only {
+        if selectors.names_only {
             lines.push(format!("  {}", op.operation_id));
-        } else if compact {
+        } else if selectors.required_only {
+            let required = op.required_param_names();
+            if required.is_empty() {
+                lines.push(format!("  {}", op.operation_id));
+            } else {
+                lines.push(format!(
+                    "  {} required: {}",
+                    op.operation_id,
+                    required.join(", ")
+                ));
+            }
+        } else if selectors.compact {
             let required = op.required_param_names();
             if required.is_empty() {
                 lines.push(format!(
@@ -551,7 +572,11 @@ pub fn format_operation_list(
                 op.path
             ));
         }
-        if !compact && !op.summary.is_empty() {
+        if !selectors.compact
+            && !selectors.required_only
+            && !selectors.no_descriptions
+            && !op.summary.is_empty()
+        {
             lines.push(format!("    {}", op.summary));
         }
     }
