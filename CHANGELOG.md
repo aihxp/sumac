@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.2.43] - 2026-03-25
+
 ### Changed
 
 - `sxmc add` and `sxmc setup` now expose an explicit structured-output contract

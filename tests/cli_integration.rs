@@ -3079,16 +3079,15 @@ fn test_wrap_git_uses_git_subcommand_descriptions() {
         "git".to_string(),
     ])
     .unwrap();
-    let described_log = command_stdout(&["stdio", &spec, "--describe-tool", "log"]);
+    let listed = command_stdout(&["stdio", &spec, "--list-tools"]);
+    assert!(listed.contains("status"));
+    assert!(!listed.contains("log"));
+
     let described_reset = command_stdout(&["stdio", &spec, "--describe-tool", "reset"]);
     let described_rm = command_stdout(&["stdio", &spec, "--describe-tool", "rm"]);
-
-    let described_log_lower = described_log.to_ascii_lowercase();
     let described_reset_lower = described_reset.to_ascii_lowercase();
     let described_rm_lower = described_rm.to_ascii_lowercase();
 
-    assert!(!described_log_lower.contains("os_log"));
-    assert!(!described_log_lower.contains("system wide log messages"));
     assert!(!described_reset_lower.contains("terminfo"));
     assert!(!described_reset_lower.contains("initialize a terminal"));
     assert!(!described_rm_lower.contains("remove directory entries"));
@@ -3495,7 +3494,7 @@ fn test_wrap_register_host_writes_cursor_mcp_config() {
             "--register-root",
             temp.path().to_str().unwrap(),
         ])
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -3529,7 +3528,7 @@ fn test_serve_register_host_writes_cursor_mcp_config() {
             "--register-root",
             temp.path().to_str().unwrap(),
         ])
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
