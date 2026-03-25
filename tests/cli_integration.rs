@@ -3653,10 +3653,14 @@ fn test_serve_register_host_writes_cursor_mcp_config() {
     let _ = child.wait();
 
     let contents = fs::read_to_string(&config_path).unwrap();
-    assert!(contents.contains("\"sxmc-serve\""));
-    assert!(contents.contains("\"command\": \"sxmc\""));
-    assert!(contents.contains("\"serve\""));
-    assert!(contents.contains(fixtures.to_str().unwrap()));
+    let value: Value = serde_json::from_str(&contents).unwrap();
+    let server = &value["mcpServers"]["sxmc-serve"];
+    assert_eq!(server["command"], Value::from("sxmc"));
+    let args = server["args"].as_array().unwrap();
+    assert!(args.iter().any(|entry| entry == "serve"));
+    assert!(args
+        .iter()
+        .any(|entry| entry.as_str() == Some(fixtures.to_str().unwrap())));
 }
 
 #[test]
