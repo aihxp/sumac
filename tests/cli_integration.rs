@@ -1221,6 +1221,69 @@ fn test_watch_notify_file_writes_unhealthy_event() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_watch_notify_webhook_posts_unhealthy_event() {
+    let temp = tempfile::tempdir().unwrap();
+    let posted = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/watch",
+            post(
+                |State(posted): State<Arc<Mutex<Vec<Value>>>>, Json(payload): Json<Value>| async move {
+                    posted.lock().unwrap().push(payload);
+                    Json(json!({"ok": true}))
+                },
+            ),
+        )
+        .with_state(Arc::clone(&posted));
+    let handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake",
+            "create",
+            "fixture-unhealthy-webhook",
+            "--type",
+            "stdio",
+            "--source",
+            "definitely-not-a-real-command",
+            "--skip-validate",
+        ])
+        .assert()
+        .success();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "watch",
+            "--health",
+            "--exit-on-unhealthy",
+            "--notify-webhook",
+            &format!("http://{addr}/watch"),
+            "--format",
+            "ndjson",
+        ])
+        .assert()
+        .failure();
+
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let events = posted.lock().unwrap().clone();
+    handle.abort();
+
+    assert!(
+        !events.is_empty(),
+        "expected watch webhook to receive an event"
+    );
+    assert_eq!(
+        events[0]["event_schema"],
+        Value::from("sxmc_watch_event_v1")
+    );
+    assert_eq!(events[0]["reason"], Value::from("unhealthy"));
+}
+
 #[test]
 fn test_status_can_compare_hosts() {
     let temp = tempfile::tempdir().unwrap();
@@ -5089,6 +5152,68 @@ fn test_scaffold_llms_txt_apply_writes_export() {
     let contents = fs::read_to_string(temp.path().join("llms.txt")).unwrap();
     assert!(contents.contains("# gh"));
     assert!(contents.contains("## Recommended Commands"));
+}
+
+#[test]
+fn test_scaffold_discovery_pack_apply_writes_markdown_bundle() {
+    let temp = tempfile::tempdir().unwrap();
+    let snapshot_dir = temp.path().join("snapshots");
+    fs::create_dir_all(&snapshot_dir).unwrap();
+
+    let codebase = command_json(&["discover", "codebase", ".", "--format", "json-pretty"]);
+    fs::write(
+        snapshot_dir.join("codebase.json"),
+        serde_json::to_string_pretty(&codebase).unwrap(),
+    )
+    .unwrap();
+
+    let curl_history = temp.path().join("curl-history.txt");
+    fs::write(
+        &curl_history,
+        "curl https://api.example.test/v1/widgets\ncurl -H 'Content-Type: application/json' -d '{\"name\":\"sumac\"}' https://api.example.test/v1/widgets\n",
+    )
+    .unwrap();
+    let traffic = command_json_with_config_home(
+        temp.path(),
+        &[
+            "discover",
+            "traffic",
+            curl_history.to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+    fs::write(
+        snapshot_dir.join("traffic.json"),
+        serde_json::to_string_pretty(&traffic).unwrap(),
+    )
+    .unwrap();
+
+    sxmc()
+        .args([
+            "scaffold",
+            "discovery-pack",
+            "--from-snapshot",
+            snapshot_dir.to_str().unwrap(),
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--mode",
+            "apply",
+        ])
+        .assert()
+        .success();
+
+    let pack_dir = temp.path().join(".sxmc/discovery-pack");
+    let index = fs::read_to_string(pack_dir.join("README.md")).unwrap();
+    let codebase_doc = fs::read_to_string(pack_dir.join("codebase-codebase.md")).unwrap();
+    let traffic_doc = fs::read_to_string(pack_dir.join("traffic-traffic.md")).unwrap();
+
+    assert!(index.contains("# Discovery pack"));
+    assert!(index.contains("codebase-codebase.md"));
+    assert!(codebase_doc.contains("# CODEBASE snapshot: codebase"));
+    assert!(codebase_doc.contains("## Recommended commands"));
+    assert!(traffic_doc.contains("# TRAFFIC snapshot: traffic"));
+    assert!(traffic_doc.contains("## Endpoint map"));
 }
 
 #[test]

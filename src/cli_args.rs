@@ -956,6 +956,14 @@ pub enum Commands {
         #[arg(long)]
         notify_command: Option<String>,
 
+        /// POST watch events as JSON to one or more webhook URLs
+        #[arg(long = "notify-webhook", value_name = "URL", value_delimiter = ',')]
+        notify_webhooks: Vec<String>,
+
+        /// Extra HTTP header to include with webhook notifications
+        #[arg(long = "notify-header", value_name = "K:V")]
+        notify_headers: Vec<String>,
+
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
@@ -1838,6 +1846,16 @@ pub enum ScaffoldAction {
         from_profile: PathBuf,
         #[arg(long)]
         root: Option<PathBuf>,
+        #[arg(long, value_enum, default_value = "preview")]
+        mode: ArtifactMode,
+    },
+    DiscoveryPack {
+        #[arg(long = "from-snapshot")]
+        from_snapshot: PathBuf,
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long, default_value = ".sxmc/discovery-pack")]
+        output_dir: PathBuf,
         #[arg(long, value_enum, default_value = "preview")]
         mode: ArtifactMode,
     },

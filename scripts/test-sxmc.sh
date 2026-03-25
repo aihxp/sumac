@@ -685,6 +685,8 @@ echo "$watch_help" | grep -q "exit-on-change" && pass "watch has --exit-on-chang
 echo "$watch_help" | grep -q "exit-on-unhealthy" && pass "watch has --exit-on-unhealthy" || fail "watch missing --exit-on-unhealthy"
 echo "$watch_help" | grep -q "notify-file" && pass "watch has --notify-file" || fail "watch missing --notify-file"
 echo "$watch_help" | grep -q "notify-command" && pass "watch has --notify-command" || fail "watch missing --notify-command"
+echo "$watch_help" | grep -q "notify-webhook" && pass "watch has --notify-webhook" || fail "watch missing --notify-webhook"
+echo "$watch_help" | grep -q "notify-header" && pass "watch has --notify-header" || fail "watch missing --notify-header"
 
 # ── Section 21: Publish / Pull ──
 section "21. Publish / Pull"
@@ -1038,6 +1040,7 @@ section "30. CI Scaffold"
 
 scaffold_help=$("$SXMC" scaffold --help 2>&1)
 echo "$scaffold_help" | grep -q "ci" && pass "scaffold --help lists ci" || fail "scaffold missing ci"
+echo "$scaffold_help" | grep -q "discovery-pack" && pass "scaffold --help lists discovery-pack" || fail "scaffold missing discovery-pack"
 
 if has_cmd git && [ -f "$TMPDIR_TEST/git-profile.json" ]; then
   ci_out=$("$SXMC" scaffold ci --from-profile "$TMPDIR_TEST/git-profile.json" --mode preview 2>&1)
@@ -1050,6 +1053,24 @@ if has_cmd git && [ -f "$TMPDIR_TEST/git-profile.json" ]; then
       fail "scaffold ci" "empty output"
     fi
   fi
+fi
+
+DISCOVERY_PACK_ROOT="$TMPDIR_TEST/discovery-pack-root"
+mkdir -p "$DISCOVERY_PACK_ROOT/snapshots"
+if "$SXMC" discover codebase . --format json-pretty >"$DISCOVERY_PACK_ROOT/snapshots/codebase.json" 2>/dev/null; then
+  printf '%s\n' "curl https://api.example.test/v1/widgets" >"$DISCOVERY_PACK_ROOT/curl-history.txt"
+  if "$SXMC" discover traffic "$DISCOVERY_PACK_ROOT/curl-history.txt" --format json-pretty >"$DISCOVERY_PACK_ROOT/snapshots/traffic.json" 2>/dev/null; then
+    discovery_pack_out=$("$SXMC" scaffold discovery-pack --from-snapshot "$DISCOVERY_PACK_ROOT/snapshots" --root "$DISCOVERY_PACK_ROOT" --mode apply 2>&1 || true)
+    if [ -f "$DISCOVERY_PACK_ROOT/.sxmc/discovery-pack/README.md" ] && [ -f "$DISCOVERY_PACK_ROOT/.sxmc/discovery-pack/codebase-codebase.md" ]; then
+      pass "scaffold discovery-pack writes markdown bundle"
+    else
+      fail "scaffold discovery-pack" "${discovery_pack_out:0:140}"
+    fi
+  else
+    fail "discover traffic snapshot for scaffold discovery-pack" "traffic snapshot generation failed"
+  fi
+else
+  fail "discover codebase snapshot for scaffold discovery-pack" "codebase snapshot generation failed"
 fi
 
 # ── Section 31: Health Gates ──

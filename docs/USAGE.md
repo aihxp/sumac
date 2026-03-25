@@ -386,6 +386,9 @@ Notes:
 - `sxmc watch --notify-command '<shell command>'` runs a local hook when watch
   emits a changed or unhealthy frame; the hook receives `SXMC_WATCH_REASON`,
   `SXMC_WATCH_ROOT`, and `SXMC_WATCH_EVENT_PATH`.
+- `sxmc watch --notify-webhook <url>` POSTs those same structured watch events
+  as JSON to one or more webhooks, and `--notify-header K:V` adds custom HTTP
+  headers for those webhook deliveries.
 - `sxmc sync --root .` is the preview-first reconciler: it compares saved
   profiles against the installed tools, shows what would change, and suggests
   the exact `--apply` command to run next.
@@ -568,6 +571,9 @@ sxmc init discovery codebase.json --coverage full --host claude-code,cursor --mo
 - `sxmc init discovery <path>` now accepts either one snapshot file or a
   directory of saved discovery snapshots when you want to deliver a whole
   discovery bundle into host docs in one pass.
+- `sxmc scaffold discovery-pack --from-snapshot <file-or-dir>` turns saved
+  discovery snapshots into a review-friendly Markdown pack with one scaffolded
+  doc per snapshot plus a bundle index.
 - `sxmc sync` is the maintained-state companion to `add` and `setup`: once a
   repo already has saved profiles and host files, `sync` keeps those derived
   artifacts honest as the underlying CLI binaries change.

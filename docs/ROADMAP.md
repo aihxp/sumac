@@ -31,8 +31,9 @@ Candidate work:
   - explicit local sync state tracking for saved profiles and derived host artifacts
   - watch notification hooks for changed/unhealthy frames
   - broader host-aware remediation suggestions
+  - webhook delivery for watch events
 - next:
-  - better notification destinations beyond local file/command hooks
+  - richer notification payload templates and destination presets
 
 ## Priority 2: Discovery -> Delivery
 
@@ -50,8 +51,8 @@ Candidate work:
   - richer `init discovery` that accepts one snapshot or a snapshot directory
   - discover-to-MCP resource generation for saved discovery snapshots served
     through `sxmc serve`
-- next:
   - discover-driven scaffolds for common team workflows
+- next:
   - optional higher-level wrappers for GraphQL/database/traffic snapshots
 
 ## Priority 3: Ecosystem Hardening

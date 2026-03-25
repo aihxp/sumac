@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- `sxmc watch --notify-webhook <url>` now POSTs structured watch events as JSON
+  to one or more webhooks, with optional `--notify-header K:V` HTTP headers
+- `sxmc scaffold discovery-pack --from-snapshot <file-or-dir>` now generates a
+  review-friendly Markdown bundle from saved discovery snapshots
+
 ### Changed
 
 - `sxmc status` now emits additive host-aware `recommended_commands` arrays and
