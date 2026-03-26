@@ -4,7 +4,7 @@ use predicates::prelude::*;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command as ProcessCommand, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
@@ -20,6 +20,69 @@ fn has_command(name: &str) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok()
+}
+
+fn find_command_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let dirs = std::env::split_paths(&path);
+
+    #[cfg(windows)]
+    let exts: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+        .split(';')
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| ext.to_ascii_lowercase())
+        .collect();
+
+    #[cfg(not(windows))]
+    let exts = vec![String::new()];
+
+    for dir in dirs {
+        for ext in &exts {
+            let candidate = if ext.is_empty() || name.to_ascii_lowercase().ends_with(ext) {
+                dir.join(name)
+            } else {
+                dir.join(format!("{name}{ext}"))
+            };
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(unix)]
+fn create_command_wrapper(bin_dir: &Path, name: &str, target: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let script = bin_dir.join(name);
+    let body = format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", target.display());
+    fs::write(&script, body).unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    script
+}
+
+#[cfg(windows)]
+fn create_command_wrapper(bin_dir: &Path, name: &str, target: &Path) -> PathBuf {
+    let script = bin_dir.join(format!("{name}.cmd"));
+    let body = format!("@echo off\r\n\"{}\" %*\r\n", target.display());
+    fs::write(&script, body).unwrap();
+    script
+}
+
+fn isolated_path_with_tools(root: &Path, names: &[&str]) -> String {
+    let bin_dir = root.join("isolated-bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for name in names {
+        let target = find_command_on_path(name)
+            .unwrap_or_else(|| panic!("expected {name} to exist on PATH for integration test"));
+        create_command_wrapper(&bin_dir, name, &target);
+    }
+    bin_dir.to_string_lossy().into_owned()
 }
 
 fn sxmc_with_config_home(home: &Path) -> Command {
@@ -249,6 +312,18 @@ fn command_json_with_config_home(home: &Path, args: &[&str]) -> Value {
 #[cfg(not(windows))]
 fn write_fake_cli(dir: &Path, help_text: &str) -> std::path::PathBuf {
     let script = dir.join("fake-cli");
+    let body = format!("#!/bin/sh\ncat <<'EOF'\n{help_text}\nEOF\n");
+    fs::write(&script, body).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    script
+}
+
+#[cfg(not(windows))]
+fn write_fake_named_cli(dir: &Path, name: &str, help_text: &str) -> std::path::PathBuf {
+    let script = dir.join(name);
     let body = format!("#!/bin/sh\ncat <<'EOF'\n{help_text}\nEOF\n");
     fs::write(&script, body).unwrap();
     use std::os::unix::fs::PermissionsExt;
@@ -2941,8 +3016,11 @@ fn test_doctor_remove_can_infer_hosts_and_cli_from_existing_state() {
 #[test]
 fn test_doctor_fix_without_inferable_hosts_has_helpful_error() {
     let temp = tempfile::tempdir().unwrap();
+    let empty_path = temp.path().join("bin");
+    fs::create_dir_all(&empty_path).unwrap();
 
     sxmc_with_config_home(temp.path())
+        .env("PATH", &empty_path)
         .args(["doctor", "--fix", "--root", temp.path().to_str().unwrap()])
         .assert()
         .failure()
@@ -3702,6 +3780,7 @@ fn test_init_ai_blocks_low_confidence_profiles_without_override() {
 #[test]
 fn test_add_applies_to_detected_hosts_and_saves_profile() {
     let temp = tempfile::tempdir().unwrap();
+    let isolated_path = isolated_path_with_tools(temp.path(), &["git"]);
     fs::write(
         temp.path().join("CLAUDE.md"),
         "# Existing Claude guidance\n",
@@ -3709,12 +3788,11 @@ fn test_add_applies_to_detected_hosts_and_saves_profile() {
     .unwrap();
 
     sxmc_with_config_home(temp.path())
+        .env("PATH", &isolated_path)
         .args(["add", "git", "--root", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Detected configured AI hosts: Claude Code",
-        ))
+        .stdout(predicate::str::contains("Detected AI hosts: Claude Code"))
         .stdout(predicate::str::contains("Created CLI profile:"))
         .stdout(predicate::str::contains("Claude Code agent doc:"));
 
@@ -3742,12 +3820,14 @@ fn test_add_applies_to_detected_hosts_and_saves_profile() {
 #[test]
 fn test_add_without_detected_hosts_previews_full_plan() {
     let temp = tempfile::tempdir().unwrap();
+    let isolated_path = isolated_path_with_tools(temp.path(), &["git"]);
 
     sxmc_with_config_home(temp.path())
+        .env("PATH", &isolated_path)
         .args(["add", "git", "--root", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("No configured AI hosts detected"))
+        .stdout(predicate::str::contains("No AI hosts detected"))
         .stdout(predicate::str::contains("Would create CLI profile:"))
         .stdout(predicate::str::contains(
             "Would create Claude Code agent doc:",
@@ -3800,18 +3880,18 @@ fn test_add_supports_structured_output_and_client_alias() {
 #[test]
 fn test_add_global_writes_user_level_host_artifacts_and_global_state() {
     let temp = tempfile::tempdir().unwrap();
+    let isolated_path = isolated_path_with_tools(temp.path(), &["git"]);
     let claude_dir = temp.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
     fs::write(claude_dir.join("CLAUDE.md"), "# Existing Claude guidance\n").unwrap();
 
     sxmc_with_config_home(temp.path())
+        .env("PATH", &isolated_path)
         .current_dir(temp.path())
         .args(["add", "git", "--global"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Detected configured AI hosts: Claude Code",
-        ));
+        .stdout(predicate::str::contains("Detected AI hosts: Claude Code"));
 
     assert!(temp
         .path()
@@ -3862,6 +3942,7 @@ fn test_status_global_reports_user_level_targets() {
 #[test]
 fn test_setup_applies_multiple_tools_to_detected_hosts() {
     let temp = tempfile::tempdir().unwrap();
+    let isolated_path = isolated_path_with_tools(temp.path(), &["git", "ls"]);
     fs::write(
         temp.path().join("CLAUDE.md"),
         "# Existing Claude guidance\n",
@@ -3869,19 +3950,19 @@ fn test_setup_applies_multiple_tools_to_detected_hosts() {
     .unwrap();
 
     sxmc_with_config_home(temp.path())
+        .env("PATH", &isolated_path)
         .args([
             "setup",
             "--tool",
             "git,ls",
+            "--allow-low-confidence",
             "--root",
             temp.path().to_str().unwrap(),
         ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Selected tools: git, ls"))
-        .stdout(predicate::str::contains(
-            "Detected configured AI hosts: Claude Code",
-        ))
+        .stdout(predicate::str::contains("Detected AI hosts: Claude Code"))
         .stdout(predicate::str::contains("Onboarding tool: git"))
         .stdout(predicate::str::contains("Onboarding tool: ls"));
 
@@ -3957,8 +4038,10 @@ fn test_setup_supports_structured_output_and_client_alias() {
 #[test]
 fn test_setup_previews_when_no_hosts_are_configured() {
     let temp = tempfile::tempdir().unwrap();
+    let isolated_path = isolated_path_with_tools(temp.path(), &["git"]);
 
     sxmc_with_config_home(temp.path())
+        .env("PATH", &isolated_path)
         .args([
             "setup",
             "--tool",
@@ -3969,7 +4052,7 @@ fn test_setup_previews_when_no_hosts_are_configured() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Selected tools: git"))
-        .stdout(predicate::str::contains("No configured AI hosts detected"))
+        .stdout(predicate::str::contains("No AI hosts detected"))
         .stdout(predicate::str::contains("Would create CLI profile:"));
 
     assert!(!temp.path().join(".sxmc/ai/profiles/git.json").exists());
@@ -8458,6 +8541,39 @@ fn test_skills_install_global_writes_user_skill_dir() {
     );
     assert_eq!(listed[0]["name"], "simple-skill");
     assert_eq!(listed[0]["install_scope"], "global");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_setup_global_auto_detects_claude_and_codex_runtimes_on_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let bin_dir = temp.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    write_fake_named_cli(&bin_dir, "claude", "Claude Code fake help");
+    write_fake_named_cli(&bin_dir, "codex", "Codex fake help");
+    let inherited_path = std::env::var("PATH").unwrap_or_default();
+    let combined_path = format!("{}:{}", bin_dir.display(), inherited_path);
+
+    let output = sxmc_with_config_home(temp.path())
+        .env("PATH", combined_path)
+        .args(["setup", "--global", "--tool", "git", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "command failed: {}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let host_ids = value["hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["id"].as_str())
+        .collect::<Vec<_>>();
+    assert!(host_ids.contains(&"claude-code"));
+    assert!(host_ids.contains(&"openai-codex"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

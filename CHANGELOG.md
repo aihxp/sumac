@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-03-26
+
+### Changed
+
+- `sxmc add` and `sxmc setup` now auto-detect supported AI hosts from installed
+  runtimes like `claude`, `gemini`, `opencode`, and `codex`, not only from
+  pre-existing managed docs/config files
+
 ## [1.0.8] - 2026-03-26
 
 ### Added
@@ -246,8 +254,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - `sxmc add <tool>` as a one-step CLI-to-AI onboarding command that inspects a
-  tool, saves its profile, detects already-configured AI hosts, and either
-  applies startup artifacts or previews the full onboarding plan
+  tool, saves its profile, detects AI hosts from managed files or installed
+  runtimes, and either applies startup artifacts or previews the full
+  onboarding plan
 - `sxmc setup` as the multi-tool onboarding command that scans a curated common
   tool list or accepts explicit `--tool` selections and applies the same
   startup pipeline in one pass

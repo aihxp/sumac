@@ -1362,11 +1362,17 @@ section "33. Add Pipeline"
 
 if has_cmd git; then
   ADD_ROOT="$TMPDIR_TEST/add-root"
+  GIT_ONLY_BIN="$TMPDIR_TEST/git-only-bin"
+  mkdir -p "$GIT_ONLY_BIN"
+  ln -sf "$(command -v git)" "$GIT_ONLY_BIN/git"
+  if has_cmd ls; then
+    ln -sf "$(command -v ls)" "$GIT_ONLY_BIN/ls"
+  fi
   mkdir -p "$ADD_ROOT"
   printf "# Existing Claude guidance\n" > "$ADD_ROOT/CLAUDE.md"
 
   add_apply_out=$("$SXMC" add git --root "$ADD_ROOT" 2>&1 || true)
-  if echo "$add_apply_out" | grep -q "Detected configured AI hosts: Claude Code"; then
+  if echo "$add_apply_out" | grep -q "Detected AI hosts: Claude Code"; then
     pass "add detects configured Claude host"
   else
     fail "add host detection" "${add_apply_out:0:120}"
@@ -1386,8 +1392,8 @@ if has_cmd git; then
 
   ADD_PREVIEW_ROOT="$TMPDIR_TEST/add-preview-root"
   mkdir -p "$ADD_PREVIEW_ROOT"
-  add_preview_out=$("$SXMC" add git --root "$ADD_PREVIEW_ROOT" 2>&1 || true)
-  if echo "$add_preview_out" | grep -q "No configured AI hosts detected" && \
+  add_preview_out=$(PATH="$GIT_ONLY_BIN" "$SXMC" add git --root "$ADD_PREVIEW_ROOT" 2>&1 || true)
+  if echo "$add_preview_out" | grep -q "No AI hosts detected" && \
      echo "$add_preview_out" | grep -q "Would create CLI profile:"; then
     pass "add previews when no hosts are configured"
   else
@@ -1405,7 +1411,7 @@ if has_cmd git; then
   mkdir -p "$GLOBAL_HOME/.claude" "$GLOBAL_HOME/.config"
   printf "# Existing Claude guidance\n" > "$GLOBAL_HOME/.claude/CLAUDE.md"
   add_global_out=$(HOME="$GLOBAL_HOME" USERPROFILE="$GLOBAL_HOME" XDG_CONFIG_HOME="$GLOBAL_HOME/.config" APPDATA="$GLOBAL_HOME/AppData/Roaming" LOCALAPPDATA="$GLOBAL_HOME/AppData/Local" "$SXMC" add git --global 2>&1 || true)
-  if echo "$add_global_out" | grep -q "Detected configured AI hosts: Claude Code" && \
+  if echo "$add_global_out" | grep -q "Detected AI hosts: Claude Code" && \
      [ -f "$GLOBAL_HOME/.config/sxmc/ai/profiles/git.json" ] && \
      [ -f "$GLOBAL_HOME/.config/sxmc/ai/claude-code-mcp.json" ]; then
     pass "add --global writes user-level host artifacts"
@@ -1458,8 +1464,8 @@ if has_cmd git; then
 
   SETUP_PREVIEW_ROOT="$TMPDIR_TEST/setup-preview-root"
   mkdir -p "$SETUP_PREVIEW_ROOT"
-  setup_preview_out=$("$SXMC" setup --tool git --root "$SETUP_PREVIEW_ROOT" 2>&1 || true)
-  if echo "$setup_preview_out" | grep -q "No configured AI hosts detected" && \
+  setup_preview_out=$(PATH="$GIT_ONLY_BIN" "$SXMC" setup --tool git --root "$SETUP_PREVIEW_ROOT" 2>&1 || true)
+  if echo "$setup_preview_out" | grep -q "No AI hosts detected" && \
      echo "$setup_preview_out" | grep -q "Would create CLI profile:"; then
     pass "setup previews when no hosts are configured"
   else
@@ -1479,6 +1485,31 @@ if has_cmd git; then
     pass "setup --global writes multiple profiles into global state"
   else
     fail "setup --global" "${setup_global_out:0:140}"
+  fi
+
+  HOST_BIN_DIR="$TMPDIR_TEST/host-bin"
+  mkdir -p "$HOST_BIN_DIR"
+  cat > "$HOST_BIN_DIR/claude" <<'EOF'
+#!/bin/sh
+echo "Claude Code fake runtime"
+EOF
+  cat > "$HOST_BIN_DIR/codex" <<'EOF'
+#!/bin/sh
+echo "Codex fake runtime"
+EOF
+  chmod +x "$HOST_BIN_DIR/claude" "$HOST_BIN_DIR/codex"
+  host_detect_json=$(
+    HOME="$GLOBAL_HOME" USERPROFILE="$GLOBAL_HOME" \
+    XDG_CONFIG_HOME="$GLOBAL_HOME/.config" \
+    APPDATA="$GLOBAL_HOME/AppData/Roaming" \
+    LOCALAPPDATA="$GLOBAL_HOME/AppData/Local" \
+    PATH="$HOST_BIN_DIR:$PATH" \
+    "$SXMC" setup --tool git --global --format json 2>/dev/null || true
+  )
+  if json_check "$host_detect_json" "any(item.get('id') == 'claude-code' for item in d.get('hosts', [])) and any(item.get('id') == 'openai-codex' for item in d.get('hosts', []))"; then
+    pass "setup --global auto-detects Claude Code and Codex runtimes on PATH"
+  else
+    fail "setup host runtime detection" "${host_detect_json:0:140}"
   fi
 
   REGISTER_ROOT="$TMPDIR_TEST/register-root"

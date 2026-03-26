@@ -56,6 +56,8 @@ sxmc sync --global --apply
 What each command does:
 
 - `sxmc setup` discovers common installed tools and prepares host-facing docs/config
+- `sxmc setup` auto-detects supported AI hosts from either existing managed
+  host files or installed host runtimes such as Claude Code and Codex
 - `sxmc status` shows configured hosts, stale knowledge, recovery hints, and sync state
 - `sxmc add <tool>` teaches Sumac and your AI hosts one additional CLI
 - `sxmc sync --apply` refreshes derived state after tools or profiles change
@@ -582,8 +584,8 @@ sxmc init discovery codebase.json --coverage full --host claude-code,cursor --mo
 ```
 
 - `sxmc add <tool>` is the one-step onboarding path:
-  it inspects the CLI, saves the profile, detects already-configured AI hosts in
-  the repo, and applies startup artifacts for those hosts.
+  it inspects the CLI, saves the profile, detects AI hosts from managed files
+  or installed runtimes, and applies startup artifacts for those hosts.
 - `sxmc add --format json-pretty` and `sxmc add --pretty` now expose an
   explicit machine-readable result object with the resolved hosts, profile
   summary, outcomes, and a recommended next command when onboarding is previewed.

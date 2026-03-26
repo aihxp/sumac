@@ -6735,12 +6735,15 @@ fn auto_detect_add_hosts(install_paths: &InstallPaths) -> Vec<AiClientProfile> {
                     .host_doc_path(client)
                     .map(|path| path.exists())
                     .unwrap_or(false);
+                let runtime_detected = host_runtime_commands(client)
+                    .iter()
+                    .any(|command| command_exists_on_path(command));
                 let shared_doc_only = matches!(
                     client,
                     AiClientProfile::OpenCode | AiClientProfile::OpenaiCodex
                 );
 
-                if has_config || (has_doc && !shared_doc_only) {
+                if has_config || (has_doc && !shared_doc_only) || runtime_detected {
                     Some(client)
                 } else {
                     None
@@ -6748,6 +6751,16 @@ fn auto_detect_add_hosts(install_paths: &InstallPaths) -> Vec<AiClientProfile> {
             }
         })
         .collect()
+}
+
+fn host_runtime_commands(client: AiClientProfile) -> &'static [&'static str] {
+    match client {
+        AiClientProfile::ClaudeCode => &["claude", "claude-code"],
+        AiClientProfile::GeminiCli => &["gemini", "gemini-cli"],
+        AiClientProfile::OpenCode => &["opencode"],
+        AiClientProfile::OpenaiCodex => &["codex"],
+        _ => &[],
+    }
 }
 
 fn command_exists_on_path(command: &str) -> bool {
@@ -10292,22 +10305,16 @@ async fn main() -> Result<()> {
             let auto_previewed_due_to_missing_hosts = !has_selected_hosts;
 
             if render_format.is_none() && apply {
-                println!(
-                    "Detected configured AI hosts: {}",
-                    host_label_list(&selected_hosts)
-                );
+                println!("Detected AI hosts: {}", host_label_list(&selected_hosts));
             } else if render_format.is_none() && has_selected_hosts {
-                println!(
-                    "Previewing onboarding for configured AI hosts: {}",
-                    host_label_list(&selected_hosts)
-                );
+                println!("Previewing onboarding for AI hosts: {}", host_label_list(&selected_hosts));
             } else if render_format.is_none() {
                 println!(
-                    "No configured AI hosts detected for the {} install scope. Previewing the full onboarding plan instead.",
+                    "No AI hosts detected for the {} install scope. Previewing the full onboarding plan instead.",
                     install_paths.scope().as_str()
                 );
                 println!(
-                    "Tip: create a host-native file first or pass --host <name> to apply directly."
+                    "Tip: install a supported host runtime or pass --host <name> to apply directly."
                 );
             }
 
@@ -10405,22 +10412,16 @@ async fn main() -> Result<()> {
                 println!("Selected tools: {}", tools.join(", "));
             }
             if render_format.is_none() && apply {
-                println!(
-                    "Detected configured AI hosts: {}",
-                    host_label_list(&selected_hosts)
-                );
+                println!("Detected AI hosts: {}", host_label_list(&selected_hosts));
             } else if render_format.is_none() && has_selected_hosts {
-                println!(
-                    "Previewing onboarding for configured AI hosts: {}",
-                    host_label_list(&selected_hosts)
-                );
+                println!("Previewing onboarding for AI hosts: {}", host_label_list(&selected_hosts));
             } else if render_format.is_none() {
                 println!(
-                    "No configured AI hosts detected for the {} install scope. Previewing the full onboarding plan instead.",
+                    "No AI hosts detected for the {} install scope. Previewing the full onboarding plan instead.",
                     install_paths.scope().as_str()
                 );
                 println!(
-                    "Tip: create a host-native file first or pass --host <name> to apply directly."
+                    "Tip: install a supported host runtime or pass --host <name> to apply directly."
                 );
             }
 
