@@ -986,12 +986,7 @@ fn build_wrapped_http_router(
         StreamableHttpService::new(
             move || Ok(server_for_service.clone()),
             Default::default(),
-            StreamableHttpServerConfig {
-                stateful_mode: true,
-                json_response: false,
-                cancellation_token,
-                ..Default::default()
-            },
+            StreamableHttpServerConfig::default().with_cancellation_token(cancellation_token),
         );
     let health_payload = Arc::new(json!({
         "name": "sxmc-wrap",

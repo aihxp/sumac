@@ -305,12 +305,7 @@ fn build_streamable_http_service(
     StreamableHttpService::new(
         move || Ok(server.clone()),
         Default::default(),
-        StreamableHttpServerConfig {
-            stateful_mode: true,
-            json_response: false,
-            cancellation_token,
-            ..Default::default()
-        },
+        StreamableHttpServerConfig::default().with_cancellation_token(cancellation_token),
     )
 }
 
