@@ -309,6 +309,25 @@ fn command_json_with_config_home(home: &Path, args: &[&str]) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+fn command_json_with_config_home_and_env(
+    home: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> Value {
+    let mut command = sxmc_with_config_home(home);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    let output = command.args(args).output().unwrap();
+    assert!(
+        output.status.success(),
+        "command failed: {}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 #[cfg(not(windows))]
 fn write_fake_cli(dir: &Path, help_text: &str) -> std::path::PathBuf {
     let script = dir.join("fake-cli");
@@ -1918,6 +1937,68 @@ fn test_rewrite_golden_path_sync_contract_json() {
         value["sync_state"]["sync_schema"],
         Value::from("sxmc_sync_state_v1")
     );
+}
+
+#[test]
+fn test_rewrite_golden_path_add_contract_json_legacy_route() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+
+    let value = command_json_with_config_home_and_env(
+        temp.path(),
+        &[
+            "add",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+        &[("SXMC_GOLDEN_PATH_ROUTE", "legacy")],
+    );
+
+    assert_eq!(value["command"], Value::from("add"));
+    assert_eq!(value["tool"], Value::from("git"));
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert_eq!(value["hosts"][0]["id"], Value::from("claude-code"));
+}
+
+#[test]
+fn test_rewrite_golden_path_status_contract_json_legacy_route() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    let profile = command_json_with_config_home(
+        temp.path(),
+        &["inspect", "cli", "git", "--format", "json-pretty"],
+    );
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home_and_env(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--host",
+            "claude-code",
+            "--format",
+            "json-pretty",
+        ],
+        &[("SXMC_GOLDEN_PATH_ROUTE", "legacy")],
+    );
+
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert!(value["startup_files"].is_object());
+    assert!(value["saved_profiles"].is_object());
+    assert!(value["sync_state"].is_object());
 }
 
 #[test]

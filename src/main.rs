@@ -1,3 +1,4 @@
+mod app;
 mod cli_args;
 mod command_handlers;
 
@@ -1310,7 +1311,7 @@ fn resolve_generation_root(root: Option<PathBuf>) -> Result<PathBuf> {
     }
 }
 
-fn resolve_install_paths(
+pub(crate) fn resolve_install_paths(
     root: Option<PathBuf>,
     global: bool,
     _local: bool,
@@ -4211,14 +4212,14 @@ async fn baked_health_value() -> Result<Value> {
     }))
 }
 
-fn status_has_unhealthy_baked_health(value: &Value) -> bool {
+pub(crate) fn status_has_unhealthy_baked_health(value: &Value) -> bool {
     value["baked_health"]["unhealthy_count"]
         .as_u64()
         .unwrap_or(0)
         > 0
 }
 
-async fn status_value_with_health(
+pub(crate) async fn status_value_with_health(
     install_paths: &InstallPaths,
     only_hosts: &[AiClientProfile],
     compare_hosts: &[AiClientProfile],
@@ -4656,7 +4657,7 @@ fn format_status_report(value: &Value) -> String {
     lines.join("\n")
 }
 
-fn print_status_report(value: &Value) {
+pub(crate) fn print_status_report(value: &Value) {
     println!("{}", format_status_report(value));
 }
 
@@ -5562,7 +5563,7 @@ fn host_value(client: AiClientProfile) -> Value {
     })
 }
 
-fn profile_summary_value(profile: &cli_surfaces::CliSurfaceProfile) -> Value {
+pub(crate) fn profile_summary_value(profile: &cli_surfaces::CliSurfaceProfile) -> Value {
     let quality = profile.quality_report();
     json!({
         "command": profile.command,
@@ -5599,7 +5600,7 @@ fn artifact_mode_name(mode: ArtifactMode) -> &'static str {
     }
 }
 
-fn write_outcomes_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
+pub(crate) fn write_outcomes_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
     Value::Array(
         outcomes
             .iter()
@@ -5615,7 +5616,7 @@ fn write_outcomes_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
     )
 }
 
-fn write_outcome_summary_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
+pub(crate) fn write_outcome_summary_value(outcomes: &[cli_surfaces::WriteOutcome]) -> Value {
     let mut created = 0usize;
     let mut updated = 0usize;
     let mut skipped = 0usize;
@@ -6196,18 +6197,18 @@ fn sync_state_summary_value(install_paths: &InstallPaths, drift: &Value) -> Valu
     }
 }
 
-struct AddResultContext<'a> {
-    install_paths: &'a InstallPaths,
-    command: &'a str,
-    profile: &'a cli_surfaces::CliSurfaceProfile,
-    hosts: &'a [AiClientProfile],
-    outcomes: &'a [cli_surfaces::WriteOutcome],
-    auto_detected_hosts: bool,
-    preview_requested: bool,
-    auto_previewed_due_to_missing_hosts: bool,
+pub(crate) struct AddResultContext<'a> {
+    pub(crate) install_paths: &'a InstallPaths,
+    pub(crate) command: &'a str,
+    pub(crate) profile: &'a cli_surfaces::CliSurfaceProfile,
+    pub(crate) hosts: &'a [AiClientProfile],
+    pub(crate) outcomes: &'a [cli_surfaces::WriteOutcome],
+    pub(crate) auto_detected_hosts: bool,
+    pub(crate) preview_requested: bool,
+    pub(crate) auto_previewed_due_to_missing_hosts: bool,
 }
 
-fn add_result_value(ctx: AddResultContext<'_>) -> Value {
+pub(crate) fn add_result_value(ctx: AddResultContext<'_>) -> Value {
     json!({
         "command": "add",
         "tool": ctx.command,
@@ -6233,7 +6234,7 @@ fn add_result_value(ctx: AddResultContext<'_>) -> Value {
     })
 }
 
-fn explicit_structured_format(
+pub(crate) fn explicit_structured_format(
     format: Option<output::StructuredOutputFormat>,
     pretty: bool,
 ) -> Option<output::StructuredOutputFormat> {
@@ -6326,18 +6327,18 @@ fn project_discovery_value(
 
     value
 }
-struct SetupResultContext<'a> {
-    install_paths: &'a InstallPaths,
-    tools: &'a [String],
-    tool_results: &'a [Value],
-    auto_detected_tools: bool,
-    hosts: &'a [AiClientProfile],
-    auto_detected_hosts: bool,
-    preview_requested: bool,
-    auto_previewed_due_to_missing_hosts: bool,
+pub(crate) struct SetupResultContext<'a> {
+    pub(crate) install_paths: &'a InstallPaths,
+    pub(crate) tools: &'a [String],
+    pub(crate) tool_results: &'a [Value],
+    pub(crate) auto_detected_tools: bool,
+    pub(crate) hosts: &'a [AiClientProfile],
+    pub(crate) auto_detected_hosts: bool,
+    pub(crate) preview_requested: bool,
+    pub(crate) auto_previewed_due_to_missing_hosts: bool,
 }
 
-fn setup_result_value(ctx: SetupResultContext<'_>) -> Value {
+pub(crate) fn setup_result_value(ctx: SetupResultContext<'_>) -> Value {
     let mut created = 0u64;
     let mut updated = 0u64;
     let mut skipped = 0u64;
@@ -6381,7 +6382,7 @@ fn setup_result_value(ctx: SetupResultContext<'_>) -> Value {
     })
 }
 
-fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
+pub(crate) fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     let mut created = 0usize;
     let mut updated = 0usize;
     let mut skipped = 0usize;
@@ -6433,7 +6434,7 @@ fn print_write_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     }
 }
 
-fn print_preview_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
+pub(crate) fn print_preview_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     for outcome in outcomes {
         let verb = match outcome.status {
             cli_surfaces::WriteStatus::Created => "Would create",
@@ -6521,7 +6522,7 @@ fn print_remove_outcomes(outcomes: &[cli_surfaces::WriteOutcome]) {
     }
 }
 
-fn ensure_profile_ready_for_agent_docs(
+pub(crate) fn ensure_profile_ready_for_agent_docs(
     profile: &cli_surfaces::CliSurfaceProfile,
     allow_low_confidence: bool,
 ) -> Result<()> {
@@ -6721,7 +6722,7 @@ fn ai_client_display_name(client: AiClientProfile) -> &'static str {
     }
 }
 
-fn auto_detect_add_hosts(install_paths: &InstallPaths) -> Vec<AiClientProfile> {
+pub(crate) fn auto_detect_add_hosts(install_paths: &InstallPaths) -> Vec<AiClientProfile> {
     cli_surfaces::AI_HOST_SPECS
         .iter()
         .filter_map(|spec| match spec.client {
@@ -6804,7 +6805,7 @@ fn command_exists_on_path(command: &str) -> bool {
     false
 }
 
-fn detect_setup_tools(limit: usize) -> Vec<String> {
+pub(crate) fn detect_setup_tools(limit: usize) -> Vec<String> {
     const COMMON_SETUP_TOOLS: &[&str] = &[
         "git",
         "gh",
@@ -6826,7 +6827,7 @@ fn detect_setup_tools(limit: usize) -> Vec<String> {
         .collect()
 }
 
-fn host_label_list(hosts: &[AiClientProfile]) -> String {
+pub(crate) fn host_label_list(hosts: &[AiClientProfile]) -> String {
     hosts
         .iter()
         .map(|host| ai_client_display_name(*host))
@@ -7307,7 +7308,7 @@ fn resolve_discovery_init_artifacts(
     }
 }
 
-fn resolve_cli_ai_init_artifacts(
+pub(crate) fn resolve_cli_ai_init_artifacts(
     profile: &cli_surfaces::CliSurfaceProfile,
     coverage: AiCoverage,
     client: Option<AiClientProfile>,
@@ -7478,7 +7479,7 @@ fn sync_state_value(
     })
 }
 
-fn sync_saved_profiles_value(
+pub(crate) fn sync_saved_profiles_value(
     install_paths: &InstallPaths,
     only_hosts: &[AiClientProfile],
     skills_path: &Path,
@@ -7706,7 +7707,7 @@ fn sync_saved_profiles_value(
     }))
 }
 
-fn format_sync_report(value: &Value) -> String {
+pub(crate) fn format_sync_report(value: &Value) -> String {
     let mut lines = vec![
         format!("Root: {}", value["root"].as_str().unwrap_or("<unknown>")),
         format!(
@@ -10289,83 +10290,22 @@ async fn main() -> Result<()> {
             pretty,
             format,
         } => {
-            let install_paths = resolve_install_paths(root, global, local)?;
-            let profile = cli_surfaces::inspect_cli_with_depth(&command, allow_self, depth)?;
-            ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
-            let render_format = explicit_structured_format(format, pretty);
-            let auto_detected_hosts = hosts.is_empty();
-
-            let selected_hosts = if auto_detected_hosts {
-                auto_detect_add_hosts(&install_paths)
-            } else {
-                hosts
-            };
-            let has_selected_hosts = !selected_hosts.is_empty();
-            let apply = has_selected_hosts && !preview;
-            let auto_previewed_due_to_missing_hosts = !has_selected_hosts;
-
-            if render_format.is_none() && apply {
-                println!("Detected AI hosts: {}", host_label_list(&selected_hosts));
-            } else if render_format.is_none() && has_selected_hosts {
-                println!("Previewing onboarding for AI hosts: {}", host_label_list(&selected_hosts));
-            } else if render_format.is_none() {
-                println!(
-                    "No AI hosts detected for the {} install scope. Previewing the full onboarding plan instead.",
-                    install_paths.scope().as_str()
-                );
-                println!(
-                    "Tip: install a supported host runtime or pass --host <name> to apply directly."
-                );
-            }
-
-            let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
-                &profile,
-                AiCoverage::Full,
-                None,
-                &selected_hosts,
-                &install_paths,
-                &skills_path,
-                if apply {
-                    ArtifactMode::Apply
-                } else {
-                    ArtifactMode::Preview
+            let outcome = app::golden_path::GoldenPathApp::current().run_add(
+                app::golden_path::AddRequest {
+                    command,
+                    depth,
+                    install_paths: resolve_install_paths(root, global, local)?,
+                    skills_path,
+                    hosts,
+                    preview,
+                    allow_low_confidence,
+                    allow_self,
+                    pretty,
+                    format,
                 },
             )?;
-
-            let outcomes = if apply {
-                cli_surfaces::materialize_artifacts_with_apply_selection(
-                    &artifacts,
-                    ArtifactMode::Apply,
-                    &install_paths,
-                    &selected_hosts,
-                )?
-            } else if has_selected_hosts {
-                cli_surfaces::preview_artifacts_with_apply_selection(
-                    &artifacts,
-                    ArtifactMode::Apply,
-                    &install_paths,
-                    &selected_hosts,
-                )?
-            } else {
-                cli_surfaces::preview_artifacts(&artifacts, ArtifactMode::Apply, &install_paths)?
-            };
-
-            if let Some(format) = render_format {
-                let value = add_result_value(AddResultContext {
-                    install_paths: &install_paths,
-                    command: &command,
-                    profile: &profile,
-                    hosts: &selected_hosts,
-                    outcomes: &outcomes,
-                    auto_detected_hosts,
-                    preview_requested: preview,
-                    auto_previewed_due_to_missing_hosts,
-                });
-                println!("{}", output::format_structured_value(&value, format));
-            } else if apply {
-                print_write_outcomes(&outcomes);
-            } else {
-                print_preview_outcomes(&outcomes);
+            if let Some(code) = outcome.exit_code {
+                std::process::exit(code);
             }
         }
 
@@ -10384,116 +10324,23 @@ async fn main() -> Result<()> {
             pretty,
             format,
         } => {
-            let install_paths = resolve_install_paths(root, global, local)?;
-            let auto_detected_tools = tools.is_empty();
-            let tools = if auto_detected_tools {
-                detect_setup_tools(limit)
-            } else {
-                tools
-            };
-            if tools.is_empty() {
-                return Err(sxmc::error::SxmcError::Other(
-                    "No CLI tools were selected or auto-detected. Re-run with `--tool <name>` or install one of the common tools Sumac scans for.".into(),
-                ));
-            }
-            let render_format = explicit_structured_format(format, pretty);
-            let auto_detected_hosts = hosts.is_empty();
-
-            let selected_hosts = if auto_detected_hosts {
-                auto_detect_add_hosts(&install_paths)
-            } else {
-                hosts
-            };
-            let has_selected_hosts = !selected_hosts.is_empty();
-            let apply = has_selected_hosts && !preview;
-            let auto_previewed_due_to_missing_hosts = !has_selected_hosts;
-
-            if render_format.is_none() {
-                println!("Selected tools: {}", tools.join(", "));
-            }
-            if render_format.is_none() && apply {
-                println!("Detected AI hosts: {}", host_label_list(&selected_hosts));
-            } else if render_format.is_none() && has_selected_hosts {
-                println!("Previewing onboarding for AI hosts: {}", host_label_list(&selected_hosts));
-            } else if render_format.is_none() {
-                println!(
-                    "No AI hosts detected for the {} install scope. Previewing the full onboarding plan instead.",
-                    install_paths.scope().as_str()
-                );
-                println!(
-                    "Tip: install a supported host runtime or pass --host <name> to apply directly."
-                );
-            }
-
-            let mut tool_results = Vec::new();
-            for command in &tools {
-                if render_format.is_none() {
-                    println!("Onboarding tool: {}", command);
-                }
-                let profile = cli_surfaces::inspect_cli_with_depth(command, allow_self, depth)?;
-                ensure_profile_ready_for_agent_docs(&profile, allow_low_confidence)?;
-                let (artifacts, selected_hosts) = resolve_cli_ai_init_artifacts(
-                    &profile,
-                    AiCoverage::Full,
-                    None,
-                    &selected_hosts,
-                    &install_paths,
-                    &skills_path,
-                    if apply {
-                        ArtifactMode::Apply
-                    } else {
-                        ArtifactMode::Preview
-                    },
-                )?;
-
-                let outcomes = if apply {
-                    cli_surfaces::materialize_artifacts_with_apply_selection(
-                        &artifacts,
-                        ArtifactMode::Apply,
-                        &install_paths,
-                        &selected_hosts,
-                    )?
-                } else if has_selected_hosts {
-                    cli_surfaces::preview_artifacts_with_apply_selection(
-                        &artifacts,
-                        ArtifactMode::Apply,
-                        &install_paths,
-                        &selected_hosts,
-                    )?
-                } else {
-                    cli_surfaces::preview_artifacts(
-                        &artifacts,
-                        ArtifactMode::Apply,
-                        &install_paths,
-                    )?
-                };
-
-                if render_format.is_none() && apply {
-                    print_write_outcomes(&outcomes);
-                } else if render_format.is_none() {
-                    print_preview_outcomes(&outcomes);
-                }
-
-                tool_results.push(json!({
-                    "tool": command,
-                    "profile": profile_summary_value(&profile),
-                    "outcomes": write_outcomes_value(&outcomes),
-                    "outcome_summary": write_outcome_summary_value(&outcomes),
-                }));
-            }
-
-            if let Some(format) = render_format {
-                let value = setup_result_value(SetupResultContext {
-                    install_paths: &install_paths,
-                    tools: &tools,
-                    tool_results: &tool_results,
-                    auto_detected_tools,
-                    hosts: &selected_hosts,
-                    auto_detected_hosts,
-                    preview_requested: preview,
-                    auto_previewed_due_to_missing_hosts,
-                });
-                println!("{}", output::format_structured_value(&value, format));
+            let outcome = app::golden_path::GoldenPathApp::current().run_setup(
+                app::golden_path::SetupRequest {
+                    tools,
+                    limit,
+                    depth,
+                    install_paths: resolve_install_paths(root, global, local)?,
+                    skills_path,
+                    hosts,
+                    preview,
+                    allow_low_confidence,
+                    allow_self,
+                    pretty,
+                    format,
+                },
+            )?;
+            if let Some(code) = outcome.exit_code {
+                std::process::exit(code);
             }
         }
 
@@ -10978,20 +10825,20 @@ async fn main() -> Result<()> {
             pretty,
             format,
         } => {
-            let install_paths = resolve_install_paths(root, global, local)?;
-            let value =
-                status_value_with_health(&install_paths, &only_hosts, &compare_hosts, health)
-                    .await?;
-            if should_render_doctor_human(human, format, pretty, std::io::stdout().is_terminal()) {
-                print_status_report(&value);
-            } else if let Some(format) = output::prefer_structured_output(format, pretty) {
-                println!("{}", output::format_structured_value(&value, format));
-            } else {
-                let format = output::resolve_structured_format(format, pretty);
-                println!("{}", output::format_structured_value(&value, format));
-            }
-            if exit_code && status_has_unhealthy_baked_health(&value) {
-                std::process::exit(1);
+            let outcome = app::golden_path::GoldenPathApp::current()
+                .run_status(app::golden_path::StatusRequest {
+                    install_paths: resolve_install_paths(root, global, local)?,
+                    only_hosts,
+                    compare_hosts,
+                    health,
+                    exit_code,
+                    human,
+                    pretty,
+                    format,
+                })
+                .await?;
+            if let Some(code) = outcome.exit_code {
+                std::process::exit(code);
             }
         }
         Commands::Sync {
@@ -11006,25 +10853,20 @@ async fn main() -> Result<()> {
             pretty,
             format,
         } => {
-            let install_paths = resolve_install_paths(root, global, local)?;
-            let value = sync_saved_profiles_value(
-                &install_paths,
-                &only_hosts,
-                &skills_path,
-                apply,
-                allow_low_confidence,
+            let outcome = app::golden_path::GoldenPathApp::current().run_sync(
+                app::golden_path::SyncRequest {
+                    install_paths: resolve_install_paths(root, global, local)?,
+                    only_hosts,
+                    skills_path,
+                    apply,
+                    check,
+                    allow_low_confidence,
+                    pretty,
+                    format,
+                },
             )?;
-            if let Some(format) = explicit_structured_format(format, pretty) {
-                println!("{}", output::format_structured_value(&value, format));
-            } else {
-                println!("{}", format_sync_report(&value));
-            }
-            if check
-                && (value["blocked_count"].as_u64().unwrap_or(0) > 0
-                    || value["error_count"].as_u64().unwrap_or(0) > 0
-                    || (!apply && value["changed_count"].as_u64().unwrap_or(0) > 0))
-            {
-                std::process::exit(1);
+            if let Some(code) = outcome.exit_code {
+                std::process::exit(code);
             }
         }
         Commands::Watch {
