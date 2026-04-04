@@ -10826,7 +10826,7 @@ async fn main() -> Result<()> {
             format,
         } => {
             let outcome = app::golden_path::GoldenPathApp::current()
-                .run_status(app::golden_path::StatusRequest {
+                .run_status(app::status::StatusRequest {
                     install_paths: resolve_install_paths(root, global, local)?,
                     only_hosts,
                     compare_hosts,

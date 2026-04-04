@@ -2002,6 +2002,51 @@ fn test_rewrite_golden_path_status_contract_json_legacy_route() {
 }
 
 #[test]
+fn test_rewrite_golden_path_status_core_and_legacy_match() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    let profile = command_json_with_config_home(
+        temp.path(),
+        &["inspect", "cli", "git", "--format", "json-pretty"],
+    );
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let core = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--host",
+            "claude-code",
+            "--format",
+            "json-pretty",
+        ],
+    );
+    let legacy = command_json_with_config_home_and_env(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--host",
+            "claude-code",
+            "--format",
+            "json-pretty",
+        ],
+        &[("SXMC_GOLDEN_PATH_ROUTE", "legacy")],
+    );
+
+    assert_eq!(core, legacy);
+}
+
+#[test]
 fn test_inspect_cache_stats_reports_entries() {
     let temp = tempfile::tempdir().unwrap();
     let value = command_json_with_config_home(temp.path(), &["inspect", "cache-stats"]);

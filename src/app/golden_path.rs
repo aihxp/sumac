@@ -1,4 +1,3 @@
-use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
@@ -8,39 +7,14 @@ use sxmc::error::Result;
 use sxmc::output;
 use sxmc::paths::InstallPaths;
 
+use super::{status::StatusRequest, CommandOutcome, GoldenPathRoute};
+
 use crate::{
     add_result_value, auto_detect_add_hosts, detect_setup_tools,
     ensure_profile_ready_for_agent_docs, explicit_structured_format, format_sync_report,
-    host_label_list, print_preview_outcomes, print_status_report, print_write_outcomes,
-    resolve_cli_ai_init_artifacts, setup_result_value, status_has_unhealthy_baked_health,
-    status_value_with_health, sync_saved_profiles_value, AddResultContext, SetupResultContext,
+    host_label_list, print_preview_outcomes, print_write_outcomes, resolve_cli_ai_init_artifacts,
+    setup_result_value, sync_saved_profiles_value, AddResultContext, SetupResultContext,
 };
-
-pub(crate) const GOLDEN_PATH_ROUTE_ENV: &str = "SXMC_GOLDEN_PATH_ROUTE";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum GoldenPathRoute {
-    Core,
-    Legacy,
-}
-
-impl GoldenPathRoute {
-    pub(crate) fn current() -> Self {
-        match std::env::var(GOLDEN_PATH_ROUTE_ENV)
-            .unwrap_or_else(|_| "core".to_string())
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "legacy" => Self::Legacy,
-            _ => Self::Core,
-        }
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct CommandOutcome {
-    pub(crate) exit_code: Option<i32>,
-}
 
 #[derive(Clone)]
 pub(crate) struct AddRequest {
@@ -67,18 +41,6 @@ pub(crate) struct SetupRequest {
     pub(crate) preview: bool,
     pub(crate) allow_low_confidence: bool,
     pub(crate) allow_self: bool,
-    pub(crate) pretty: bool,
-    pub(crate) format: Option<output::StructuredOutputFormat>,
-}
-
-#[derive(Clone)]
-pub(crate) struct StatusRequest {
-    pub(crate) install_paths: InstallPaths,
-    pub(crate) only_hosts: Vec<AiClientProfile>,
-    pub(crate) compare_hosts: Vec<AiClientProfile>,
-    pub(crate) health: bool,
-    pub(crate) exit_code: bool,
-    pub(crate) human: bool,
     pub(crate) pretty: bool,
     pub(crate) format: Option<output::StructuredOutputFormat>,
 }
@@ -234,10 +196,9 @@ impl GoldenPathApp {
     }
 
     pub(crate) async fn run_status(&self, request: StatusRequest) -> Result<CommandOutcome> {
-        match self.route {
-            GoldenPathRoute::Legacy => self.run_status_legacy(request).await,
-            GoldenPathRoute::Core => self.run_status_core(request).await,
-        }
+        super::status::StatusService::new()
+            .run(self.route, request)
+            .await
     }
 
     pub(crate) fn run_sync(&self, request: SyncRequest) -> Result<CommandOutcome> {
@@ -573,42 +534,6 @@ impl GoldenPathApp {
         Ok(CommandOutcome::default())
     }
 
-    async fn run_status_core(&self, request: StatusRequest) -> Result<CommandOutcome> {
-        let value = status_value_with_health(
-            &request.install_paths,
-            &request.only_hosts,
-            &request.compare_hosts,
-            request.health,
-        )
-        .await?;
-        render_status_value(&value, request.human, request.pretty, request.format);
-        Ok(CommandOutcome {
-            exit_code: if request.exit_code && status_has_unhealthy_baked_health(&value) {
-                Some(1)
-            } else {
-                None
-            },
-        })
-    }
-
-    async fn run_status_legacy(&self, request: StatusRequest) -> Result<CommandOutcome> {
-        let value = status_value_with_health(
-            &request.install_paths,
-            &request.only_hosts,
-            &request.compare_hosts,
-            request.health,
-        )
-        .await?;
-        render_status_value(&value, request.human, request.pretty, request.format);
-        Ok(CommandOutcome {
-            exit_code: if request.exit_code && status_has_unhealthy_baked_health(&value) {
-                Some(1)
-            } else {
-                None
-            },
-        })
-    }
-
     fn run_sync_core(&self, request: SyncRequest) -> Result<CommandOutcome> {
         let value = sync_saved_profiles_value(
             &request.install_paths,
@@ -685,22 +610,6 @@ fn emit_onboarding_header(
                 "Tip: install a supported host runtime or pass --host <name> to apply directly."
             );
         }
-    }
-}
-
-fn render_status_value(
-    value: &Value,
-    human: bool,
-    pretty: bool,
-    format: Option<output::StructuredOutputFormat>,
-) {
-    if human || (format.is_none() && !pretty && std::io::stdout().is_terminal()) {
-        print_status_report(value);
-    } else if let Some(format) = output::prefer_structured_output(format, pretty) {
-        println!("{}", output::format_structured_value(value, format));
-    } else {
-        let format = output::resolve_structured_format(format, pretty);
-        println!("{}", output::format_structured_value(value, format));
     }
 }
 
