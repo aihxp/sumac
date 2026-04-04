@@ -35,12 +35,27 @@ pub struct SkillReference {
     pub uri: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillAssetKind {
+    SkillFile,
+    Script,
+    Reference,
+}
+
+#[derive(Debug, Clone)]
+pub struct SkillAsset {
+    pub relative_path: String,
+    pub path: PathBuf,
+    pub kind: SkillAssetKind,
+}
+
 #[derive(Debug, Clone)]
 pub struct Skill {
     pub name: String,
     pub base_dir: PathBuf,
     pub frontmatter: SkillFrontmatter,
     pub body: String,
+    pub assets: Vec<SkillAsset>,
     pub scripts: Vec<SkillScript>,
     pub references: Vec<SkillReference>,
     pub source: String,

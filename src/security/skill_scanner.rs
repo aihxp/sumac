@@ -300,7 +300,7 @@ fn truncate(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::models::{Skill, SkillFrontmatter, SkillReference};
+    use crate::skills::models::{Skill, SkillAsset, SkillAssetKind, SkillFrontmatter, SkillReference};
     use std::path::PathBuf;
 
     fn make_skill(name: &str, body: &str) -> Skill {
@@ -319,6 +319,11 @@ mod tests {
                 agent: None,
             },
             body: body.to_string(),
+            assets: vec![SkillAsset {
+                relative_path: "SKILL.md".to_string(),
+                path: PathBuf::from("/tmp/test/SKILL.md"),
+                kind: SkillAssetKind::SkillFile,
+            }],
             scripts: vec![],
             references: vec![],
             source: "test".to_string(),

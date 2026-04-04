@@ -765,9 +765,10 @@ fn collect_skill_files(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::models::{Skill, SkillFrontmatter};
+    use crate::skills::models::{Skill, SkillAsset, SkillAssetKind, SkillFrontmatter};
 
     fn make_skill(base_dir: PathBuf) -> Skill {
+        let skill_file = base_dir.join("SKILL.md");
         Skill {
             name: "test-skill".to_string(),
             base_dir,
@@ -783,6 +784,11 @@ mod tests {
                 agent: None,
             },
             body: "Body".to_string(),
+            assets: vec![SkillAsset {
+                relative_path: "SKILL.md".to_string(),
+                path: skill_file,
+                kind: SkillAssetKind::SkillFile,
+            }],
             scripts: vec![],
             references: vec![],
             source: "test".to_string(),

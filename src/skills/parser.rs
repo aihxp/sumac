@@ -56,6 +56,7 @@ pub fn parse_skill(skill_dir: &Path, source: &str) -> Result<Skill> {
         base_dir: skill_dir,
         frontmatter,
         body,
+        assets: Vec::new(),
         scripts,
         references,
         source: source.to_string(),
@@ -184,6 +185,7 @@ mod tests {
         let skill = parse_skill(&skill_dir, "test").unwrap();
         assert_eq!(skill.name, "my-skill");
         assert_eq!(skill.frontmatter.description, "A test skill");
+        assert!(skill.assets.is_empty());
         assert_eq!(skill.scripts.len(), 1);
         assert_eq!(skill.references.len(), 1);
         assert_eq!(
