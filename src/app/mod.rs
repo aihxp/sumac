@@ -1,5 +1,6 @@
 pub(crate) mod golden_path;
 pub(crate) mod status;
+pub(crate) mod sync;
 
 pub(crate) const GOLDEN_PATH_ROUTE_ENV: &str = "SXMC_GOLDEN_PATH_ROUTE";
 

@@ -2047,6 +2047,79 @@ fn test_rewrite_golden_path_status_core_and_legacy_match() {
 }
 
 #[test]
+fn test_rewrite_golden_path_sync_contract_json_legacy_route() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let mut profile =
+        command_json_with_config_home(temp.path(), &["inspect", "cli", "git", "--pretty"]);
+    profile["summary"] = Value::from("Outdated git summary");
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home_and_env(
+        temp.path(),
+        &[
+            "sync",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+        &[("SXMC_GOLDEN_PATH_ROUTE", "legacy")],
+    );
+
+    assert_eq!(value["command"], Value::from("sync"));
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert_eq!(value["mode"], Value::from("preview"));
+    assert_eq!(value["changed_count"], Value::from(1));
+}
+
+#[test]
+fn test_rewrite_golden_path_sync_core_and_legacy_match() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let mut profile =
+        command_json_with_config_home(temp.path(), &["inspect", "cli", "git", "--pretty"]);
+    profile["summary"] = Value::from("Outdated git summary");
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let mut core = command_json_with_config_home(
+        temp.path(),
+        &[
+            "sync",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+    let mut legacy = command_json_with_config_home_and_env(
+        temp.path(),
+        &[
+            "sync",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+        &[("SXMC_GOLDEN_PATH_ROUTE", "legacy")],
+    );
+
+    core["sync_state"]["last_synced_at"] = Value::Null;
+    legacy["sync_state"]["last_synced_at"] = Value::Null;
+    assert_eq!(core, legacy);
+}
+
+#[test]
 fn test_inspect_cache_stats_reports_entries() {
     let temp = tempfile::tempdir().unwrap();
     let value = command_json_with_config_home(temp.path(), &["inspect", "cache-stats"]);

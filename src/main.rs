@@ -10854,7 +10854,7 @@ async fn main() -> Result<()> {
             format,
         } => {
             let outcome = app::golden_path::GoldenPathApp::current().run_sync(
-                app::golden_path::SyncRequest {
+                app::sync::SyncRequest {
                     install_paths: resolve_install_paths(root, global, local)?,
                     only_hosts,
                     skills_path,
