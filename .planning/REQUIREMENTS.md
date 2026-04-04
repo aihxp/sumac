@@ -46,16 +46,16 @@ Each will map to exactly one roadmap phase.
   that preserves current CLI behavior, JSON output, exit semantics, and wrapper
   compatibility while removing watch orchestration from top-level dispatch
   hotspots.
-- [ ] **CORE-06**: The `skills` command family runs through clearer service
+- [x] **CORE-06**: The `skills` command family runs through clearer service
   boundaries that preserve current install, update, list, info, and serve
   behavior while reducing `src/main.rs` and adjacent orchestration coupling.
-- [ ] **CORE-07**: Shared watch or skills orchestration helpers move into
+- [x] **CORE-07**: Shared watch or skills orchestration helpers move into
   scoped modules so `src/main.rs` remains primarily responsible for CLI parsing,
   composition, and dispatch rather than subsystem business logic.
 
 ### Rollout & Evidence
 
-- [ ] **ROL-05**: Migrated watch and skills flows have contract or parity
+- [x] **ROL-05**: Migrated watch and skills flows have contract or parity
   coverage on real fixtures before full cutover, including output, exit-code,
   and file-side-effect checks where applicable.
 - [ ] **ROL-06**: The rollback seam is retained or retired only after explicit
@@ -104,9 +104,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKILL-03 | Phase 9 | Complete |
 | SEC-01 | Phase 10 | Complete |
 | SEC-02 | Phase 10 | Complete |
-| CORE-06 | Phase 11 | Pending |
-| CORE-07 | Phase 11 | Pending |
-| ROL-05 | Phase 11 | Pending |
+| CORE-06 | Phase 11 | Complete |
+| CORE-07 | Phase 11 | Complete |
+| ROL-05 | Phase 11 | Complete |
 | ROL-06 | Phase 12 | Pending |
 
 **Coverage:**
@@ -116,4 +116,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-04*
-*Last updated: 2026-04-04 after Phase 10 completion*
+*Last updated: 2026-04-04 after Phase 11 completion*

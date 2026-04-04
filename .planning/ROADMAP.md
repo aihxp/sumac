@@ -32,7 +32,7 @@ command extraction, and finally a soak-based rollback decision.
   activation, and prevent partial installs.
 - [x] **Phase 10: Unified Scan & Serve Enforcement** - Align installed, (completed 2026-04-04)
   scanned, and served skill inventories under one enforced managed asset set.
-- [ ] **Phase 11: Command-Family Extraction & Contract Gates** - Move the
+- [x] **Phase 11: Command-Family Extraction & Contract Gates** - Move the (completed 2026-04-04)
   remaining `watch` and `skills` orchestration off top-level hotspots while
   preserving `1.x` behavior under real-fixture parity checks.
 - [ ] **Phase 12: Soak Evidence & Rollback Decision** - Keep or retire the
@@ -136,5 +136,5 @@ explicit release-soak evidence rather than assumption.
 | 8. Watch Runtime Hardening | 2/2 | Complete   | 2026-04-04 |
 | 9. Secure Skill Materialization & Atomic Activation | 2/2 | Complete   | 2026-04-04 |
 | 10. Unified Scan & Serve Enforcement | 2/2 | Complete    | 2026-04-04 |
-| 11. Command-Family Extraction & Contract Gates | 0/2 | Not started | - |
+| 11. Command-Family Extraction & Contract Gates | 2/2 | Complete    | 2026-04-04 |
 | 12. Soak Evidence & Rollback Decision | 0/TBD | Not started | - |
