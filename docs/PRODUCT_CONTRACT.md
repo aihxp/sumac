@@ -8,6 +8,14 @@ Use this document together with:
 - [USAGE.md](USAGE.md) for the canonical product workflows
 - [OPERATIONS.md](OPERATIONS.md) for release and hosting guidance
 - [VALIDATION.md](VALIDATION.md) for repeatable release checks and compatibility notes
+- [GOLDEN_PATH_CONTRACT.md](GOLDEN_PATH_CONTRACT.md) for the narrower rewrite
+  source of truth for `setup`, `add`, `status`, and `sync`
+
+## Rewrite Baseline
+
+The full product contract stays broader than the current rewrite milestone.
+When maintainers need the stable migration baseline for the onboarding and
+reconciliation loop, use [GOLDEN_PATH_CONTRACT.md](GOLDEN_PATH_CONTRACT.md).
 
 ## Supported And Expected To Work
 

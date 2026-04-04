@@ -14,6 +14,9 @@ The shortest path through `sxmc` is:
 - `api`, `spec`, and `graphql` for API-to-CLI flows
 - `inspect cli`, `init ai`, and `scaffold` for CLI-to-AI startup artifacts
 
+For the rewrite milestone, the maintained baseline for this lifecycle is
+captured in [GOLDEN_PATH_CONTRACT.md](GOLDEN_PATH_CONTRACT.md).
+
 ## Install
 
 Install from crates.io:
@@ -62,6 +65,8 @@ What each command does:
 - `sxmc add <tool>` teaches Sumac and your AI hosts one additional CLI
 - `sxmc sync --apply` refreshes derived state after tools or profiles change
 - add `--global` when you want `CLAUDE.md`, `AGENTS.md`, Cursor rules/config, and related host artifacts written into user-level host locations instead of the repo
+- the rewrite-focused contract for this exact loop lives in
+  [GOLDEN_PATH_CONTRACT.md](GOLDEN_PATH_CONTRACT.md)
 
 ## Serve Skills As MCP
 
