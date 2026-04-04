@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
-status: Executing Phase 08
-stopped_at: "Plan 08-01 complete; Plan 08-02 is next"
-last_updated: "2026-04-04T17:36:34Z"
+status: Ready to plan
+stopped_at: "Phase 08 complete; Phase 09 discuss and planning are next"
+last_updated: "2026-04-04T17:44:34Z"
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -21,19 +21,19 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 08 — Watch Runtime Hardening
+**Current focus:** Phase 09 — Secure Skill Materialization & Atomic Activation
 
 ## Current Position
 
-Phase: 08 (Watch Runtime Hardening) — EXECUTING
-Plan: 1 of 2
+Phase: 9
+Plan: Not started
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 10
-- Total plans completed this milestone: 3
+- Total plans completed this milestone: 4
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -78,9 +78,9 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-Remaining in Phase 08:
+Remaining in Phase 09:
 
-- Add timeout-bounded, isolated notify command and webhook handling inside the extracted watch runtime.
+- Gather context, research, and execution plans for secure skill staging and atomic activation.
 
 ### Blockers/Concerns
 
@@ -97,11 +97,11 @@ Remaining in Phase 08:
 - v1.1 phase plans are still TBD; parity coverage and soak evidence must be
   preserved as hard gates during implementation.
 
-- Phase 08 must keep notify side effects bounded without changing existing
-  `sxmc watch` CLI behavior or wrapper compatibility.
+- Phase 09 must narrow the install payload to managed assets without leaving
+  partially activated skills behind after failures.
 
 ## Session Continuity
 
 Last session: 2026-04-04 13:19
-Stopped at: Plan 08-01 complete; Plan 08-02 is next
+Stopped at: Phase 08 complete; Phase 09 discuss and planning are next
 Resume file: None
