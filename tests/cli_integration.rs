@@ -1793,6 +1793,134 @@ fn test_sync_apply_updates_profiles_writes_state_and_clears_drift() {
 }
 
 #[test]
+fn test_rewrite_golden_path_add_contract_json() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "add",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+
+    assert_eq!(value["command"], Value::from("add"));
+    assert_eq!(value["tool"], Value::from("git"));
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert_eq!(value["effective_mode"], Value::from("apply"));
+    assert_eq!(value["profile"]["command"], Value::from("git"));
+    assert_eq!(value["hosts"][0]["id"], Value::from("claude-code"));
+}
+
+#[test]
+fn test_rewrite_golden_path_setup_contract_json() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "setup",
+            "--tool",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+
+    assert_eq!(value["command"], Value::from("setup"));
+    assert_eq!(value["tools"][0], Value::from("git"));
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert_eq!(value["effective_mode"], Value::from("apply"));
+    assert_eq!(value["hosts"][0]["id"], Value::from("claude-code"));
+    assert_eq!(value["results"][0]["tool"], Value::from("git"));
+}
+
+#[test]
+fn test_rewrite_golden_path_status_contract_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(temp.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    let profile = command_json_with_config_home(
+        temp.path(),
+        &["inspect", "cli", "git", "--format", "json-pretty"],
+    );
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "status",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--host",
+            "claude-code",
+            "--format",
+            "json-pretty",
+        ],
+    );
+
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert!(value["startup_files"].is_object());
+    assert!(value["saved_profiles"].is_object());
+    assert!(value["sync_state"].is_object());
+    assert!(value["ai_knowledge"].is_object());
+    assert!(value["recovery_plan"].is_object());
+}
+
+#[test]
+fn test_rewrite_golden_path_sync_contract_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    let mut profile =
+        command_json_with_config_home(temp.path(), &["inspect", "cli", "git", "--pretty"]);
+    profile["summary"] = Value::from("Outdated git summary");
+    fs::write(
+        profiles_dir.join("git.json"),
+        serde_json::to_string_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let value = command_json_with_config_home(
+        temp.path(),
+        &[
+            "sync",
+            "--root",
+            temp.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+
+    assert_eq!(value["command"], Value::from("sync"));
+    assert_eq!(value["install_scope"], Value::from("local"));
+    assert_eq!(value["mode"], Value::from("preview"));
+    assert_eq!(value["changed_count"], Value::from(1));
+    assert_eq!(value["entries"][0]["state"], Value::from("pending"));
+    assert_eq!(
+        value["sync_state"]["sync_schema"],
+        Value::from("sxmc_sync_state_v1")
+    );
+}
+
+#[test]
 fn test_inspect_cache_stats_reports_entries() {
     let temp = tempfile::tempdir().unwrap();
     let value = command_json_with_config_home(temp.path(), &["inspect", "cache-stats"]);
