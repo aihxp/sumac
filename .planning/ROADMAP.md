@@ -69,7 +69,7 @@ effects and watch orchestration run through a dedicated runtime seam.
      the main watch loop stalling or exiting unexpectedly.
   3. User can keep using the current `sxmc watch` CLI flags, JSON output, exit
      semantics, and wrapper entrypoints after the runtime seam is introduced.
-**Plans**: TBD
+**Plans**: 2 plans
 
 ### Phase 9: Secure Skill Materialization & Atomic Activation
 **Goal**: Users can install or update local and git-backed skills through
@@ -133,7 +133,7 @@ explicit release-soak evidence rather than assumption.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 7. Canonical Asset Inventory & Watch Parity | 2/2 | Complete   | 2026-04-04 |
-| 8. Watch Runtime Hardening | 0/TBD | Not started | - |
+| 8. Watch Runtime Hardening | 0/2 | Not started | - |
 | 9. Secure Skill Materialization & Atomic Activation | 0/TBD | Not started | - |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
 | 11. Command-Family Extraction & Contract Gates | 0/TBD | Not started | - |
