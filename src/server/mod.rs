@@ -711,9 +711,16 @@ fn compute_skill_fingerprint(
     if let Ok(skill_dirs) = discovery::discover_skills(paths) {
         skill_dirs.iter().for_each(|dir| {
             hash_path_state(dir, &mut hasher);
-            hash_path_state(&dir.join("SKILL.md"), &mut hasher);
-            hash_directory_files(&dir.join("scripts"), &mut hasher);
-            hash_directory_files(&dir.join("references"), &mut hasher);
+            if let Ok(skill) = parser::parse_skill(dir, dir.to_string_lossy().as_ref()) {
+                skill.assets.iter().for_each(|asset| {
+                    asset.relative_path.hash(&mut hasher);
+                    hash_path_state(&asset.path, &mut hasher);
+                });
+            } else {
+                hash_path_state(&dir.join("SKILL.md"), &mut hasher);
+                hash_directory_files(&dir.join("scripts"), &mut hasher);
+                hash_directory_files(&dir.join("references"), &mut hasher);
+            }
         });
     }
 
