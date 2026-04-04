@@ -34,10 +34,10 @@ Each will map to exactly one roadmap phase.
 
 ### Security & Serve Policy
 
-- [ ] **SEC-01**: Sumac scans every install-surface file that may later be
+- [x] **SEC-01**: Sumac scans every install-surface file that may later be
   served or executed, and unreadable or non-UTF-8 content becomes an explicit
   finding instead of a silent skip.
-- [ ] **SEC-02**: Sumac serves only the approved managed skill asset set, and
+- [x] **SEC-02**: Sumac serves only the approved managed skill asset set, and
   the installed, scanned, and served inventories stay aligned.
 
 ### Command Architecture
@@ -102,8 +102,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKILL-01 | Phase 9 | Complete |
 | SKILL-02 | Phase 9 | Complete |
 | SKILL-03 | Phase 9 | Complete |
-| SEC-01 | Phase 10 | Pending |
-| SEC-02 | Phase 10 | Pending |
+| SEC-01 | Phase 10 | Complete |
+| SEC-02 | Phase 10 | Complete |
 | CORE-06 | Phase 11 | Pending |
 | CORE-07 | Phase 11 | Pending |
 | ROL-05 | Phase 11 | Pending |
@@ -116,4 +116,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-04*
-*Last updated: 2026-04-04 after v1.1 roadmap creation*
+*Last updated: 2026-04-04 after Phase 10 completion*

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
 status: Ready to plan
-stopped_at: "Phase 09 complete; Phase 10 discuss and planning are next"
-last_updated: "2026-04-04T23:13:59Z"
+stopped_at: "Phase 10 complete; Phase 11 discuss and planning are next"
+last_updated: "2026-04-04T23:21:25Z"
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -21,11 +21,11 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 10 — Unified Scan & Serve Enforcement
+**Current focus:** Phase 11 — Command-Family Extraction & Contract Gates
 
 ## Current Position
 
-Phase: 10
+Phase: 11
 Plan: Not started
 
 ## Performance Metrics
@@ -33,7 +33,7 @@ Plan: Not started
 **Velocity:**
 
 - Total plans completed: 10
-- Total plans completed this milestone: 6
+- Total plans completed this milestone: 8
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -76,11 +76,15 @@ Recent decisions affecting current work:
   making the canonical managed asset inventory recursive for later watch and
   policy work.
 
+- Phase 10: Align scan and serve policy to canonical `Skill.assets` and treat
+  managed file read or UTF-8 decode failures as explicit findings.
+
 ### Pending Todos
 
-Remaining in Phase 10:
+Remaining in Phase 11:
 
-- Gather context, research, and execution plans for unified scan and serve enforcement.
+- Gather context, research, and execution plans for command-family extraction
+  and contract gates.
 
 ### Blockers/Concerns
 
@@ -97,11 +101,11 @@ Remaining in Phase 10:
 - v1.1 phase plans are still TBD; parity coverage and soak evidence must be
   preserved as hard gates during implementation.
 
-- Phase 10 must make installed, scanned, and served skill inventories follow
-  the same managed asset policy.
+- Phase 11 must preserve `skills` and `watch` command contracts while moving
+  more orchestration behind clearer seams and parity gates.
 
 ## Session Continuity
 
 Last session: 2026-04-04 13:19
-Stopped at: Phase 09 complete; Phase 10 discuss and planning are next
+Stopped at: Phase 10 complete; Phase 11 discuss and planning are next
 Resume file: None
