@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
-status: Executing Phase 07
-stopped_at: "Plan 07-01 complete; Plan 07-02 is next"
-last_updated: "2026-04-04T17:19:35Z"
+status: Ready to plan
+stopped_at: "Phase 07 complete; Phase 08 discuss and planning are next"
+last_updated: "2026-04-04T17:28:10Z"
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -21,19 +21,19 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 07 — Canonical Asset Inventory & Watch Parity
+**Current focus:** Phase 08 — Watch Runtime Hardening
 
 ## Current Position
 
-Phase: 07 (Canonical Asset Inventory & Watch Parity) — EXECUTING
-Plan: 2 of 2
+Phase: 8
+Plan: Not started
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 10
-- Total plans completed this milestone: 1
+- Total plans completed this milestone: 2
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -78,10 +78,9 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-Remaining in Phase 07:
+Remaining in Phase 08:
 
-- Execute Plan 07-02 to make polling fingerprints consume the canonical managed
-  asset inventory and add nested watch parity tests.
+- Gather context, research, and execution plans for watch runtime hardening.
 
 ### Blockers/Concerns
 
@@ -98,11 +97,11 @@ Remaining in Phase 07:
 - v1.1 phase plans are still TBD; parity coverage and soak evidence must be
   preserved as hard gates during implementation.
 
-- Phase 07 still needs the polling fingerprint path to consume the canonical
-  managed asset inventory before watch parity is complete.
+- Phase 08 must keep notify side effects bounded without changing existing
+  `sxmc watch` CLI behavior or wrapper compatibility.
 
 ## Session Continuity
 
 Last session: 2026-04-04 13:19
-Stopped at: Plan 07-01 complete; Plan 07-02 is next
+Stopped at: Phase 07 complete; Phase 08 discuss and planning are next
 Resume file: None

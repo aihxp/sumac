@@ -95,8 +95,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WATCH-01 | Phase 7 | Pending |
-| WATCH-02 | Phase 7 | Pending |
+| WATCH-01 | Phase 7 | Complete |
+| WATCH-02 | Phase 7 | Complete |
 | WATCH-03 | Phase 8 | Pending |
 | CORE-05 | Phase 8 | Pending |
 | SKILL-01 | Phase 9 | Pending |

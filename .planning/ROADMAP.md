@@ -21,7 +21,7 @@ command extraction, and finally a soak-based rollback decision.
 
 ## Phases
 
-- [ ] **Phase 7: Canonical Asset Inventory & Watch Parity** - Define the
+- [x] **Phase 7: Canonical Asset Inventory & Watch Parity** - Define the (completed 2026-04-04)
   managed skill asset surface and make nested watch behavior consistent across
   native-event and polling modes.
 - [ ] **Phase 8: Watch Runtime Hardening** - Keep long-running watch sessions
@@ -132,7 +132,7 @@ explicit release-soak evidence rather than assumption.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. Canonical Asset Inventory & Watch Parity | 1/2 | In Progress|  |
+| 7. Canonical Asset Inventory & Watch Parity | 2/2 | Complete   | 2026-04-04 |
 | 8. Watch Runtime Hardening | 0/TBD | Not started | - |
 | 9. Secure Skill Materialization & Atomic Activation | 0/TBD | Not started | - |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
