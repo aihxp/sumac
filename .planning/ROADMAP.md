@@ -27,7 +27,7 @@ command extraction, and finally a soak-based rollback decision.
 - [x] **Phase 8: Watch Runtime Hardening** - Keep long-running watch sessions (completed 2026-04-04)
   responsive while notify side effects and routing move behind a dedicated
   runtime seam.
-- [ ] **Phase 9: Secure Skill Materialization & Atomic Activation** - Stage
+- [x] **Phase 9: Secure Skill Materialization & Atomic Activation** - Stage (completed 2026-04-04)
   local and git-backed skills ephemerally, enforce the allowlist before
   activation, and prevent partial installs.
 - [ ] **Phase 10: Unified Scan & Serve Enforcement** - Align installed,
@@ -134,7 +134,7 @@ explicit release-soak evidence rather than assumption.
 |-------|----------------|--------|-----------|
 | 7. Canonical Asset Inventory & Watch Parity | 2/2 | Complete   | 2026-04-04 |
 | 8. Watch Runtime Hardening | 2/2 | Complete   | 2026-04-04 |
-| 9. Secure Skill Materialization & Atomic Activation | 0/2 | Not started | - |
+| 9. Secure Skill Materialization & Atomic Activation | 2/2 | Complete   | 2026-04-04 |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
 | 11. Command-Family Extraction & Contract Gates | 0/TBD | Not started | - |
 | 12. Soak Evidence & Rollback Decision | 0/TBD | Not started | - |

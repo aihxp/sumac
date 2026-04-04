@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
 status: Ready to plan
-stopped_at: "Phase 08 complete; Phase 09 discuss and planning are next"
-last_updated: "2026-04-04T17:44:34Z"
+stopped_at: "Phase 09 complete; Phase 10 discuss and planning are next"
+last_updated: "2026-04-04T23:13:59Z"
 progress:
   total_phases: 6
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
 ---
 
 # Project State
@@ -21,11 +21,11 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 09 — Secure Skill Materialization & Atomic Activation
+**Current focus:** Phase 10 — Unified Scan & Serve Enforcement
 
 ## Current Position
 
-Phase: 9
+Phase: 10
 Plan: Not started
 
 ## Performance Metrics
@@ -33,7 +33,7 @@ Plan: Not started
 **Velocity:**
 
 - Total plans completed: 10
-- Total plans completed this milestone: 4
+- Total plans completed this milestone: 6
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -78,9 +78,9 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-Remaining in Phase 09:
+Remaining in Phase 10:
 
-- Gather context, research, and execution plans for secure skill staging and atomic activation.
+- Gather context, research, and execution plans for unified scan and serve enforcement.
 
 ### Blockers/Concerns
 
@@ -97,11 +97,11 @@ Remaining in Phase 09:
 - v1.1 phase plans are still TBD; parity coverage and soak evidence must be
   preserved as hard gates during implementation.
 
-- Phase 09 must narrow the install payload to managed assets without leaving
-  partially activated skills behind after failures.
+- Phase 10 must make installed, scanned, and served skill inventories follow
+  the same managed asset policy.
 
 ## Session Continuity
 
 Last session: 2026-04-04 13:19
-Stopped at: Phase 08 complete; Phase 09 discuss and planning are next
+Stopped at: Phase 09 complete; Phase 10 discuss and planning are next
 Resume file: None
