@@ -3,18 +3,21 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command as StdCommand;
+use std::process::Stdio;
 use std::time::Duration;
 
 use sxmc::cli_surfaces::AiClientProfile;
 use sxmc::error::Result;
 use sxmc::output;
 use sxmc::paths::InstallPaths;
+use tokio::process::Command as TokioCommand;
 
 use crate::cli_args::WatchNotificationTemplate;
 use crate::{render_status_output, status_has_unhealthy_baked_health, status_value_with_health};
 
 use super::CommandOutcome;
+
+const WATCH_NOTIFY_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
 pub(crate) struct WatchNotificationOptions {
@@ -70,38 +73,20 @@ impl WatchService {
 
                 let unhealthy = status_has_unhealthy_baked_health(&value);
                 let should_notify = !first_frame || unhealthy;
+                let mut notification_tasks = Vec::new();
                 if should_notify {
                     let reason = if unhealthy { "unhealthy" } else { "change" };
                     let event = watch_event_value(&request.install_paths, reason, &value);
                     let payload = watch_notification_payload(request.notify.template, &event);
-                    if let Some(path) = request.notify.file.as_ref() {
-                        append_watch_notification(path, &payload)?;
-                    }
-                    if let Some(command) = request.notify.command.as_deref() {
-                        run_watch_notify_command(
-                            command,
-                            &event,
-                            &payload,
-                            request.notify.template,
-                        )?;
-                    }
-                    for webhook in &request.notify.webhooks {
-                        send_watch_webhook(webhook, &request.notify.headers, &payload).await?;
-                    }
-                    if !request.notify.slack_webhooks.is_empty() {
-                        let slack_payload =
-                            watch_notification_payload(WatchNotificationTemplate::Slack, &event);
-                        for webhook in &request.notify.slack_webhooks {
-                            send_watch_webhook(webhook, &request.notify.headers, &slack_payload)
-                                .await?;
-                        }
-                    }
+                    notification_tasks = dispatch_notifications(&request.notify, &event, &payload)?;
                 }
 
                 if request.exit_on_unhealthy && unhealthy {
+                    await_notification_tasks(notification_tasks).await;
                     return Ok(CommandOutcome { exit_code: Some(1) });
                 }
                 if request.exit_on_change && !first_frame {
+                    await_notification_tasks(notification_tasks).await;
                     return Ok(CommandOutcome { exit_code: Some(1) });
                 }
 
@@ -211,7 +196,62 @@ fn append_watch_notification(path: &Path, payload: &Value) -> Result<()> {
     Ok(())
 }
 
-fn run_watch_notify_command(
+fn dispatch_notifications(
+    notify: &WatchNotificationOptions,
+    event: &Value,
+    payload: &Value,
+) -> Result<Vec<tokio::task::JoinHandle<()>>> {
+    let mut tasks = Vec::new();
+    if let Some(path) = notify.file.as_ref() {
+        append_watch_notification(path, payload)?;
+    }
+    if let Some(command) = notify.command.as_deref() {
+        let command = command.to_string();
+        let event = event.clone();
+        let payload = payload.clone();
+        let template = notify.template;
+        tasks.push(tokio::spawn(async move {
+            if let Err(error) = run_watch_notify_command(&command, &event, &payload, template).await
+            {
+                eprintln!("[sxmc] Watch notify command failed: {}", error);
+            }
+        }));
+    }
+    for webhook in &notify.webhooks {
+        let webhook = webhook.clone();
+        let headers = notify.headers.clone();
+        let payload = payload.clone();
+        tasks.push(tokio::spawn(async move {
+            if let Err(error) = send_watch_webhook(&webhook, &headers, &payload).await {
+                eprintln!("[sxmc] Watch webhook failed: {}", error);
+            }
+        }));
+    }
+    if !notify.slack_webhooks.is_empty() {
+        let slack_payload = watch_notification_payload(WatchNotificationTemplate::Slack, event);
+        for webhook in &notify.slack_webhooks {
+            let webhook = webhook.clone();
+            let headers = notify.headers.clone();
+            let slack_payload = slack_payload.clone();
+            tasks.push(tokio::spawn(async move {
+                if let Err(error) = send_watch_webhook(&webhook, &headers, &slack_payload).await {
+                    eprintln!("[sxmc] Watch webhook failed: {}", error);
+                }
+            }));
+        }
+    }
+    Ok(tasks)
+}
+
+async fn await_notification_tasks(tasks: Vec<tokio::task::JoinHandle<()>>) {
+    for task in tasks {
+        if let Err(error) = task.await {
+            eprintln!("[sxmc] Watch notification task failed: {}", error);
+        }
+    }
+}
+
+async fn run_watch_notify_command(
     command: &str,
     event: &Value,
     payload: &Value,
@@ -227,20 +267,24 @@ fn run_watch_notify_command(
         std::process::id(),
         Utc::now().timestamp_micros()
     ));
-    fs::write(&temp_event_path, serde_json::to_string_pretty(event)?)?;
-    fs::write(&temp_payload_path, serde_json::to_string_pretty(payload)?)?;
+    tokio::fs::write(&temp_event_path, serde_json::to_string_pretty(event)?).await?;
+    tokio::fs::write(&temp_payload_path, serde_json::to_string_pretty(payload)?).await?;
 
-    let mut child = if cfg!(windows) {
-        let mut cmd = StdCommand::new("cmd");
+    let mut command_builder = if cfg!(windows) {
+        let mut cmd = TokioCommand::new("cmd");
         cmd.arg("/C").arg(command);
         cmd
     } else {
-        let mut cmd = StdCommand::new("sh");
-        cmd.arg("-lc").arg(command);
+        let mut cmd = TokioCommand::new("sh");
+        cmd.arg("-lc").arg(format!("exec {}", command));
         cmd
     };
+    command_builder.kill_on_drop(true);
+    command_builder.stdin(Stdio::null());
+    command_builder.stdout(Stdio::null());
+    command_builder.stderr(Stdio::null());
 
-    child
+    command_builder
         .env(
             "SXMC_WATCH_REASON",
             event["reason"].as_str().unwrap_or("change"),
@@ -248,7 +292,7 @@ fn run_watch_notify_command(
         .env("SXMC_WATCH_EVENT_PATH", temp_event_path.as_os_str())
         .env("SXMC_WATCH_PAYLOAD_PATH", temp_payload_path.as_os_str())
         .env("SXMC_WATCH_ROOT", event["root"].as_str().unwrap_or("."));
-    child.env(
+    command_builder.env(
         "SXMC_WATCH_NOTIFY_TEMPLATE",
         match template {
             WatchNotificationTemplate::Standard => "standard",
@@ -257,25 +301,50 @@ fn run_watch_notify_command(
         },
     );
 
-    let status = child.status()?;
+    let mut child = command_builder.spawn()?;
+    let status = match tokio::time::timeout(WATCH_NOTIFY_TIMEOUT, child.wait()).await {
+        Ok(status) => status?,
+        Err(_) => {
+            let _ = child.start_kill();
+            return Err(sxmc::error::SxmcError::Other(format!(
+                "Watch notify command timed out after {}ms",
+                WATCH_NOTIFY_TIMEOUT.as_millis()
+            )));
+        }
+    };
     if !status.success() {
         eprintln!("[sxmc] Watch notify command exited with status {}", status);
     }
-    let _ = fs::remove_file(temp_event_path);
-    let _ = fs::remove_file(temp_payload_path);
+    let _ = tokio::fs::remove_file(temp_event_path).await;
+    let _ = tokio::fs::remove_file(temp_payload_path).await;
     Ok(())
 }
 
 async fn send_watch_webhook(url: &str, headers: &[(String, String)], event: &Value) -> Result<()> {
-    let mut request = reqwest::Client::new().post(url).json(event);
+    let client = reqwest::Client::builder()
+        .timeout(WATCH_NOTIFY_TIMEOUT)
+        .build()
+        .map_err(|error| {
+            sxmc::error::SxmcError::Other(format!(
+                "Failed to build watch webhook client: {}",
+                error
+            ))
+        })?;
+    let mut request = client.post(url).json(event);
     for (key, value) in headers {
         request = request.header(key, value);
     }
     let response = request.send().await.map_err(|error| {
-        sxmc::error::SxmcError::Other(format!(
-            "Failed to POST watch notification to '{}': {}",
-            url, error
-        ))
+        let message = if error.is_timeout() {
+            format!(
+                "Watch webhook '{}' timed out after {}ms",
+                url,
+                WATCH_NOTIFY_TIMEOUT.as_millis()
+            )
+        } else {
+            format!("Failed to POST watch notification to '{}': {}", url, error)
+        };
+        sxmc::error::SxmcError::Other(message)
     })?;
     if !response.status().is_success() {
         return Err(sxmc::error::SxmcError::Other(format!(
