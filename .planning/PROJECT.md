@@ -21,6 +21,8 @@ special cases.
 - `src/app/golden_path.rs` is now a thin dispatch seam
 - the rollback seam remains intentionally available through
   `SXMC_GOLDEN_PATH_ROUTE=legacy` until the documented release-soak rule is met
+- `watch`, `skills`, and CLI-facing `serve` now run only through the migrated
+  route backed by explicit v1.1 verification and contract evidence
 - the next migration pressure is concentrated in `watch`, `skills`, and the
   remaining top-level orchestration hotspots outside the golden path
 
@@ -77,7 +79,7 @@ without bespoke glue, while staying fast, local-first, and reliable.
   does not silently skip risky files
 - [ ] the next non-golden-path command families move onto clearer
   module/service boundaries without breaking `1.x` CLI behavior
-- [ ] the rollback seam is kept or retired based on release-soak evidence, not
+- [x] the rollback seam is kept or retired based on release-soak evidence, not
   assumption
 
 ### Out of Scope
@@ -142,6 +144,7 @@ starting over.
 | Build a cleaner internal core/app layer inside the current repo | Enabled greenfield internals without a product reset or long-lived fork | Complete in v1.0 |
 | Keep releases and `1.x` contracts stable during migration | Prevented the rewrite from becoming a trust-breaking freeze or compatibility reset | Complete in v1.0 |
 | Use v1.1 to harden `watch`, `skills`, and top-level orchestration together | These are now the clearest remaining risk surfaces and they overlap in reliability, security, and dispatch complexity | — Pending |
+| Keep migrated `watch` / `skills` as the sole route, but retain `SXMC_GOLDEN_PATH_ROUTE=legacy` intentionally until later release soak | Local verification and contract evidence are strong for the migrated route, but same-session validation is not the same as post-release soak for final seam retirement | Complete in v1.1 Phase 12 |
 
 ## Evolution
 
@@ -161,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after v1.1 milestone kickoff*
+*Last updated: 2026-04-04 after v1.1 rollback decision*
