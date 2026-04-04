@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Contract Baseline & Parity Harness** - Lock down the golden
   path interface inventory and parity checks before migration.
-- [ ] **Phase 2: Core/App Seam & Cutover Foundation** - Introduce the new
+- [x] **Phase 2: Core/App Seam & Cutover Foundation** - Introduce the new
   orchestration boundary and rollback-safe routing inside the existing binary.
 - [ ] **Phase 3: Status Migration** - Move `status` onto the new core as the
   first read-only proof slice.
@@ -70,11 +70,11 @@ explicit adapters, incremental cutover, and rollback-safe routing.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Create the core/app/runtime seam and trim golden-path logic out of
+- [x] 02-01: Create the core/app/runtime seam and trim golden-path logic out of
   `src/main.rs`
-- [ ] 02-02: Define typed requests, results, and adapter interfaces for the
+- [x] 02-02: Define typed requests, results, and adapter interfaces for the
   migrated command family
-- [ ] 02-03: Add cutover routing, rollback controls, and shim retirement rules
+- [x] 02-03: Add cutover routing, rollback controls, and shim retirement rules
 
 ### Phase 3: Status Migration
 **Goal**: `status` proves the new seam on a read-only production slice while
@@ -148,7 +148,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Contract Baseline & Parity Harness | 2/2 | Complete   | 2026-04-04 |
-| 2. Core/App Seam & Cutover Foundation | 0/3 | Not started | - |
+| 2. Core/App Seam & Cutover Foundation | 3/3 | Complete   | 2026-04-04 |
 | 3. Status Migration | 0/1 | Not started | - |
 | 4. Sync Migration | 0/1 | Not started | - |
 | 5. Add Migration | 0/1 | Not started | - |
