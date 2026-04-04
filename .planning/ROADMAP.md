@@ -132,7 +132,7 @@ explicit release-soak evidence rather than assumption.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. Canonical Asset Inventory & Watch Parity | 0/2 | Planned    |  |
+| 7. Canonical Asset Inventory & Watch Parity | 1/2 | In Progress|  |
 | 8. Watch Runtime Hardening | 0/TBD | Not started | - |
 | 9. Secure Skill Materialization & Atomic Activation | 0/TBD | Not started | - |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |

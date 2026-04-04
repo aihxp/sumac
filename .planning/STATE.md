@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
-status: ready-to-plan
-stopped_at: Roadmap created; Phase 7 is ready for planning
-last_updated: "2026-04-04T15:04:26Z"
+status: Executing Phase 07
+stopped_at: "Plan 07-01 complete; Plan 07-02 is next"
+last_updated: "2026-04-04T17:19:35Z"
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -21,23 +21,19 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Milestone v1.1 - Platform Hardening and Core Expansion
+**Current focus:** Phase 07 — Canonical Asset Inventory & Watch Parity
 
 ## Current Position
 
-Phase: 7 of 12 (Canonical Asset Inventory & Watch Parity)
-Plan: -
-Status: Ready to plan
-Last activity: 2026-04-04 - v1.1 roadmap created and requirements mapped
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 07 (Canonical Asset Inventory & Watch Parity) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 10
-- Total plans completed this milestone: 0
+- Total plans completed this milestone: 1
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -61,20 +57,31 @@ Recent decisions affecting current work:
 
 - v1.0 start: Lock down the golden-path contract baseline and parity harness
   before changing internals.
+
 - v1.0 architecture: Introduce the core/app seam inside the existing repo and
   keep `SXMC_GOLDEN_PATH_ROUTE=legacy` as a rollback seam until soak evidence
   justifies removal.
+
 - v1.0 migration: Move `status`, `sync`, `add`, and `setup` in that order and
   use direct core-vs-legacy parity as the proof pattern.
+
 - v1.1 roadmap: Sequence work as canonical asset parity, watch runtime
   hardening, secure skill staging, unified scan/serve enforcement,
   command-family extraction, then soak-based rollback review.
+
 - v1.1 coverage: Map every v1.1 requirement exactly once across Phases 7-12 and
   keep parity coverage plus soak evidence as mandatory cutover gates.
 
+- Phase 07: Keep `scripts` and `references` compatibility views stable while
+  making the canonical managed asset inventory recursive for later watch and
+  policy work.
+
 ### Pending Todos
 
-No scoped milestone todos yet. Phase planning has not started.
+Remaining in Phase 07:
+
+- Execute Plan 07-02 to make polling fingerprints consume the canonical managed
+  asset inventory and add nested watch parity tests.
 
 ### Blockers/Concerns
 
@@ -91,8 +98,11 @@ No scoped milestone todos yet. Phase planning has not started.
 - v1.1 phase plans are still TBD; parity coverage and soak evidence must be
   preserved as hard gates during implementation.
 
+- Phase 07 still needs the polling fingerprint path to consume the canonical
+  managed asset inventory before watch parity is complete.
+
 ## Session Continuity
 
-Last session: 2026-04-04 11:04
-Stopped at: Roadmap written for Phases 7-12; next step is `/gsd:plan-phase 7`
+Last session: 2026-04-04 13:19
+Stopped at: Plan 07-01 complete; Plan 07-02 is next
 Resume file: None
