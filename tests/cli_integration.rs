@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command as ProcessCommand, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn sxmc() -> Command {
     Command::cargo_bin("sxmc").unwrap()
@@ -1378,6 +1378,106 @@ async fn test_watch_notify_webhook_posts_unhealthy_event() {
     assert_eq!(events[0]["reason"], Value::from("unhealthy"));
 }
 
+#[test]
+#[cfg(not(windows))]
+fn test_watch_notify_command_timeout_does_not_block_unhealthy_exit() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let notify_script = temp.path().join("slow-notify.sh");
+    fs::write(&notify_script, "#!/bin/sh\nsleep 5\n").unwrap();
+    let mut perms = fs::metadata(&notify_script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&notify_script, perms).unwrap();
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake",
+            "create",
+            "fixture-unhealthy-timeout-command",
+            "--type",
+            "stdio",
+            "--source",
+            "definitely-not-a-real-command",
+            "--skip-validate",
+        ])
+        .assert()
+        .success();
+
+    let started = Instant::now();
+    sxmc_with_config_home(temp.path())
+        .args([
+            "watch",
+            "--health",
+            "--exit-on-unhealthy",
+            "--notify-command",
+            notify_script.to_str().unwrap(),
+            "--format",
+            "ndjson",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("timed out"));
+
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "watch should not block on a slow notify command"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_watch_notify_webhook_timeout_does_not_block_unhealthy_exit() {
+    let temp = tempfile::tempdir().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = Router::new().route(
+        "/watch",
+        post(|Json(payload): Json<Value>| async move {
+            let _ = payload;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Json(json!({"ok": true}))
+        }),
+    );
+    let handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    sxmc_with_config_home(temp.path())
+        .args([
+            "bake",
+            "create",
+            "fixture-unhealthy-timeout-webhook",
+            "--type",
+            "stdio",
+            "--source",
+            "definitely-not-a-real-command",
+            "--skip-validate",
+        ])
+        .assert()
+        .success();
+
+    let started = Instant::now();
+    sxmc_with_config_home(temp.path())
+        .args([
+            "watch",
+            "--health",
+            "--exit-on-unhealthy",
+            "--notify-webhook",
+            &format!("http://{addr}/watch"),
+            "--format",
+            "ndjson",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("timed out"));
+    handle.abort();
+
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "watch should not block on a slow webhook"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_watch_notify_slack_webhook_posts_slack_payload() {
     let temp = tempfile::tempdir().unwrap();
@@ -1959,7 +2059,10 @@ fn test_rewrite_golden_path_setup_core_and_legacy_match() {
     for (core_result, legacy_result) in core_results.iter().zip(legacy_results.iter()) {
         assert_eq!(core_result["tool"], legacy_result["tool"]);
         assert_eq!(core_result["profile"], legacy_result["profile"]);
-        assert_eq!(core_result["outcome_summary"], legacy_result["outcome_summary"]);
+        assert_eq!(
+            core_result["outcome_summary"],
+            legacy_result["outcome_summary"]
+        );
 
         let core_statuses = core_result["outcomes"]
             .as_array()
