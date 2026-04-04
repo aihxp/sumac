@@ -119,7 +119,7 @@ profile generation, host detection, and file outputs stable.
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05-01: Migrate `add` onto the shared core/app seam and prove parity
+- [x] 05-01: Migrate `add` onto the shared core/app seam and prove parity
 
 ### Phase 6: Setup Consolidation & Golden Path Closeout
 **Goal**: `setup` is rebuilt as orchestration over the shared migrated
@@ -151,5 +151,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Core/App Seam & Cutover Foundation | 3/3 | Complete   | 2026-04-04 |
 | 3. Status Migration | 1/1 | Complete   | 2026-04-04 |
 | 4. Sync Migration | 1/1 | Complete   | 2026-04-04 |
-| 5. Add Migration | 0/1 | Not started | - |
+| 5. Add Migration | 1/1 | Complete   | 2026-04-04 |
 | 6. Setup Consolidation & Golden Path Closeout | 0/2 | Not started | - |

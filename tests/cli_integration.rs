@@ -1966,6 +1966,78 @@ fn test_rewrite_golden_path_add_contract_json_legacy_route() {
 }
 
 #[test]
+fn test_rewrite_golden_path_add_core_and_legacy_match() {
+    let temp_core = tempfile::tempdir().unwrap();
+    let temp_legacy = tempfile::tempdir().unwrap();
+    fs::write(temp_core.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    fs::write(temp_legacy.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+
+    let core = command_json_with_config_home(
+        temp_core.path(),
+        &[
+            "add",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp_core.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+    );
+    let legacy = command_json_with_config_home_and_env(
+        temp_legacy.path(),
+        &[
+            "add",
+            "git",
+            "--host",
+            "claude-code",
+            "--root",
+            temp_legacy.path().to_str().unwrap(),
+            "--format",
+            "json-pretty",
+        ],
+        &[("SXMC_GOLDEN_PATH_ROUTE", "legacy")],
+    );
+
+    assert_eq!(core["command"], legacy["command"]);
+    assert_eq!(core["tool"], legacy["tool"]);
+    assert_eq!(core["install_scope"], legacy["install_scope"]);
+    assert_eq!(core["effective_mode"], legacy["effective_mode"]);
+    assert_eq!(core["auto_detected_hosts"], legacy["auto_detected_hosts"]);
+    assert_eq!(
+        core["auto_previewed_due_to_missing_hosts"],
+        legacy["auto_previewed_due_to_missing_hosts"]
+    );
+    assert_eq!(core["hosts"], legacy["hosts"]);
+    assert_eq!(core["profile"], legacy["profile"]);
+    assert_eq!(core["outcome_summary"], legacy["outcome_summary"]);
+    assert_eq!(
+        core["outcomes"]
+            .as_array()
+            .map(|items| items.len())
+            .unwrap_or(0),
+        legacy["outcomes"]
+            .as_array()
+            .map(|items| items.len())
+            .unwrap_or(0)
+    );
+    let core_statuses = core["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["status"].clone())
+        .collect::<Vec<_>>();
+    let legacy_statuses = legacy["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["status"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(core_statuses, legacy_statuses);
+}
+
+#[test]
 fn test_rewrite_golden_path_status_contract_json_legacy_route() {
     let temp = tempfile::tempdir().unwrap();
     let profiles_dir = temp.path().join(".sxmc").join("ai").join("profiles");

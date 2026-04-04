@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 4 verified complete; Phase 5 ready to plan
-last_updated: "2026-04-04T22:05:00.000Z"
+stopped_at: Phase 5 verified complete; Phase 6 ready to plan
+last_updated: "2026-04-04T23:35:00.000Z"
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
+  completed_phases: 5
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -21,16 +21,16 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 5 — Add Migration
+**Current focus:** Phase 6 — Setup Consolidation & Golden Path Closeout
 
 ## Current Position
 
-Phase: 5 of 6 (Add Migration)
-Plan: 0 of 1 in current phase
+Phase: 6 of 6 (Setup Consolidation & Golden Path Closeout)
+Plan: 0 of 2 in current phase
 Status: Ready to plan
-Last activity: 2026-04-04 - Phase 4 completed with a dedicated sync service and direct core-vs-legacy parity proof
+Last activity: 2026-04-04 - Phase 5 completed with a dedicated add service and reusable onboarding service
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -48,7 +48,7 @@ Progress: [███████░░░] 67%
 
 **Recent Trend:**
 
-- Last 5 plans: 02-01, 02-02, 02-03, 03-01, 04-01
+- Last 5 plans: 02-02, 02-03, 03-01, 04-01, 05-01
 - Trend: Positive
 
 ## Accumulated Context
@@ -77,6 +77,10 @@ Recent decisions affecting current work:
 - Phase 4 complete: Treat `src/app/sync.rs` as the write-side companion to the
   status slice and keep core-vs-legacy parity as the migration proof pattern.
 
+- Phase 5 complete: Treat `src/app/add.rs` plus `src/app/onboarding.rs` as the
+  onboarding migration pattern and reuse that shared service when rebuilding
+  `setup`.
+
 - Phase 3-6: Migrate `status`, then `sync`, then `add`, then `setup` in that
   order to preserve the maintained onboarding path.
 
@@ -89,11 +93,11 @@ None yet.
 - Golden-path parity must stay stable across CLI output, JSON, artifacts, and
   release behavior during migration.
 
-- `add` and `setup` still need the same deeper service extraction pattern
-  before the rollback path can be retired.
+- `setup` still needs the final dedicated service extraction and full
+  golden-path parity closeout before the rollback path can be retired.
 
 ## Session Continuity
 
 Last session: 2026-04-04 18:05
-Stopped at: Phase 4 complete; Phase 5 ready for planning
+Stopped at: Phase 5 complete; Phase 6 ready for planning
 Resume file: None

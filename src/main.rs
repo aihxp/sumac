@@ -10291,7 +10291,7 @@ async fn main() -> Result<()> {
             format,
         } => {
             let outcome = app::golden_path::GoldenPathApp::current().run_add(
-                app::golden_path::AddRequest {
+                app::add::AddRequest {
                     command,
                     depth,
                     install_paths: resolve_install_paths(root, global, local)?,
