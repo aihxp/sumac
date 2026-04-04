@@ -9128,6 +9128,49 @@ Hello version two
 }
 
 #[test]
+fn test_skills_install_and_serve_round_trip_via_stdio() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("simple-skill");
+
+    sxmc()
+        .args([
+            "skills",
+            "install",
+            source.to_str().unwrap(),
+            "--root",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let installed_skills_dir = temp.path().join(".claude").join("skills");
+    let inner = format!(
+        "{} serve --paths {}",
+        sxmc_bin_string(),
+        installed_skills_dir.display()
+    );
+
+    sxmc()
+        .args([
+            "stdio",
+            &inner,
+            "get_skill_details",
+            "name=simple-skill",
+            "return_type=both",
+            "--pretty",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"simple-skill\""))
+        .stdout(predicate::str::contains(
+            "Hello $ARGUMENTS, welcome to sxmc!",
+        ));
+}
+
+#[test]
 fn test_skills_install_global_writes_user_skill_dir() {
     let temp = tempfile::tempdir().unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))

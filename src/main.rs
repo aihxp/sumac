@@ -33,9 +33,7 @@ use cli_args::{
     BakeAction, Cli, Commands, DiffOutputFormat, DiscoverAction, InitAction, InspectAction,
     McpAction, McpSessionAction, McpSessionCli, ScaffoldAction, SkillsAction,
 };
-use command_handlers::{
-    cmd_api, cmd_skills_info, cmd_skills_list, cmd_skills_run, ApiCommandOptions, SkillListOptions,
-};
+use command_handlers::{cmd_api, ApiCommandOptions};
 use sxmc::auth::secrets::{resolve_header, resolve_secret};
 use sxmc::bake::config::SourceType;
 use sxmc::bake::{BakeConfig, BakeStore};
@@ -48,7 +46,7 @@ use sxmc::paths::{InstallPaths, InstallScope};
 use sxmc::projection::{apply_offset_limit, retain_object_fields};
 use sxmc::security;
 use sxmc::server::{self, HttpServeLimits};
-use sxmc::skills::{discovery, generator, install as skill_install, parser};
+use sxmc::skills::{discovery, parser};
 
 const PROFILE_BUNDLE_SCHEMA: &str = "sxmc_profile_bundle_v1";
 const PROFILE_CORPUS_SCHEMA: &str = "sxmc_profile_corpus_v1";
@@ -7630,97 +7628,27 @@ async fn main() -> Result<()> {
             register_mode,
             register_name,
         } => {
-            let search_paths = resolve_paths(paths);
-            if !register_hosts.is_empty() && transport != "stdio" {
-                return Err(sxmc::error::SxmcError::Other(
-                    "Automatic MCP registration currently supports stdio transport only for `sxmc serve`. Use `--transport stdio` or register the HTTP endpoint manually.".into(),
-                ));
-            }
-            if !register_hosts.is_empty() {
-                let root = resolve_generation_root(register_root)?;
-                let search_paths_arg = search_paths
-                    .iter()
-                    .map(|path| path.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let mut args = vec!["serve".to_string()];
-                if !search_paths_arg.is_empty() {
-                    args.push("--paths".into());
-                    args.push(search_paths_arg);
-                }
-                if !discovery_snapshots.is_empty() {
-                    let snapshot_arg = discovery_snapshots
-                        .iter()
-                        .map(|path| path.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    args.push("--discovery-snapshot".into());
-                    args.push(snapshot_arg);
-                }
-                if !discovery_tool_manifests.is_empty() {
-                    let manifest_arg = discovery_tool_manifests
-                        .iter()
-                        .map(|path| path.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    args.push("--discovery-tool-manifest".into());
-                    args.push(manifest_arg);
-                }
-                if watch {
-                    args.push("--watch".into());
-                }
-                let registration = RuntimeMcpRegistration::Stdio {
-                    command: "sxmc".into(),
-                    args,
-                };
-                apply_runtime_registration(
-                    &root,
-                    &register_hosts,
+            let outcome = app::serve::ServeService::new()
+                .run(app::serve::ServeRequest {
+                    paths,
+                    discovery_snapshots,
+                    discovery_tool_manifests,
+                    watch,
+                    transport,
+                    port,
+                    host,
+                    require_headers,
+                    bearer_token,
+                    max_concurrency,
+                    max_request_bytes,
+                    register_hosts,
+                    register_root,
                     register_mode,
-                    register_name.as_deref(),
-                    "sxmc-serve",
-                    &registration,
-                )?;
-            }
-            let required_headers = parse_headers(&require_headers)?;
-            let bearer_token = parse_optional_secret(bearer_token)?;
-            let limits = HttpServeLimits {
-                max_concurrency,
-                max_request_body_bytes: max_request_bytes,
-            };
-            match transport.as_str() {
-                "stdio" => {
-                    if !required_headers.is_empty() || bearer_token.is_some() {
-                        eprintln!(
-                            "[sxmc] Warning: remote auth flags are ignored for stdio transport"
-                        );
-                    }
-                    server::serve_stdio(
-                        &search_paths,
-                        &discovery_snapshots,
-                        &discovery_tool_manifests,
-                        watch,
-                    )
-                    .await?
-                }
-                "http" | "sse" => {
-                    server::serve_http(
-                        &search_paths,
-                        &discovery_snapshots,
-                        &discovery_tool_manifests,
-                        &host,
-                        port,
-                        &required_headers,
-                        bearer_token.as_deref(),
-                        watch,
-                        limits,
-                    )
-                    .await?
-                }
-                other => {
-                    eprintln!("[sxmc] Unknown transport: {}", other);
-                    std::process::exit(1);
-                }
+                    register_name,
+                })
+                .await?;
+            if let Some(code) = outcome.exit_code {
+                std::process::exit(code);
             }
         }
 
@@ -7892,130 +7820,116 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Skills { action } => match action {
-            SkillsAction::List {
-                paths,
-                installed,
-                skills_path,
-                local,
-                global,
-                root,
-                json,
-                names_only,
-                counts_only,
-                no_descriptions,
-                fields,
-                offset,
-                limit,
-            } => {
-                let resolved_paths = if installed {
-                    let install_paths = resolve_install_paths(
+        Commands::Skills { action } => {
+            let request = match action {
+                SkillsAction::List {
+                    paths,
+                    installed,
+                    skills_path,
+                    local,
+                    global,
+                    root,
+                    json,
+                    names_only,
+                    counts_only,
+                    no_descriptions,
+                    fields,
+                    offset,
+                    limit,
+                } => app::skills::SkillsRequest::List(app::skills::SkillsListRequest {
+                    paths,
+                    installed,
+                    install_paths: if installed {
+                        Some(resolve_install_paths(
+                            resolve_skills_install_root(root),
+                            global,
+                            local,
+                        )?)
+                    } else {
+                        None
+                    },
+                    skills_path,
+                    json,
+                    names_only,
+                    counts_only,
+                    no_descriptions,
+                    fields,
+                    offset,
+                    limit,
+                }),
+                SkillsAction::Info {
+                    name,
+                    paths,
+                    summary_only,
+                } => app::skills::SkillsRequest::Info(app::skills::SkillsInfoRequest {
+                    paths,
+                    name,
+                    summary_only,
+                }),
+                SkillsAction::Run {
+                    paths,
+                    script,
+                    env_vars,
+                    print_body,
+                    name,
+                    arguments,
+                } => app::skills::SkillsRequest::Run(app::skills::SkillsRunRequest {
+                    paths,
+                    script,
+                    env_vars,
+                    print_body,
+                    name,
+                    arguments,
+                }),
+                SkillsAction::Create {
+                    source,
+                    output_dir,
+                    auth_headers,
+                } => app::skills::SkillsRequest::Create(app::skills::SkillsCreateRequest {
+                    source,
+                    output_dir,
+                    auth_headers: parse_headers(&auth_headers)?,
+                }),
+                SkillsAction::Install {
+                    source,
+                    path,
+                    r#ref,
+                    skills_path,
+                    local,
+                    global,
+                    root,
+                } => app::skills::SkillsRequest::Install(app::skills::SkillsInstallRequest {
+                    source,
+                    repo_subpath: path,
+                    reference: r#ref,
+                    install_paths: resolve_install_paths(
                         resolve_skills_install_root(root),
                         global,
                         local,
-                    )?;
-                    vec![install_paths.resolve_skills_path(&skills_path)]
-                } else {
-                    resolve_paths(paths)
-                };
-                cmd_skills_list(
-                    &resolved_paths,
-                    SkillListOptions {
-                        json_output: json,
-                        installed_only: installed,
-                        names_only,
-                        counts_only,
-                        no_descriptions,
-                        fields: fields.as_deref(),
-                        offset,
-                        limit,
-                    },
-                )?;
+                    )?,
+                    skills_path,
+                }),
+                SkillsAction::Update {
+                    name,
+                    skills_path,
+                    local,
+                    global,
+                    root,
+                } => app::skills::SkillsRequest::Update(app::skills::SkillsUpdateRequest {
+                    name,
+                    install_paths: resolve_install_paths(
+                        resolve_skills_install_root(root),
+                        global,
+                        local,
+                    )?,
+                    skills_path,
+                }),
+            };
+            let outcome = app::skills::SkillsService::new().run(request).await?;
+            if let Some(code) = outcome.exit_code {
+                std::process::exit(code);
             }
-            SkillsAction::Info {
-                name,
-                paths,
-                summary_only,
-            } => {
-                cmd_skills_info(&resolve_paths(paths), &name, summary_only)?;
-            }
-            SkillsAction::Run {
-                paths,
-                script,
-                env_vars,
-                print_body,
-                name,
-                arguments,
-            } => {
-                cmd_skills_run(
-                    &resolve_paths(paths),
-                    &name,
-                    script.as_deref(),
-                    &env_vars,
-                    print_body,
-                    &arguments,
-                )
-                .await?;
-            }
-            SkillsAction::Create {
-                source,
-                output_dir,
-                auth_headers,
-            } => {
-                let headers = parse_headers(&auth_headers)?;
-                let skill_dir =
-                    generator::generate_from_openapi(&source, &output_dir, &headers).await?;
-                println!("Generated skill at: {}", skill_dir.display());
-            }
-            SkillsAction::Install {
-                source,
-                path,
-                r#ref,
-                skills_path,
-                local,
-                global,
-                root,
-            } => {
-                let install_paths =
-                    resolve_install_paths(resolve_skills_install_root(root), global, local)?;
-                let report = skill_install::install_skill(skill_install::SkillInstallRequest {
-                    source: &source,
-                    repo_subpath: path.as_deref(),
-                    reference: r#ref.as_deref(),
-                    install_paths: &install_paths,
-                    skills_path: &skills_path,
-                })?;
-                println!(
-                    "Installed skill `{}` to {} ({})",
-                    report.name,
-                    report.target_dir.display(),
-                    report.install_scope.as_str()
-                );
-            }
-            SkillsAction::Update {
-                name,
-                skills_path,
-                local,
-                global,
-                root,
-            } => {
-                let install_paths =
-                    resolve_install_paths(resolve_skills_install_root(root), global, local)?;
-                let reports = skill_install::update_skills(skill_install::SkillUpdateRequest {
-                    name: name.as_deref(),
-                    install_paths: &install_paths,
-                    skills_path: &skills_path,
-                })?;
-                for report in reports {
-                    println!(
-                        "Updated skill `{}` at {} ({})",
-                        report.name,
-                        report.target_dir.display(),
-                        report.install_scope.as_str()
-                    );
-                }
-            }
-        },
+        }
 
         Commands::Stdio {
             command,
