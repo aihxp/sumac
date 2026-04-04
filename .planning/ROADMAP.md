@@ -98,7 +98,7 @@ managed asset policy.
      coverage.
   3. User can rely on the installed, scanned, and served skill inventories
      matching for an active managed skill.
-**Plans**: TBD
+**Plans**: 2 plans
 
 ### Phase 11: Command-Family Extraction & Contract Gates
 **Goal**: `watch` and `skills` run through clearer service boundaries without
@@ -135,6 +135,6 @@ explicit release-soak evidence rather than assumption.
 | 7. Canonical Asset Inventory & Watch Parity | 2/2 | Complete   | 2026-04-04 |
 | 8. Watch Runtime Hardening | 2/2 | Complete   | 2026-04-04 |
 | 9. Secure Skill Materialization & Atomic Activation | 2/2 | Complete   | 2026-04-04 |
-| 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
+| 10. Unified Scan & Serve Enforcement | 0/2 | Not started | - |
 | 11. Command-Family Extraction & Contract Gates | 0/TBD | Not started | - |
 | 12. Soak Evidence & Rollback Decision | 0/TBD | Not started | - |
