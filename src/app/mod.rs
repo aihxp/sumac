@@ -1,6 +1,7 @@
 pub(crate) mod golden_path;
 pub(crate) mod onboarding;
 pub(crate) mod add;
+pub(crate) mod setup;
 pub(crate) mod status;
 pub(crate) mod sync;
 

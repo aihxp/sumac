@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 5 verified complete; Phase 6 ready to plan
-last_updated: "2026-04-04T23:35:00.000Z"
+stopped_at: Phase 6 verified complete; milestone ready for audit and archive
+last_updated: "2026-04-05T00:05:00.000Z"
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 6
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State
@@ -21,22 +21,22 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 6 — Setup Consolidation & Golden Path Closeout
+**Current focus:** Milestone audit and archive
 
 ## Current Position
 
-Phase: 6 of 6 (Setup Consolidation & Golden Path Closeout)
-Plan: 0 of 2 in current phase
-Status: Ready to plan
-Last activity: 2026-04-04 - Phase 5 completed with a dedicated add service and reusable onboarding service
+Phase: Complete (6 of 6 phases finished)
+Plan: 10 of 10 completed
+Status: Ready for milestone audit
+Last activity: 2026-04-05 - Phase 6 completed with a dedicated setup service and full golden-path parity proof
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 10
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -48,7 +48,7 @@ Progress: [████████░░] 83%
 
 **Recent Trend:**
 
-- Last 5 plans: 02-02, 02-03, 03-01, 04-01, 05-01
+- Last 5 plans: 03-01, 04-01, 05-01, 06-01, 06-02
 - Trend: Positive
 
 ## Accumulated Context
@@ -81,6 +81,9 @@ Recent decisions affecting current work:
   onboarding migration pattern and reuse that shared service when rebuilding
   `setup`.
 
+- Phase 6 complete: Treat `src/app/setup.rs` as the final golden-path slice and
+  `src/app/golden_path.rs` as dispatch-only across the maintained workflow.
+
 - Phase 3-6: Migrate `status`, then `sync`, then `add`, then `setup` in that
   order to preserve the maintained onboarding path.
 
@@ -93,11 +96,12 @@ None yet.
 - Golden-path parity must stay stable across CLI output, JSON, artifacts, and
   release behavior during migration.
 
-- `setup` still needs the final dedicated service extraction and full
-  golden-path parity closeout before the rollback path can be retired.
+- The command-family migration is complete, but the top-level rollback seam
+  remains intentionally available until the documented release-soak criterion
+  is met.
 
 ## Session Continuity
 
 Last session: 2026-04-04 18:05
-Stopped at: Phase 5 complete; Phase 6 ready for planning
+Stopped at: Phase 6 complete; milestone ready for audit and archive
 Resume file: None

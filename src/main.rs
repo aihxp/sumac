@@ -10325,7 +10325,7 @@ async fn main() -> Result<()> {
             format,
         } => {
             let outcome = app::golden_path::GoldenPathApp::current().run_setup(
-                app::golden_path::SetupRequest {
+                app::setup::SetupRequest {
                     tools,
                     limit,
                     depth,

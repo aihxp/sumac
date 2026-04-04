@@ -24,9 +24,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   first read-only proof slice.
 - [x] **Phase 4: Sync Migration** - Move `sync` onto the new core to prove
   write planning and state mutation through the same seam.
-- [ ] **Phase 5: Add Migration** - Move `add` onto the new core while
+- [x] **Phase 5: Add Migration** - Move `add` onto the new core while
   preserving onboarding behavior and generated outputs.
-- [ ] **Phase 6: Setup Consolidation & Golden Path Closeout** - Rebuild
+- [x] **Phase 6: Setup Consolidation & Golden Path Closeout** - Rebuild
   `setup` on shared services and close parity across the full golden path.
 
 ## Phase Details
@@ -137,8 +137,8 @@ services, completing parity for `setup`, `add`, `status`, and `sync`.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Rebuild `setup` over shared onboarding and reconciliation services
-- [ ] 06-02: Close full golden-path parity and retire temporary migration shims
+- [x] 06-01: Rebuild `setup` over shared onboarding and reconciliation services
+- [x] 06-02: Close full golden-path parity and retire temporary migration shims
 
 ## Progress
 
@@ -152,4 +152,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Status Migration | 1/1 | Complete   | 2026-04-04 |
 | 4. Sync Migration | 1/1 | Complete   | 2026-04-04 |
 | 5. Add Migration | 1/1 | Complete   | 2026-04-04 |
-| 6. Setup Consolidation & Golden Path Closeout | 0/2 | Not started | - |
+| 6. Setup Consolidation & Golden Path Closeout | 2/2 | Complete   | 2026-04-04 |
