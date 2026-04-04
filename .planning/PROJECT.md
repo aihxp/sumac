@@ -13,6 +13,26 @@ surface stays broad and stable, but the internals are being rebuilt so Sumac
 feels like a cleaner native system rather than an accumulated set of layers and
 special cases.
 
+## Current State
+
+- milestone `v1.0` is complete
+- the maintained golden path (`setup`, `add`, `status`, `sync`) now runs
+  through dedicated service modules under `src/app/`
+- `src/app/golden_path.rs` is now a thin dispatch seam
+- the rollback seam remains intentionally available through
+  `SXMC_GOLDEN_PATH_ROUTE=legacy` until the documented release-soak rule is met
+
+See:
+- [`.planning/v1.0-MILESTONE-AUDIT.md`](/Users/hprincivil/Projects/sxmc/.planning/v1.0-MILESTONE-AUDIT.md)
+- [`.planning/milestones/v1.0-ROADMAP.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.0-ROADMAP.md)
+- [`.planning/milestones/v1.0-REQUIREMENTS.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.0-REQUIREMENTS.md)
+
+## Next Milestone Goals
+
+- let one stable release cycle ship with the rollback seam intact
+- decide whether to retire `SXMC_GOLDEN_PATH_ROUTE=legacy` after that soak
+- choose the next subsystem family to migrate onto the same core/app pattern
+
 ## Core Value
 
 Sumac must let AI systems understand and use real existing tools and interfaces
@@ -37,16 +57,9 @@ without bespoke glue, while staying fast, local-first, and reliable.
 
 ### Active
 
-- [ ] Introduce a cleaner internal core/app layer that becomes the canonical
-  orchestration boundary for Sumac
-- [ ] Rehome the stable golden path (`setup`, `add`, `status`, `sync`) onto the
-  new core end to end before broader migration
-- [ ] Preserve public CLI behavior, JSON outputs, generated files, and release
-  cadence while migrating internals
-- [ ] Reduce `src/main.rs` sprawl and move command-family behavior into clearer,
-  testable subsystem boundaries
-- [ ] Create a migration pattern that lets remaining surfaces move into the new
-  core slice by slice without a product reset
+- [ ] Select the next rewrite milestone after the golden-path release soak
+- [ ] Decide whether the rollback seam can be retired after one stable release
+- [ ] Extend the proven migration pattern to the next subsystem family
 
 ### Out of Scope
 
@@ -96,10 +109,10 @@ currently need the most cleanup.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Preserve the existing Sumac product while rewriting internals | The product already has validated value; the problem is internal coherence, not product-market direction | — Pending |
-| Start with `src/main.rs` and the golden onboarding path | This is the clearest orchestration hotspot and the maintained user workflow | — Pending |
-| Build a cleaner internal core/app layer inside the current repo | Enables greenfield internals without a product reset or long-lived fork | — Pending |
-| Keep releases and `1.x` contracts stable during migration | Prevents the rewrite from becoming a trust-breaking freeze or compatibility reset | — Pending |
+| Preserve the existing Sumac product while rewriting internals | The product already had validated value; the problem was internal coherence, not product-market direction | Complete in v1.0 |
+| Start with `src/main.rs` and the golden onboarding path | This was the clearest orchestration hotspot and the maintained user workflow | Complete in v1.0 |
+| Build a cleaner internal core/app layer inside the current repo | Enabled greenfield internals without a product reset or long-lived fork | Complete in v1.0 |
+| Keep releases and `1.x` contracts stable during migration | Prevented the rewrite from becoming a trust-breaking freeze or compatibility reset | Complete in v1.0 |
 
 ## Evolution
 
@@ -119,4 +132,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after initialization*
+*Last updated: 2026-04-05 after v1.0 completion*

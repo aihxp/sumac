@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Phase 6 verified complete; milestone ready for audit and archive
-last_updated: "2026-04-05T00:05:00.000Z"
+status: completed
+stopped_at: Milestone v1.0 archived; waiting for next milestone
+last_updated: "2026-04-05T00:30:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 6
@@ -21,14 +21,14 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Milestone audit and archive
+**Current focus:** No active milestone
 
 ## Current Position
 
 Phase: Complete (6 of 6 phases finished)
 Plan: 10 of 10 completed
-Status: Ready for milestone audit
-Last activity: 2026-04-05 - Phase 6 completed with a dedicated setup service and full golden-path parity proof
+Status: Milestone complete
+Last activity: 2026-04-05 - v1.0 archived after a passed milestone audit
 
 Progress: [██████████] 100%
 
@@ -89,7 +89,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+No active milestone todos.
 
 ### Blockers/Concerns
 
@@ -103,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-04-04 18:05
-Stopped at: Phase 6 complete; milestone ready for audit and archive
+Stopped at: Milestone v1.0 complete and archived
 Resume file: None
