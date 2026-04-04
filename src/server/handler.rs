@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Component;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 
 use crate::discovery_snapshots::{DiscoveryGeneratedTool, DiscoveryResource};
 use crate::executor;
-use crate::skills::models::Skill;
+use crate::skills::models::{Skill, SkillAsset, SkillAssetKind};
 use crate::skills::parser::parse_argument_hint;
 
 const TOOL_GET_AVAILABLE_SKILLS: &str = "get_available_skills";
@@ -260,7 +261,7 @@ impl SkillsServer {
                     .iter()
                     .map(|reference| reference.uri.clone())
                     .collect::<Vec<_>>(),
-                "files": list_skill_files(&skill.base_dir)?,
+                "files": list_skill_files(skill)?,
             })),
         }
     }
@@ -665,14 +666,7 @@ fn read_text_file(path: &Path) -> Result<String, McpError> {
 }
 
 fn resolve_skill_file_path(skill: &Skill, relative_path: &str) -> Result<PathBuf, McpError> {
-    let relative = Path::new(relative_path);
-    if relative.as_os_str().is_empty() || relative.is_absolute() {
-        return Err(McpError::invalid_params(
-            "relative_path must be a non-empty relative path".to_string(),
-            None,
-        ));
-    }
-
+    let normalized = normalize_relative_path(relative_path)?;
     let base = skill.base_dir.canonicalize().map_err(|e| {
         McpError::internal_error(
             format!(
@@ -684,21 +678,30 @@ fn resolve_skill_file_path(skill: &Skill, relative_path: &str) -> Result<PathBuf
         )
     })?;
 
-    let candidate = base.join(relative);
-    let resolved = candidate.canonicalize().map_err(|e| {
-        McpError::invalid_params(format!("File '{}' not found: {}", relative_path, e), None)
+    let asset = managed_asset_by_relative_path(skill, &normalized).ok_or_else(|| {
+        McpError::invalid_params(
+            format!("Path '{}' is not a managed skill asset", relative_path),
+            None,
+        )
+    })?;
+
+    let resolved = asset.path.canonicalize().map_err(|e| {
+        McpError::invalid_params(
+            format!("Managed asset '{}' not found: {}", normalized, e),
+            None,
+        )
     })?;
 
     if !resolved.starts_with(&base) {
         return Err(McpError::invalid_params(
-            format!("Path '{}' escapes the skill directory", relative_path),
+            format!("Managed asset '{}' escapes the skill directory", normalized),
             None,
         ));
     }
 
     if !resolved.is_file() {
         return Err(McpError::invalid_params(
-            format!("Path '{}' is not a file", relative_path),
+            format!("Managed asset '{}' is not a file", normalized),
             None,
         ));
     }
@@ -706,60 +709,61 @@ fn resolve_skill_file_path(skill: &Skill, relative_path: &str) -> Result<PathBuf
     Ok(resolved)
 }
 
-fn list_skill_files(base_dir: &Path) -> Result<Vec<String>, McpError> {
-    let canonical_base = base_dir.canonicalize().map_err(|e| {
-        McpError::internal_error(
-            format!(
-                "Failed to resolve skill directory {}: {}",
-                base_dir.display(),
-                e
-            ),
+fn normalize_relative_path(relative_path: &str) -> Result<String, McpError> {
+    let relative = Path::new(relative_path);
+    if relative.as_os_str().is_empty() || relative.is_absolute() {
+        return Err(McpError::invalid_params(
+            "relative_path must be a non-empty relative path".to_string(),
             None,
-        )
-    })?;
+        ));
+    }
 
-    let mut files = Vec::new();
-    collect_skill_files(&canonical_base, &canonical_base, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-
-fn collect_skill_files(
-    current: &Path,
-    base: &Path,
-    files: &mut Vec<String>,
-) -> Result<(), McpError> {
-    for entry in std::fs::read_dir(current).map_err(|e| {
-        McpError::internal_error(format!("Failed to read {}: {}", current.display(), e), None)
-    })? {
-        let entry = entry.map_err(|e| {
-            McpError::internal_error(
-                format!(
-                    "Failed to read directory entry in {}: {}",
-                    current.display(),
-                    e
-                ),
-                None,
-            )
-        })?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_skill_files(&path, base, files)?;
-        } else if path.is_file() {
-            let relative = path.strip_prefix(base).map_err(|e| {
-                McpError::internal_error(
-                    format!(
-                        "Failed to compute relative path for {}: {}",
-                        path.display(),
-                        e
-                    ),
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                return Err(McpError::invalid_params(
+                    format!("Path '{}' escapes the skill directory", relative_path),
                     None,
-                )
-            })?;
-            files.push(relative.to_string_lossy().replace('\\', "/"));
+                ))
+            }
+            Component::Prefix(_) | Component::RootDir => {
+                return Err(McpError::invalid_params(
+                    "relative_path must be a non-empty relative path".to_string(),
+                    None,
+                ))
+            }
         }
     }
-    Ok(())
+
+    if parts.is_empty() {
+        return Err(McpError::invalid_params(
+            "relative_path must be a non-empty relative path".to_string(),
+            None,
+        ));
+    }
+
+    Ok(parts.join("/"))
+}
+
+fn managed_asset_by_relative_path<'a>(skill: &'a Skill, relative_path: &str) -> Option<&'a SkillAsset> {
+    skill.assets.iter().find(|asset| asset.relative_path == relative_path)
+}
+
+fn list_skill_files(skill: &Skill) -> Result<Vec<String>, McpError> {
+    let mut files = skill
+        .assets
+        .iter()
+        .filter(|asset| matches!(
+            asset.kind,
+            SkillAssetKind::SkillFile | SkillAssetKind::Script | SkillAssetKind::Reference
+        ))
+        .map(|asset| asset.relative_path.clone())
+        .collect::<Vec<_>>();
+    files.sort();
+    Ok(files)
 }
 
 #[cfg(test)]
@@ -795,6 +799,14 @@ mod tests {
         }
     }
 
+    fn make_asset(path: PathBuf, relative_path: &str, kind: SkillAssetKind) -> SkillAsset {
+        SkillAsset {
+            relative_path: relative_path.to_string(),
+            path,
+            kind,
+        }
+    }
+
     #[test]
     fn test_resolve_skill_file_path_rejects_escape() {
         let dir = tempfile::tempdir().unwrap();
@@ -811,16 +823,64 @@ mod tests {
     }
 
     #[test]
-    fn test_list_skill_files_recursive() {
+    fn test_resolve_skill_file_path_rejects_unmanaged_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "content").unwrap();
+        std::fs::write(skill_dir.join("secret.txt"), "not managed").unwrap();
+
+        let skill = make_skill(skill_dir);
+        let err = resolve_skill_file_path(&skill, "secret.txt").unwrap_err();
+        assert!(err.message.contains("not a managed skill asset"));
+    }
+
+    #[test]
+    fn test_resolve_skill_file_path_allows_managed_nested_asset() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join("skill");
+        std::fs::create_dir_all(skill_dir.join("references/nested")).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "content").unwrap();
+        let guide_path = skill_dir.join("references/nested/guide.md");
+        std::fs::write(&guide_path, "# Guide").unwrap();
+
+        let mut skill = make_skill(skill_dir);
+        skill.assets.push(make_asset(
+            guide_path.clone(),
+            "references/nested/guide.md",
+            SkillAssetKind::Reference,
+        ));
+
+        let resolved = resolve_skill_file_path(&skill, "references/nested/guide.md").unwrap();
+        assert_eq!(resolved, guide_path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_list_skill_files_returns_only_managed_assets() {
         let dir = tempfile::tempdir().unwrap();
         let skill_dir = dir.path().join("skill");
         std::fs::create_dir_all(skill_dir.join("references")).unwrap();
         std::fs::create_dir_all(skill_dir.join("scripts")).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), "content").unwrap();
-        std::fs::write(skill_dir.join("references/guide.md"), "# Guide").unwrap();
-        std::fs::write(skill_dir.join("scripts/run.sh"), "#!/bin/bash").unwrap();
+        let guide_path = skill_dir.join("references/guide.md");
+        let script_path = skill_dir.join("scripts/run.sh");
+        std::fs::write(&guide_path, "# Guide").unwrap();
+        std::fs::write(&script_path, "#!/bin/bash").unwrap();
+        std::fs::write(skill_dir.join("secret.txt"), "not managed").unwrap();
 
-        let files = list_skill_files(&skill_dir).unwrap();
+        let mut skill = make_skill(skill_dir);
+        skill.assets.push(make_asset(
+            script_path,
+            "scripts/run.sh",
+            SkillAssetKind::Script,
+        ));
+        skill.assets.push(make_asset(
+            guide_path,
+            "references/guide.md",
+            SkillAssetKind::Reference,
+        ));
+
+        let files = list_skill_files(&skill).unwrap();
         assert_eq!(
             files,
             vec![
