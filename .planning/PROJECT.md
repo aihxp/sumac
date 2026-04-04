@@ -15,23 +15,35 @@ special cases.
 
 ## Current State
 
-- milestone `v1.0` is complete
+- milestone `v1.0` is complete and archived
 - the maintained golden path (`setup`, `add`, `status`, `sync`) now runs
   through dedicated service modules under `src/app/`
 - `src/app/golden_path.rs` is now a thin dispatch seam
 - the rollback seam remains intentionally available through
   `SXMC_GOLDEN_PATH_ROUTE=legacy` until the documented release-soak rule is met
+- the next migration pressure is concentrated in `watch`, `skills`, and the
+  remaining top-level orchestration hotspots outside the golden path
 
 See:
 - [`.planning/v1.0-MILESTONE-AUDIT.md`](/Users/hprincivil/Projects/sxmc/.planning/v1.0-MILESTONE-AUDIT.md)
 - [`.planning/milestones/v1.0-ROADMAP.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.0-ROADMAP.md)
 - [`.planning/milestones/v1.0-REQUIREMENTS.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.0-REQUIREMENTS.md)
 
-## Next Milestone Goals
+## Current Milestone: v1.1 Platform Hardening and Core Expansion
 
-- let one stable release cycle ship with the rollback seam intact
-- decide whether to retire `SXMC_GOLDEN_PATH_ROUTE=legacy` after that soak
-- choose the next subsystem family to migrate onto the same core/app pattern
+**Goal:** Extend the greenfield-style internal rewrite beyond the golden path
+by hardening the next operational subsystems and moving them onto clearer
+boundaries without changing Sumac's product surface.
+
+**Target features:**
+- make `watch` reliable for long-running automation, notifications, and nested
+  skill changes
+- harden `skills` install/update/serve flows, especially git sources,
+  allowlisted file handling, and security scanning
+- reduce remaining `src/main.rs` and top-level dispatch hotspots by moving the
+  next command families onto scoped modules and seams
+- re-evaluate the top-level rollback seam after the stable release soak and
+  keep it only if the evidence still justifies it
 
 ## Core Value
 
@@ -57,9 +69,16 @@ without bespoke glue, while staying fast, local-first, and reliable.
 
 ### Active
 
-- [ ] Select the next rewrite milestone after the golden-path release soak
-- [ ] Decide whether the rollback seam can be retired after one stable release
-- [ ] Extend the proven migration pattern to the next subsystem family
+- [ ] `watch` stays responsive and accurate under polling, notifications, and
+  long-running automation use
+- [ ] git-backed and remote skill installs are reliable, constrained to safe
+  file sets, and cleaned up correctly
+- [ ] served skill contents follow a predictable allowlist and scanner coverage
+  does not silently skip risky files
+- [ ] the next non-golden-path command families move onto clearer
+  module/service boundaries without breaking `1.x` CLI behavior
+- [ ] the rollback seam is kept or retired based on release-soak evidence, not
+  assumption
 
 ### Out of Scope
 
@@ -90,6 +109,13 @@ rewrite slice will start with the stable onboarding/reconciliation loop because
 it is the maintained user path and touches the exact orchestration seams that
 currently need the most cleanup.
 
+With the golden path now migrated, the next milestone can widen that pattern
+to the operational surfaces that still carry the highest risk: `watch`
+reliability, skill lifecycle hardening, and the remaining orchestration-heavy
+command families that still concentrate complexity in top-level dispatch code.
+This keeps the rewrite moving forward without pretending the product is
+starting over.
+
 ## Constraints
 
 - **Compatibility**: Public CLI behavior, JSON outputs, generated files, and
@@ -104,6 +130,8 @@ currently need the most cleanup.
   cycle — the rewrite is internal architecture work, not a product narrowing
 - **Testing**: Each migrated slice must prove parity with the existing product
   path before old logic is retired
+- **Security exposure**: Installed and served skills must expose only intended
+  contents — remote convenience cannot quietly widen the readable surface
 
 ## Key Decisions
 
@@ -113,6 +141,7 @@ currently need the most cleanup.
 | Start with `src/main.rs` and the golden onboarding path | This was the clearest orchestration hotspot and the maintained user workflow | Complete in v1.0 |
 | Build a cleaner internal core/app layer inside the current repo | Enabled greenfield internals without a product reset or long-lived fork | Complete in v1.0 |
 | Keep releases and `1.x` contracts stable during migration | Prevented the rewrite from becoming a trust-breaking freeze or compatibility reset | Complete in v1.0 |
+| Use v1.1 to harden `watch`, `skills`, and top-level orchestration together | These are now the clearest remaining risk surfaces and they overlap in reliability, security, and dispatch complexity | — Pending |
 
 ## Evolution
 
@@ -132,4 +161,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after v1.0 completion*
+*Last updated: 2026-04-04 after v1.1 milestone kickoff*

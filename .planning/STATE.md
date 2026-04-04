@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: completed
-stopped_at: Milestone v1.0 archived; waiting for next milestone
-last_updated: "2026-04-05T00:30:00.000Z"
+milestone: v1.1
+milestone_name: platform hardening and core expansion
+status: defining-requirements
+stopped_at: Milestone v1.1 opened; defining requirements and roadmap
+last_updated: "2026-04-04T14:48:12Z"
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 10
-  completed_plans: 10
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -21,22 +21,23 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** No active milestone
+**Current focus:** Milestone v1.1 - Platform Hardening and Core Expansion
 
 ## Current Position
 
-Phase: Complete (6 of 6 phases finished)
-Plan: 10 of 10 completed
-Status: Milestone complete
-Last activity: 2026-04-05 - v1.0 archived after a passed milestone audit
+Phase: Not started (defining requirements)
+Plan: -
+Status: Defining requirements
+Last activity: 2026-04-04 - Milestone v1.1 started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
 - Total plans completed: 10
+- Total plans completed this milestone: 0
 - Average duration: - min
 - Total execution time: 0.0 hours
 
@@ -48,8 +49,8 @@ Progress: [██████████] 100%
 
 **Recent Trend:**
 
-- Last 5 plans: 03-01, 04-01, 05-01, 06-01, 06-02
-- Trend: Positive
+- Last 5 plans: None yet
+- Trend: Not enough data
 
 ## Accumulated Context
 
@@ -89,7 +90,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-No active milestone todos.
+No scoped milestone todos yet. Requirements and roadmap are being defined.
 
 ### Blockers/Concerns
 
@@ -100,8 +101,11 @@ No active milestone todos.
   remains intentionally available until the documented release-soak criterion
   is met.
 
+- `watch` and `skills` still contain the most visible reliability and security
+  risks outside the completed golden path migration.
+
 ## Session Continuity
 
-Last session: 2026-04-04 18:05
-Stopped at: Milestone v1.0 complete and archived
+Last session: 2026-04-04 10:48
+Stopped at: Milestone v1.1 kickoff and research handoff
 Resume file: None
