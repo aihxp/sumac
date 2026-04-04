@@ -114,7 +114,7 @@ breaking existing `1.x` command contracts.
   3. User can keep existing wrappers and automation pointed at `watch` and
      `skills` without contract regressions after shared orchestration moves out
      of top-level dispatch hotspots.
-**Plans**: TBD
+**Plans**: 2 plans
 
 ### Phase 12: Soak Evidence & Rollback Decision
 **Goal**: The migrated watch and skills route is kept or rolled back based on
@@ -136,5 +136,5 @@ explicit release-soak evidence rather than assumption.
 | 8. Watch Runtime Hardening | 2/2 | Complete   | 2026-04-04 |
 | 9. Secure Skill Materialization & Atomic Activation | 2/2 | Complete   | 2026-04-04 |
 | 10. Unified Scan & Serve Enforcement | 2/2 | Complete    | 2026-04-04 |
-| 11. Command-Family Extraction & Contract Gates | 0/TBD | Not started | - |
+| 11. Command-Family Extraction & Contract Gates | 0/2 | Not started | - |
 | 12. Soak Evidence & Rollback Decision | 0/TBD | Not started | - |
