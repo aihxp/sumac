@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
-status: Ready to plan
-stopped_at: "Phase 11 complete; Phase 12 discuss and planning are next"
-last_updated: "2026-04-04T23:31:18Z"
+status: Milestone complete
+stopped_at: "Phase 12 complete; milestone audit and archive are next"
+last_updated: "2026-04-04T23:35:34Z"
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
+  completed_phases: 6
+  total_plans: 12
+  completed_plans: 12
 ---
 
 # Project State
@@ -21,12 +21,12 @@ See: `.planning/PROJECT.md` (updated 2026-04-04)
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Phase 12 — Soak Evidence & Rollback Decision
+**Current focus:** Milestone completion — audit and archive v1.1
 
 ## Current Position
 
-Phase: 12
-Plan: Not started
+Phase: Complete
+Plan: Milestone closeout
 
 ## Performance Metrics
 
@@ -82,12 +82,16 @@ Recent decisions affecting current work:
 - Phase 11: Move `skills` and CLI-facing `serve` orchestration behind app
   services and require real-fixture contract coverage for the migrated paths.
 
+- Phase 12: Keep migrated `watch` and `skills` as the sole route, but retain
+  `SXMC_GOLDEN_PATH_ROUTE=legacy` intentionally until a later release-soak
+  review justifies retirement.
+
 ### Pending Todos
 
-Remaining in Phase 12:
+Remaining after Phase 12:
 
-- Gather context, research, and execution plans for soak evidence and rollback
-  decision-making.
+- Audit milestone completion, archive v1.1 artifacts, and prepare the planning
+  space for the next milestone.
 
 ### Blockers/Concerns
 
@@ -104,11 +108,11 @@ Remaining in Phase 12:
 - v1.1 phase plans are still TBD; parity coverage and soak evidence must be
   preserved as hard gates during implementation.
 
-- Phase 12 must decide whether the rollback seam is kept or retired based on
-  explicit soak evidence rather than assumption.
+- The golden-path legacy seam is retained intentionally for now, so a later
+  release-soak review must still revisit retirement explicitly.
 
 ## Session Continuity
 
 Last session: 2026-04-04 13:19
-Stopped at: Phase 11 complete; Phase 12 discuss and planning are next
+Stopped at: Phase 12 complete; milestone audit and archive are next
 Resume file: None

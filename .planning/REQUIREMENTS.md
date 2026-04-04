@@ -58,7 +58,7 @@ Each will map to exactly one roadmap phase.
 - [x] **ROL-05**: Migrated watch and skills flows have contract or parity
   coverage on real fixtures before full cutover, including output, exit-code,
   and file-side-effect checks where applicable.
-- [ ] **ROL-06**: The rollback seam is retained or retired only after explicit
+- [x] **ROL-06**: The rollback seam is retained or retired only after explicit
   release-soak evidence shows the new path is safe to keep as the sole route.
 
 ## v2 Requirements
@@ -107,7 +107,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CORE-06 | Phase 11 | Complete |
 | CORE-07 | Phase 11 | Complete |
 | ROL-05 | Phase 11 | Complete |
-| ROL-06 | Phase 12 | Pending |
+| ROL-06 | Phase 12 | Complete |
 
 **Coverage:**
 - v1 requirements: 13 total
@@ -116,4 +116,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-04*
-*Last updated: 2026-04-04 after Phase 11 completion*
+*Last updated: 2026-04-04 after Phase 12 completion*

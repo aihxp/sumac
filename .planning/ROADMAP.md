@@ -35,7 +35,7 @@ command extraction, and finally a soak-based rollback decision.
 - [x] **Phase 11: Command-Family Extraction & Contract Gates** - Move the (completed 2026-04-04)
   remaining `watch` and `skills` orchestration off top-level hotspots while
   preserving `1.x` behavior under real-fixture parity checks.
-- [ ] **Phase 12: Soak Evidence & Rollback Decision** - Keep or retire the
+- [x] **Phase 12: Soak Evidence & Rollback Decision** - Keep or retire the (completed 2026-04-04)
   rollback seam only after explicit release-soak evidence proves the new route
   is safe.
 
@@ -137,4 +137,4 @@ explicit release-soak evidence rather than assumption.
 | 9. Secure Skill Materialization & Atomic Activation | 2/2 | Complete   | 2026-04-04 |
 | 10. Unified Scan & Serve Enforcement | 2/2 | Complete    | 2026-04-04 |
 | 11. Command-Family Extraction & Contract Gates | 2/2 | Complete    | 2026-04-04 |
-| 12. Soak Evidence & Rollback Decision | 0/2 | Not started | - |
+| 12. Soak Evidence & Rollback Decision | 2/2 | Complete    | 2026-04-04 |
