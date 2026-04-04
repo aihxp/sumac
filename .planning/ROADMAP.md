@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   orchestration boundary and rollback-safe routing inside the existing binary.
 - [x] **Phase 3: Status Migration** - Move `status` onto the new core as the
   first read-only proof slice.
-- [ ] **Phase 4: Sync Migration** - Move `sync` onto the new core to prove
+- [x] **Phase 4: Sync Migration** - Move `sync` onto the new core to prove
   write planning and state mutation through the same seam.
 - [ ] **Phase 5: Add Migration** - Move `add` onto the new core while
   preserving onboarding behavior and generated outputs.
@@ -104,7 +104,7 @@ materialization through the same core/app seam.
 **Plans**: 1 plan
 
 Plans:
-- [ ] 04-01: Migrate `sync` onto the shared core/app seam and prove parity
+- [x] 04-01: Migrate `sync` onto the shared core/app seam and prove parity
 
 ### Phase 5: Add Migration
 **Goal**: `add` moves onto the new core/app path while keeping onboarding,
@@ -150,6 +150,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Contract Baseline & Parity Harness | 2/2 | Complete   | 2026-04-04 |
 | 2. Core/App Seam & Cutover Foundation | 3/3 | Complete   | 2026-04-04 |
 | 3. Status Migration | 1/1 | Complete   | 2026-04-04 |
-| 4. Sync Migration | 0/1 | Not started | - |
+| 4. Sync Migration | 1/1 | Complete   | 2026-04-04 |
 | 5. Add Migration | 0/1 | Not started | - |
 | 6. Setup Consolidation & Golden Path Closeout | 0/2 | Not started | - |
