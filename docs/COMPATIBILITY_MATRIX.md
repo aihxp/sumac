@@ -13,6 +13,14 @@ This matrix summarizes the maintained `1.x` validation lanes for Sumac
 | `scripts/test-sxmc.sh` | yes | yes | best-effort local | Comprehensive release-sized shell suite; full CI lanes on Unix |
 | Windows PowerShell JSON smoke | n/a | n/a | yes | Explicit `doctor` / inspection / cache JSON checks |
 
+## Rewrite Golden-Path Parity
+
+| Baseline | Linux | macOS | Windows | Notes |
+|---|---|---|---|---|
+| `setup -> add -> status -> sync` contract inventory | yes | yes | yes | Source of truth: [GOLDEN_PATH_CONTRACT.md](/Users/hprincivil/Projects/sxmc/docs/GOLDEN_PATH_CONTRACT.md) |
+| Rust rewrite parity tests (`test_rewrite_golden_path_*`) | yes | yes | yes | Structured-output baseline for the maintained lifecycle |
+| Shell rewrite parity checks in `scripts/test-sxmc.sh` | yes | yes | best-effort local | Human/user-path confirmation of the same lifecycle |
+
 ## Optional External Coverage
 
 | Path | Requires network | Requires Node | Purpose |

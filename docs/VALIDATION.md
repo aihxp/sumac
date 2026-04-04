@@ -28,9 +28,30 @@ bash scripts/smoke_real_world_mcps.sh target/debug/sxmc
 For `1.x` readiness, also confirm that:
 
 - [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) still matches the shipped support boundary
+- [GOLDEN_PATH_CONTRACT.md](GOLDEN_PATH_CONTRACT.md) still matches the
+  maintained rewrite baseline for `setup -> add -> status -> sync`
 - [STABILITY.md](STABILITY.md) still matches the promised stable workflow and JSON rules
 - the `setup -> add -> status -> sync` lifecycle still behaves as a
   first-class maintained path, not a best-effort side effect
+
+## Rewrite Parity Baseline
+
+Phase 1 of the greenfield-style rewrite uses
+[GOLDEN_PATH_CONTRACT.md](GOLDEN_PATH_CONTRACT.md) as the narrow source of
+truth for the maintained onboarding and reconciliation loop:
+
+```text
+setup -> add -> status -> sync
+```
+
+That baseline is enforced through explicit parity checks in:
+
+- `tests/cli_integration.rs` via `test_rewrite_golden_path_*`
+- `scripts/test-sxmc.sh` via the labeled rewrite parity checks in the add/setup
+  pipeline section
+
+Later migration phases should extend that same proof path instead of inventing a
+separate rewrite-only validation stack.
 
 ## Coverage Summary
 
@@ -56,6 +77,7 @@ High-value scenarios covered in this stack include:
 - `skills create`
 - promptless or resource-less third-party MCP servers
 - zero-argument tool interoperability
+- rewrite parity coverage for `setup`, `add`, `status`, and `sync`
 - CLI inspection, startup artifact preview, managed doc apply, and Cursor config merge coverage
 - doctor JSON and human-mode coverage
 - cache statistics, cache invalidation, and batch CLI inspection coverage

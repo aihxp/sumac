@@ -1512,6 +1512,47 @@ EOF
     fail "setup host runtime detection" "${host_detect_json:0:140}"
   fi
 
+  # Rewrite golden-path parity spot-checks for the maintained onboarding loop.
+  if json_check "$add_json_out" "d.get('command') == 'add' and d.get('install_scope') == 'local' and d.get('profile', {}).get('command') == 'git'"; then
+    pass "rewrite parity: add structured contract"
+  else
+    fail "rewrite parity: add structured contract" "${add_json_out:0:140}"
+  fi
+
+  if json_check "$setup_json_out" "d.get('command') == 'setup' and d.get('install_scope') == 'local' and len(d.get('results', [])) >= 1"; then
+    pass "rewrite parity: setup structured contract"
+  else
+    fail "rewrite parity: setup structured contract" "${setup_json_out:0:140}"
+  fi
+
+  rewrite_status_out=$("$SXMC" status --root "$ADD_ROOT" --format json-pretty 2>/dev/null || true)
+  if json_check "$rewrite_status_out" "'ai_knowledge' in d and 'recovery_plan' in d and d.get('install_scope') == 'local'"; then
+    pass "rewrite parity: status structured contract"
+  else
+    fail "rewrite parity: status structured contract" "${rewrite_status_out:0:140}"
+  fi
+
+  REWRITE_SYNC_ROOT="$TMPDIR_TEST/rewrite-sync-root"
+  mkdir -p "$REWRITE_SYNC_ROOT/.sxmc/ai/profiles"
+  rewrite_sync_profile=$("$SXMC" inspect cli git --format json-pretty 2>/dev/null || true)
+  if [ -n "$rewrite_sync_profile" ] && json_check "$rewrite_sync_profile" "'command' in d and d.get('command') == 'git'"; then
+    python3 - <<'PY' "$rewrite_sync_profile" "$REWRITE_SYNC_ROOT/.sxmc/ai/profiles/git.json"
+import json, sys
+value = json.loads(sys.argv[1])
+value["summary"] = "Outdated git summary"
+with open(sys.argv[2], "w") as f:
+    json.dump(value, f, indent=2)
+PY
+    rewrite_sync_out=$("$SXMC" sync --root "$REWRITE_SYNC_ROOT" --format json-pretty 2>/dev/null || true)
+    if json_check "$rewrite_sync_out" "d.get('command') == 'sync' and d.get('install_scope') == 'local' and d.get('mode') == 'preview' and d.get('changed_count') == 1"; then
+      pass "rewrite parity: sync structured contract"
+    else
+      fail "rewrite parity: sync structured contract" "${rewrite_sync_out:0:140}"
+    fi
+  else
+    fail "rewrite parity: sync fixture setup" "${rewrite_sync_profile:0:120}"
+  fi
+
   REGISTER_ROOT="$TMPDIR_TEST/register-root"
   mkdir -p "$REGISTER_ROOT"
   "$SXMC" wrap git --register-host cursor --register-root "$REGISTER_ROOT" >/dev/null 2>&1 &
