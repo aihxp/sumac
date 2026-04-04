@@ -94,27 +94,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PAR-01 | — | Pending |
-| PAR-02 | — | Pending |
-| PAR-03 | — | Pending |
-| PAR-04 | — | Pending |
-| CORE-01 | — | Pending |
-| CORE-02 | — | Pending |
-| CORE-03 | — | Pending |
-| CORE-04 | — | Pending |
-| PATH-01 | — | Pending |
-| PATH-02 | — | Pending |
-| PATH-03 | — | Pending |
-| PATH-04 | — | Pending |
-| ROL-01 | — | Pending |
-| ROL-02 | — | Pending |
-| ROL-03 | — | Pending |
-| ROL-04 | — | Pending |
+| PAR-01 | Phase 1 | Pending |
+| PAR-02 | Phase 1 | Pending |
+| PAR-03 | Phase 6 | Pending |
+| PAR-04 | Phase 6 | Pending |
+| CORE-01 | Phase 2 | Pending |
+| CORE-02 | Phase 2 | Pending |
+| CORE-03 | Phase 2 | Pending |
+| CORE-04 | Phase 2 | Pending |
+| PATH-01 | Phase 3 | Pending |
+| PATH-02 | Phase 4 | Pending |
+| PATH-03 | Phase 5 | Pending |
+| PATH-04 | Phase 6 | Pending |
+| ROL-01 | Phase 2 | Pending |
+| ROL-02 | Phase 2 | Pending |
+| ROL-03 | Phase 2 | Pending |
+| ROL-04 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-04*
