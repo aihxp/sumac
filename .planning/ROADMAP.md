@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   path interface inventory and parity checks before migration.
 - [x] **Phase 2: Core/App Seam & Cutover Foundation** - Introduce the new
   orchestration boundary and rollback-safe routing inside the existing binary.
-- [ ] **Phase 3: Status Migration** - Move `status` onto the new core as the
+- [x] **Phase 3: Status Migration** - Move `status` onto the new core as the
   first read-only proof slice.
 - [ ] **Phase 4: Sync Migration** - Move `sync` onto the new core to prove
   write planning and state mutation through the same seam.
@@ -89,7 +89,7 @@ preserving its current behavior and output contracts.
 **Plans**: 1 plan
 
 Plans:
-- [ ] 03-01: Migrate `status` onto the shared core/app seam and prove parity
+- [x] 03-01: Migrate `status` onto the shared core/app seam and prove parity
 
 ### Phase 4: Sync Migration
 **Goal**: `sync` proves write planning, state mutation, and artifact
@@ -149,7 +149,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Contract Baseline & Parity Harness | 2/2 | Complete   | 2026-04-04 |
 | 2. Core/App Seam & Cutover Foundation | 3/3 | Complete   | 2026-04-04 |
-| 3. Status Migration | 0/1 | Not started | - |
+| 3. Status Migration | 1/1 | Complete   | 2026-04-04 |
 | 4. Sync Migration | 0/1 | Not started | - |
 | 5. Add Migration | 0/1 | Not started | - |
 | 6. Setup Consolidation & Golden Path Closeout | 0/2 | Not started | - |
