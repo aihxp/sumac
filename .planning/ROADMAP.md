@@ -16,7 +16,7 @@ can continue without breaking CLI, JSON, artifact, or release behavior.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Contract Baseline & Parity Harness** - Lock down the golden
+- [x] **Phase 1: Contract Baseline & Parity Harness** - Lock down the golden
   path interface inventory and parity checks before migration.
 - [ ] **Phase 2: Core/App Seam & Cutover Foundation** - Introduce the new
   orchestration boundary and rollback-safe routing inside the existing binary.
@@ -48,8 +48,8 @@ checks that prove behavior before migrated logic becomes the default path.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Capture and publish the golden-path interface inventory
-- [ ] 01-02: Build characterization, artifact, and regression tracking for
+- [x] 01-01: Capture and publish the golden-path interface inventory
+- [x] 01-02: Build characterization, artifact, and regression tracking for
   parity validation
 
 ### Phase 2: Core/App Seam & Cutover Foundation
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Contract Baseline & Parity Harness | 0/2 | Not started | - |
+| 1. Contract Baseline & Parity Harness | 2/2 | Complete   | 2026-04-04 |
 | 2. Core/App Seam & Cutover Foundation | 0/3 | Not started | - |
 | 3. Status Migration | 0/1 | Not started | - |
 | 4. Sync Migration | 0/1 | Not started | - |
