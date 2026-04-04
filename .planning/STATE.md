@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: platform hardening and core expansion
-status: defining-requirements
-stopped_at: Milestone v1.1 opened; defining requirements and roadmap
-last_updated: "2026-04-04T14:48:12Z"
+status: ready-to-plan
+stopped_at: Roadmap created; Phase 7 is ready for planning
+last_updated: "2026-04-04T15:04:26Z"
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -25,10 +25,10 @@ and reliable.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 7 of 12 (Canonical Asset Inventory & Watch Parity)
 Plan: -
-Status: Defining requirements
-Last activity: 2026-04-04 - Milestone v1.1 started
+Status: Ready to plan
+Last activity: 2026-04-04 - v1.1 roadmap created and requirements mapped
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -59,38 +59,22 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in `.planning/PROJECT.md`.
 Recent decisions affecting current work:
 
-- Phase 1: Start the rewrite by locking down the golden-path contract baseline
-  and parity harness.
-- Phase 1 complete: Use `docs/GOLDEN_PATH_CONTRACT.md` plus the rewrite parity
-  checks as the migration source of truth for the golden path.
-
-- Phase 2: Introduce the core/app seam inside the existing repo rather than
-  creating a parallel product tree.
-
-- Phase 2 complete: Use `src/app/golden_path.rs` as the canonical orchestration
-  entrypoint for the golden path while `SXMC_GOLDEN_PATH_ROUTE=legacy` remains
-  as a rollback seam until later phases retire it.
-
-- Phase 3 complete: Treat `src/app/status.rs` as the first dedicated migrated
-  command slice and use direct core-vs-legacy parity as the proof pattern for
-  later migrations.
-
-- Phase 4 complete: Treat `src/app/sync.rs` as the write-side companion to the
-  status slice and keep core-vs-legacy parity as the migration proof pattern.
-
-- Phase 5 complete: Treat `src/app/add.rs` plus `src/app/onboarding.rs` as the
-  onboarding migration pattern and reuse that shared service when rebuilding
-  `setup`.
-
-- Phase 6 complete: Treat `src/app/setup.rs` as the final golden-path slice and
-  `src/app/golden_path.rs` as dispatch-only across the maintained workflow.
-
-- Phase 3-6: Migrate `status`, then `sync`, then `add`, then `setup` in that
-  order to preserve the maintained onboarding path.
+- v1.0 start: Lock down the golden-path contract baseline and parity harness
+  before changing internals.
+- v1.0 architecture: Introduce the core/app seam inside the existing repo and
+  keep `SXMC_GOLDEN_PATH_ROUTE=legacy` as a rollback seam until soak evidence
+  justifies removal.
+- v1.0 migration: Move `status`, `sync`, `add`, and `setup` in that order and
+  use direct core-vs-legacy parity as the proof pattern.
+- v1.1 roadmap: Sequence work as canonical asset parity, watch runtime
+  hardening, secure skill staging, unified scan/serve enforcement,
+  command-family extraction, then soak-based rollback review.
+- v1.1 coverage: Map every v1.1 requirement exactly once across Phases 7-12 and
+  keep parity coverage plus soak evidence as mandatory cutover gates.
 
 ### Pending Todos
 
-No scoped milestone todos yet. Requirements and roadmap are being defined.
+No scoped milestone todos yet. Phase planning has not started.
 
 ### Blockers/Concerns
 
@@ -104,8 +88,11 @@ No scoped milestone todos yet. Requirements and roadmap are being defined.
 - `watch` and `skills` still contain the most visible reliability and security
   risks outside the completed golden path migration.
 
+- v1.1 phase plans are still TBD; parity coverage and soak evidence must be
+  preserved as hard gates during implementation.
+
 ## Session Continuity
 
-Last session: 2026-04-04 10:48
-Stopped at: Milestone v1.1 kickoff and research handoff
+Last session: 2026-04-04 11:04
+Stopped at: Roadmap written for Phases 7-12; next step is `/gsd:plan-phase 7`
 Resume file: None

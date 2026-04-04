@@ -95,12 +95,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| WATCH-01 | Phase 7 | Pending |
+| WATCH-02 | Phase 7 | Pending |
+| WATCH-03 | Phase 8 | Pending |
+| CORE-05 | Phase 8 | Pending |
+| SKILL-01 | Phase 9 | Pending |
+| SKILL-02 | Phase 9 | Pending |
+| SKILL-03 | Phase 9 | Pending |
+| SEC-01 | Phase 10 | Pending |
+| SEC-02 | Phase 10 | Pending |
+| CORE-06 | Phase 11 | Pending |
+| CORE-07 | Phase 11 | Pending |
+| ROL-05 | Phase 11 | Pending |
+| ROL-06 | Phase 12 | Pending |
 
 **Coverage:**
 - v1 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-04*
-*Last updated: 2026-04-04 after v1.1 requirement drafting*
+*Last updated: 2026-04-04 after v1.1 roadmap creation*
