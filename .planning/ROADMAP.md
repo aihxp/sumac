@@ -55,7 +55,7 @@ watch invalidation across native-event and polling modes.
      signal instead of a silent miss.
   3. User can rely on `sxmc watch` tracking the managed skill asset surface
      consistently rather than only top-level files.
-**Plans**: TBD
+**Plans**: 2 plans
 
 ### Phase 8: Watch Runtime Hardening
 **Goal**: Long-running `sxmc watch` sessions stay responsive while notify side
@@ -132,7 +132,7 @@ explicit release-soak evidence rather than assumption.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. Canonical Asset Inventory & Watch Parity | 0/TBD | Not started | - |
+| 7. Canonical Asset Inventory & Watch Parity | 0/2 | Planned    |  |
 | 8. Watch Runtime Hardening | 0/TBD | Not started | - |
 | 9. Secure Skill Materialization & Atomic Activation | 0/TBD | Not started | - |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
