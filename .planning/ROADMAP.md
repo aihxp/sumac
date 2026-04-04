@@ -83,7 +83,7 @@ ephemeral staging that activates only validated allowlisted contents.
      before the skill becomes active.
   3. User never ends up with a partially activated skill after a failed install
      or update attempt.
-**Plans**: TBD
+**Plans**: 2 plans
 
 ### Phase 10: Unified Scan & Serve Enforcement
 **Goal**: Installed skill contents are scanned and served under one enforced
@@ -134,7 +134,7 @@ explicit release-soak evidence rather than assumption.
 |-------|----------------|--------|-----------|
 | 7. Canonical Asset Inventory & Watch Parity | 2/2 | Complete   | 2026-04-04 |
 | 8. Watch Runtime Hardening | 2/2 | Complete   | 2026-04-04 |
-| 9. Secure Skill Materialization & Atomic Activation | 0/TBD | Not started | - |
+| 9. Secure Skill Materialization & Atomic Activation | 0/2 | Not started | - |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
 | 11. Command-Family Extraction & Contract Gates | 0/TBD | Not started | - |
 | 12. Soak Evidence & Rollback Decision | 0/TBD | Not started | - |
