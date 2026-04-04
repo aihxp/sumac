@@ -126,7 +126,7 @@ explicit release-soak evidence rather than assumption.
      the migrated watch and skills path is safe as the sole route.
   2. Users either see the rollback seam retired after safe soak or retained
      intentionally with documented justification, not by default inertia.
-**Plans**: TBD
+**Plans**: 2 plans
 
 ## Progress
 
@@ -137,4 +137,4 @@ explicit release-soak evidence rather than assumption.
 | 9. Secure Skill Materialization & Atomic Activation | 2/2 | Complete   | 2026-04-04 |
 | 10. Unified Scan & Serve Enforcement | 2/2 | Complete    | 2026-04-04 |
 | 11. Command-Family Extraction & Contract Gates | 2/2 | Complete    | 2026-04-04 |
-| 12. Soak Evidence & Rollback Decision | 0/TBD | Not started | - |
+| 12. Soak Evidence & Rollback Decision | 0/2 | Not started | - |
