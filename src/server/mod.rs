@@ -967,4 +967,60 @@ mod tests {
 
         assert_ne!(before, after);
     }
+
+    #[test]
+    fn test_compute_skill_fingerprint_changes_when_nested_script_changes() {
+        let temp = TempDir::new().unwrap();
+        let skill_dir = temp.path().join("watched-skill");
+        fs::create_dir_all(skill_dir.join("scripts/nested")).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: watched-skill\ndescription: test\n---\nHello\n",
+        )
+        .unwrap();
+        fs::write(
+            skill_dir.join("scripts/nested/check.sh"),
+            "#!/bin/bash\necho first\n",
+        )
+        .unwrap();
+
+        let paths = vec![temp.path().to_path_buf()];
+        let before = compute_skill_fingerprint(&paths, &[], &[]);
+        fs::write(
+            skill_dir.join("scripts/nested/check.sh"),
+            "#!/bin/bash\necho second\n",
+        )
+        .unwrap();
+        let after = compute_skill_fingerprint(&paths, &[], &[]);
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn test_compute_skill_fingerprint_changes_when_nested_reference_changes() {
+        let temp = TempDir::new().unwrap();
+        let skill_dir = temp.path().join("watched-skill");
+        fs::create_dir_all(skill_dir.join("references/guides")).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: watched-skill\ndescription: test\n---\nHello\n",
+        )
+        .unwrap();
+        fs::write(
+            skill_dir.join("references/guides/guide.md"),
+            "# First\n",
+        )
+        .unwrap();
+
+        let paths = vec![temp.path().to_path_buf()];
+        let before = compute_skill_fingerprint(&paths, &[], &[]);
+        fs::write(
+            skill_dir.join("references/guides/guide.md"),
+            "# Second\n",
+        )
+        .unwrap();
+        let after = compute_skill_fingerprint(&paths, &[], &[]);
+
+        assert_ne!(before, after);
+    }
 }
