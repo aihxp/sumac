@@ -48,6 +48,7 @@ pub fn parse_skill(skill_dir: &Path, source: &str) -> Result<Skill> {
 
     let body = body.replace("${CLAUDE_SKILL_DIR}", skill_dir.to_str().unwrap_or(""));
 
+    let assets = collect_assets(&skill_dir)?;
     let scripts = scan_scripts(&skill_dir)?;
     let references = scan_references(&skill_dir, &frontmatter.name)?;
 
@@ -56,11 +57,90 @@ pub fn parse_skill(skill_dir: &Path, source: &str) -> Result<Skill> {
         base_dir: skill_dir,
         frontmatter,
         body,
-        assets: Vec::new(),
+        assets,
         scripts,
         references,
         source: source.to_string(),
     })
+}
+
+fn collect_assets(skill_dir: &Path) -> Result<Vec<SkillAsset>> {
+    let mut assets = vec![SkillAsset {
+        relative_path: "SKILL.md".to_string(),
+        path: skill_dir.join("SKILL.md"),
+        kind: SkillAssetKind::SkillFile,
+    }];
+
+    collect_assets_in_dir(
+        skill_dir,
+        &skill_dir.join("scripts"),
+        "scripts",
+        SkillAssetKind::Script,
+        &mut assets,
+    )?;
+    collect_assets_in_dir(
+        skill_dir,
+        &skill_dir.join("references"),
+        "references",
+        SkillAssetKind::Reference,
+        &mut assets,
+    )?;
+
+    assets.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok(assets)
+}
+
+fn collect_assets_in_dir(
+    skill_dir: &Path,
+    dir: &Path,
+    prefix: &str,
+    kind: SkillAssetKind,
+    assets: &mut Vec<SkillAsset>,
+) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    collect_assets_recursive(skill_dir, dir, prefix, &kind, assets)
+}
+
+fn collect_assets_recursive(
+    skill_dir: &Path,
+    current: &Path,
+    prefix: &str,
+    kind: &SkillAssetKind,
+    assets: &mut Vec<SkillAsset>,
+) -> Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(current)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_assets_recursive(skill_dir, &path, prefix, kind, assets)?;
+        } else if path.is_file() {
+            let relative = path
+                .strip_prefix(skill_dir)
+                .map_err(|error| {
+                    SxmcError::ParseError(format!(
+                        "Failed to derive asset path for {}: {}",
+                        path.display(),
+                        error
+                    ))
+                })?
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative == prefix || !relative.starts_with(&format!("{}/", prefix)) {
+                continue;
+            }
+            assets.push(SkillAsset {
+                relative_path: relative,
+                path,
+                kind: kind.clone(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn scan_scripts(skill_dir: &Path) -> Result<Vec<SkillScript>> {
@@ -185,13 +265,53 @@ mod tests {
         let skill = parse_skill(&skill_dir, "test").unwrap();
         assert_eq!(skill.name, "my-skill");
         assert_eq!(skill.frontmatter.description, "A test skill");
-        assert!(skill.assets.is_empty());
+        assert_eq!(skill.assets.len(), 3);
+        assert_eq!(skill.assets[0].relative_path, "SKILL.md");
         assert_eq!(skill.scripts.len(), 1);
         assert_eq!(skill.references.len(), 1);
         assert_eq!(
             skill.references[0].uri,
             "skill://my-skill/references/guide.md"
         );
+    }
+
+    #[test]
+    fn test_parse_skill_recurses_nested_assets() {
+        let tmp = TempDir::new().unwrap();
+        let skill_dir = tmp.path().join("nested-skill");
+        fs::create_dir_all(skill_dir.join("scripts/nested")).unwrap();
+        fs::create_dir_all(skill_dir.join("references/guides")).unwrap();
+
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: nested-skill\ndescription: Nested test skill\n---\nNested body",
+        )
+        .unwrap();
+        fs::write(
+            skill_dir.join("scripts/nested/check.sh"),
+            "#!/bin/bash\necho nested",
+        )
+        .unwrap();
+        fs::write(
+            skill_dir.join("references/guides/guide.md"),
+            "# Nested Guide",
+        )
+        .unwrap();
+
+        let skill = parse_skill(&skill_dir, "test").unwrap();
+        let asset_paths: Vec<_> = skill
+            .assets
+            .iter()
+            .map(|asset| asset.relative_path.as_str())
+            .collect();
+
+        assert!(asset_paths.contains(&"SKILL.md"));
+        assert!(asset_paths.contains(&"scripts/nested/check.sh"));
+        assert!(asset_paths.contains(&"references/guides/guide.md"));
+
+        // Compatibility views remain top-level only in this phase.
+        assert!(skill.scripts.is_empty());
+        assert!(skill.references.is_empty());
     }
 
     #[test]
