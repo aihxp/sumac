@@ -1,316 +1,399 @@
-# Architecture Patterns: Sumac Core/App Rewrite
+# Architecture Research
 
-**Domain:** Brownfield Rust CLI/MCP rewrite with stable `1.x` command contracts
+**Domain:** Milestone v1.1 integration architecture for an existing Rust CLI/MCP product
 **Researched:** 2026-04-04
-**Overall confidence:** HIGH for boundary direction, MEDIUM for exact cut lines inside current `main.rs`
+**Confidence:** HIGH
 
-## Executive Recommendation
+## Standard Architecture
 
-Sumac should become a **modular monolith with a thin stable CLI shell**, not a multi-crate reset and not a second product hidden beside the first. Keep `clap` command definitions and public output contracts stable at the edge, introduce a new **internal app layer** as the orchestration boundary, and let that app layer depend on a **core domain/policy layer** plus a small set of infrastructure ports. Existing modules (`cli_surfaces`, `skills`, `server`, `client`, `bake`, `paths`) should initially be treated as infrastructure behind those ports.
-
-The migration seam is not "old binary vs new binary". The seam is:
-
-`stable CLI contract -> command adapter -> app use case -> ports -> new implementation or legacy shim -> stable presenter`
-
-That shape allows Sumac to move one command family at a time while preserving help text, flags, JSON output, generated files, exit behavior, and release cadence.
-
-## Recommended Architecture
+### System Overview
 
 ```text
-User / scripts / CI
-        |
-        v
-  clap CLI surface (`cli_args.rs`)
-        |
-        v
-CLI adapters (`src/cli/`)
-  - parse already done
-  - map args to typed request DTOs
-  - choose human/json presenter
-  - set exit codes
-        |
-        v
-App layer (`src/app/`)
-  - command-family orchestration
-  - transactions / sequencing / retries
-  - "setup", "add", "status", "sync" use cases
-        |
-        v
-Core layer (`src/core/`)
-  - domain models
-  - planning / diff / reconciliation rules
-  - stable internal request/result contracts
-  - ports for IO
-        |
-        +-------------------------------+
-        |                               |
-        v                               v
-Infra adapters (`src/infra/`)      Legacy shims (`src/legacy/`)
-  - cli_surfaces                        - extracted no-behavior-change
-  - paths/cache/output                    wrappers over old logic
-  - bake/store                          - temporary fallback path
-  - skills/server/client
-  - fs/network/process
-        |
-        v
-filesystem / env / subprocess / MCP / HTTP / AI host files
+┌──────────────────────────────────────────────────────────────────────┐
+│ Stable CLI Surface                                                  │
+├──────────────────────────────────────────────────────────────────────┤
+│ `src/cli_args.rs`        `src/main.rs`                              │
+│ keep flags/contracts     thin dispatch + request assembly           │
+└───────────────┬───────────────────────────────┬──────────────────────┘
+                │                               │
+                v                               v
+┌──────────────────────────────────────────────────────────────────────┐
+│ App Services (`src/app/`)                                           │
+├──────────────────────────────────────────────────────────────────────┤
+│ existing: `golden_path`, `add`, `setup`, `status`, `sync`           │
+│ new: `watch`, `skills`, optional CLI-only `serve` wrapper           │
+│ shared: reconciliation/status facade and presenters                 │
+└───────────────┬───────────────────────────────┬──────────────────────┘
+                │                               │
+                v                               v
+┌──────────────────────────────────────────────────────────────────────┐
+│ Domain/Runtime Library Modules                                      │
+├──────────────────────────────────────────────────────────────────────┤
+│ `src/server/`      reload runtime, transports, inventory swap       │
+│ `src/skills/`      catalog, parser, install pipeline, metadata      │
+│ `src/security/`    scan policy over canonical skill assets          │
+│ `src/output/`      stable human/JSON rendering                      │
+│ `src/paths/`       install scope and filesystem roots               │
+└───────────────┬───────────────────────────────┬──────────────────────┘
+                │                               │
+                v                               v
+┌──────────────────────────────────────────────────────────────────────┐
+│ External Effects                                                    │
+├──────────────────────────────────────────────────────────────────────┤
+│ filesystem   git repos   subprocesses   notify/poll   HTTP/MCP      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Opinionated Structure
+### Component Responsibilities
 
-Use **new modules inside the existing crate first**. Do not begin with a workspace split. The current rewrite risk is orchestration sprawl, not package-management failure. A crate split too early would add churn at the exact moment the team needs cheap refactors and mixed old/new code paths.
+| Component | Responsibility | Typical Implementation |
+|-----------|----------------|------------------------|
+| `src/main.rs` | Preserve `clap` contract and delegate by command family | Thin match arms that build typed request structs and call app services |
+| `src/app/` | Own command-family orchestration and exit behavior | Request/result services matching the existing `add`/`status`/`sync` pattern |
+| `src/server/` | Own skill-server construction, reload runtime, and HTTP/stdio transport | Keep public `serve_*` entrypoints stable, split internals into smaller modules |
+| `src/skills/` | Own canonical skill tree model, install/update staging, and metadata | Shared catalog/policy layer used by parser, install, serve, and scan |
+| `src/security/` | Enforce scanner coverage over served/installable assets | Scan canonical asset inventory and report skips as findings, not silent drops |
 
-Suggested shape:
+## Recommended Project Structure
 
 ```text
 src/
-├── main.rs                  # composition root only
-├── cli_args.rs              # stable clap surface
-├── cli/
-│   ├── mod.rs
-│   ├── onboarding.rs        # setup/add/status/sync command adapters
-│   ├── inspect.rs
-│   ├── skills.rs
-│   └── mcp.rs
+├── main.rs                    # composition root and command dispatch only
+├── cli_args.rs                # stable clap surface
 ├── app/
 │   ├── mod.rs
-│   ├── onboarding/
-│   │   ├── add.rs
-│   │   ├── setup.rs
-│   │   ├── status.rs
-│   │   ├── sync.rs
-│   │   └── reconcile.rs
-│   └── shared/
-├── core/
+│   ├── golden_path.rs         # existing stable seam
+│   ├── add.rs                 # existing
+│   ├── setup.rs               # existing
+│   ├── status.rs              # existing, move shared status helpers behind facade
+│   ├── sync.rs                # existing, same facade
+│   ├── watch.rs               # new: `sxmc watch` service
+│   ├── skills.rs              # new: skills command-family service
+│   └── serve.rs               # optional: CLI-only serve registration/validation
+├── server/
+│   ├── mod.rs                 # keep public API, delegate internally
+│   ├── handler.rs             # serve only allowlisted assets
+│   ├── reload.rs              # new: watch backend + debounce + atomic swap
+│   └── inventory.rs           # new: inventory summary derived from built server/catalog
+├── skills/
 │   ├── mod.rs
-│   ├── contracts/
-│   ├── onboarding/
-│   │   ├── model.rs
-│   │   ├── policy.rs
-│   │   ├── diff.rs
-│   │   └── ports.rs
-│   └── shared/
-├── infra/
-│   ├── mod.rs
-│   ├── cli_surfaces.rs
-│   ├── install_paths.rs
-│   ├── bake_store.rs
-│   ├── skill_runtime.rs
-│   └── mcp_runtime.rs
-├── legacy/
-│   ├── mod.rs
-│   └── onboarding.rs
-└── runtime/
-    ├── mod.rs
-    └── app_runtime.rs
+│   ├── models.rs              # extend with canonical asset model
+│   ├── parser.rs              # build recursive asset inventory
+│   ├── install.rs             # keep public entrypoints, delegate to pipeline stages
+│   ├── source.rs              # new: source resolution/materialization
+│   ├── policy.rs              # new: allowlist and validation rules
+│   └── staging.rs             # new: atomic install/update application
+└── security/
+    └── skill_scanner.rs       # scan asset inventory, not ad hoc file subsets
 ```
 
-## Component Boundaries
+### Structure Rationale
 
-| Component | Responsibility | Must Not Own | Communicates With |
-|-----------|----------------|--------------|-------------------|
-| `cli` | Command entrypoints, arg-to-request mapping, output selection, exit codes | Business policy, filesystem traversal, direct host mutation logic | `app`, presenters |
-| `app` | Use-case orchestration and sequencing for one command family | `clap`, raw stdout printing, protocol transport details | `core`, `runtime` |
-| `core` | Domain rules, diff/reconcile logic, typed request/result models, port traits | Filesystem, env, network, subprocess, `serde_json::Value`-driven flow control | `app`, `infra` via ports |
-| `infra` | Adapters to current modules and external systems | CLI parsing, command-family sequencing decisions | `core` ports, existing `src/*` modules |
-| `legacy` | Temporary wrappers over extracted old flows, normalized to new contracts | New policy or new feature work | `app`, old helpers |
-| `runtime` | Dependency wiring, cancellation, task ownership, config assembly | Command logic | `cli`, `app`, `infra` |
+- **Extend `src/app/`, do not invent a second orchestration layer:** the golden-path service pattern already exists and should become the norm for the remaining command families.
+- **Keep `src/server/` as the embeddable library boundary:** `serve_stdio`, `serve_http`, and `build_server` are useful crate-level APIs and should stay there even if CLI-only prep work moves into `src/app/serve.rs`.
+- **Make `src/skills/` the source of truth for what a skill contains:** install, serve, scan, and watch are currently each operating on slightly different file models. v1.1 should end that divergence.
 
-## Migration Seams
+## Architectural Patterns
 
-### Seam 1: Stable Command Contracts
+### Pattern 1: Command-Family App Service
 
-Each migrated command should get an internal request/result pair that is independent of `clap`.
+**What:** Mirror the existing `src/app/add.rs` and `src/app/status.rs` shape for the remaining hotspots instead of keeping those branches in `main.rs`.
+**When to use:** Any command family that has non-trivial sequencing, notifications, install scope handling, or exit-code policy.
+**Trade-offs:** Adds request/result structs and some adapter code, but it removes the current `main.rs` hotspot and makes parity testing practical.
 
-Example:
-
+**Example:**
 ```rust
-pub struct StatusRequest {
-    pub install_scope: InstallScope,
-    pub only_hosts: Vec<AiClientProfile>,
-    pub compare_hosts: Vec<AiClientProfile>,
-    pub include_health: bool,
+pub(crate) struct WatchRequest {
+    pub(crate) install_paths: InstallPaths,
+    pub(crate) only_hosts: Vec<AiClientProfile>,
+    pub(crate) compare_hosts: Vec<AiClientProfile>,
+    pub(crate) health: bool,
+    pub(crate) interval: Duration,
+    pub(crate) notify: WatchNotifyOptions,
+    pub(crate) exit_on_change: bool,
+    pub(crate) exit_on_unhealthy: bool,
+    pub(crate) pretty: bool,
+    pub(crate) format: Option<output::StructuredOutputFormat>,
 }
 
-pub struct StatusResult {
-    pub drift: DriftSummary,
-    pub startup_files: Vec<StartupFileState>,
-    pub baked_health: Option<BakedHealthSummary>,
+pub(crate) struct WatchService;
+
+impl WatchService {
+    pub(crate) async fn run(&self, request: WatchRequest) -> Result<CommandOutcome> {
+        // status snapshot -> change detection -> notify fanout -> exit policy
+        Ok(CommandOutcome::default())
+    }
 }
 ```
 
-`clap` types stay at the edge. Presenters render these results into the existing human and JSON contracts.
+### Pattern 2: Canonical Skill Asset Inventory
 
-### Seam 2: Legacy/New Router Per Command Family
+**What:** Extend `Skill` with a canonical asset inventory that describes every installable/servable file and its role, while keeping `scripts` and `references` as derived compatibility views.
+**When to use:** Skill install, update, scan, server resource exposure, and reload fingerprinting.
+**Trade-offs:** Requires touching `skills/models.rs`, `parser.rs`, `server/handler.rs`, and `security/skill_scanner.rs`, but it eliminates the current mismatch where parser, handler, and watch each see a different tree.
 
-The app layer should route a command to either:
+**Example:**
+```rust
+pub enum SkillAssetKind {
+    Prompt,
+    Script,
+    Reference,
+    Metadata,
+}
 
-- a new implementation that uses `core` + `infra`, or
-- a legacy shim that calls extracted current logic and normalizes its result
+pub struct SkillAsset {
+    pub relative_path: String,
+    pub absolute_path: PathBuf,
+    pub kind: SkillAssetKind,
+    pub readable: bool,
+}
 
-This lets the command path move one slice at a time without branching at the CLI surface.
+pub struct Skill {
+    pub name: String,
+    pub base_dir: PathBuf,
+    pub assets: Vec<SkillAsset>,
+    pub scripts: Vec<SkillScript>,
+    pub references: Vec<SkillReference>,
+    // existing fields unchanged
+}
+```
 
-### Seam 3: Presenter Boundary
+### Pattern 3: Single-Build Reload Pipeline
 
-Today much of the public contract is assembled as ad hoc `serde_json::Value` in `main.rs`. Move that responsibility into presenters. The presenter becomes the sole owner of:
+**What:** For `serve --watch`, build one updated server snapshot per change, derive inventory from that same snapshot, then swap atomically.
+**When to use:** Both filesystem-event and poll fallback reload paths.
+**Trade-offs:** Slightly more internal structure in `src/server/`, but it removes the current duplicate build and gives one place to improve debounce, polling, and metrics.
 
-- JSON field names
-- human output formatting
-- exit-code interpretation
+**Example:**
+```rust
+struct ReloadResult {
+    server: SkillsServer,
+    inventory: SkillInventorySummary,
+}
 
-This is the critical seam for protecting `1.x` compatibility while internals change.
+fn rebuild(paths: &[PathBuf], snapshots: &[PathBuf], manifests: &[PathBuf]) -> Result<ReloadResult> {
+    let server = build_server(paths, snapshots, manifests)?;
+    let inventory = SkillInventorySummary::from_server(&server);
+    Ok(ReloadResult { server, inventory })
+}
+```
 
-### Seam 4: Port-Based Infrastructure
+## Data Flow
 
-Only add traits where the dependency is unstable or stateful. Good first ports:
+### Request Flow
 
-- `CliInspector`
-- `ArtifactPlanner`
-- `ArtifactWriter`
-- `InstallRootStore`
-- `SyncStateStore`
-- `BakedHealthProbe`
-- `Clock`
+```text
+User command
+    ↓
+`clap` in `src/cli_args.rs`
+    ↓
+`src/main.rs` builds typed request
+    ↓
+`src/app/<family>.rs`
+    ↓
+shared library modules (`server`, `skills`, `security`, `paths`, `output`)
+    ↓
+filesystem / git / notify / HTTP / MCP / subprocess
+    ↓
+typed result + stable presenter
+    ↓
+stdout + exit code
+```
 
-Do not trait-abstract every function. The goal is migration seams, not maximal indirection.
+### State Management
 
-### Seam 5: Parity Harness
+```text
+Install roots (`src/paths.rs`)
+    ↓
+skill roots / AI host files / baked config / cache
+    ↓
+app services read current state
+    ↓
+library modules compute changes or serve runtime state
+    ↓
+presenters render stable output
+```
 
-For each migrated command family, keep a parity harness that can compare:
+### Key Data Flows
 
-- structured JSON output
-- generated file set
-- write/no-write behavior in preview/apply modes
-- exit codes
+1. **`sxmc watch` flow:** `main.rs` -> new `app::watch::WatchService` -> shared status snapshot collector -> render diff/change detector -> async notification fanout -> exit policy.
+2. **`sxmc serve --watch` flow:** `main.rs` or `app::serve` -> `server::serve_stdio/http` -> `server::reload` watch backend -> canonical skill catalog rebuild -> atomic `ReloadableSkillsServer` swap.
+3. **`sxmc skills install/update` flow:** `main.rs` or `app::skills` -> install pipeline -> source materialization -> allowlist/filter -> scanner coverage -> staging dir -> atomic rename -> metadata write.
 
-For the golden path, this matters more than unit-test purity.
+## New Vs Modified Components
 
-## Data And Control Flow
+| Component | New or Modified | Why |
+|-----------|-----------------|-----|
+| `src/app/watch.rs` | New | `sxmc watch` is currently a large `main.rs` loop with blocking sleep, inline notifications, and exit handling. It should become a first-class service beside `status` and `sync`. |
+| `src/app/skills.rs` | New | The skills family still splits between `main.rs`, `command_handlers.rs`, and `skills/install.rs`. A family service is the right extraction seam. |
+| `src/app/serve.rs` | New, optional | Keep only CLI-only serve concerns here: registration, auth flag validation, and transport selection. Leave transport runtime in `src/server/`. |
+| `src/app/status.rs` and `src/app/sync.rs` | Modified | They should consume a shared reconciliation/status facade instead of helper functions living in `main.rs`. |
+| `src/main.rs` | Modified | Shrink to dispatch and request assembly. No new watch/install/serve helpers should be added here. |
+| `src/command_handlers.rs` | Modified, transitional | Freeze it as a compatibility adapter for list/info/run while `app::skills` comes online. Do not grow it further. |
+| `src/server/reload.rs` | New | Isolate notify-vs-poll watching, debounce, rebuild-once, and atomic swap logic from `src/server/mod.rs`. |
+| `src/server/inventory.rs` | New | Inventory summary should be derived from the current built server or catalog, not by building a second time. |
+| `src/server/mod.rs` | Modified | Keep public entrypoints stable; delegate internals to `reload.rs` and `inventory.rs`. |
+| `src/server/handler.rs` | Modified | Serve only allowlisted files from the canonical asset inventory; stop exposing arbitrary files under the skill root. |
+| `src/skills/models.rs` | Modified | Add the canonical skill asset model. Existing `scripts` and `references` stay for compatibility. |
+| `src/skills/parser.rs` | Modified | Build a recursive asset inventory and stop limiting watch-relevant modeling to one directory level. |
+| `src/skills/source.rs` | New | Separate git/local source resolution and temp materialization from install application. |
+| `src/skills/policy.rs` | New | Centralize what is installable and servable: `SKILL.md`, `scripts/**`, `references/**`, managed metadata, and explicit exclusions. |
+| `src/skills/staging.rs` | New | Own staging, atomic rename, cleanup, and update replacement behavior. |
+| `src/skills/install.rs` | Modified | Keep `install_skill`/`update_skills` as stable entrypoints, but turn them into orchestration over source/policy/staging. |
+| `src/security/skill_scanner.rs` | Modified | Scan the canonical asset set and emit findings for unreadable/non-UTF-8/skipped files instead of silently continuing. |
 
-### Normal migrated path
+## Internal Boundaries To Keep Stable
 
-1. `clap` parses the stable command.
-2. `src/cli/<family>.rs` maps args into a typed request.
-3. `src/app/<family>/<command>.rs` orchestrates the use case.
-4. `src/core/<family>/` computes policies, diffs, plans, and target actions.
-5. `src/infra/` calls current modules or external systems to inspect, read, write, or execute.
-6. The app returns a typed result.
-7. The presenter renders the existing JSON/human contract.
-8. CLI adapter prints output and sets exit code.
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `src/cli_args.rs` -> `src/main.rs` | direct | Preserve public flags, subcommands, and JSON/human contract selection. |
+| `src/main.rs` -> `src/app/*` | direct typed requests | This should be the default integration seam for migrated command families. |
+| `src/app/*` -> `sxmc::server` | direct API | Keep `serve_stdio`, `serve_http`, and `build_server` as the embeddable library boundary. |
+| `src/app/*` -> `src/skills/*` | direct API | `app::skills` should orchestrate lifecycle; `skills` owns install/source/policy details. |
+| `src/server/*` -> `src/skills/*` | direct API over canonical catalog | Server reload and handler logic should not re-discover its own file model. |
+| `src/security/*` -> `src/skills/*` | direct API over canonical catalog | Scan coverage must follow the same asset selection rules as install/serve. |
 
-### Transitional legacy-backed path
+## Boundaries That Should Remain Stable In v1.1
 
-1. `clap` parses the stable command.
-2. CLI adapter builds the same typed request.
-3. App router delegates to `src/legacy/<family>.rs`.
-4. Legacy shim calls extracted old helpers from current `main.rs`/adjacent modules.
-5. Legacy output is normalized into the same typed result or presenter-ready envelope.
-6. Presenter renders the existing external contract.
+- `src/cli_args.rs` should remain the public CLI contract owner.
+- `src/lib.rs` should continue exporting `server`, `skills`, `client`, `cli_surfaces`, `security`, and `paths` without a crate split.
+- `src/server::serve_stdio`, `src/server::serve_http`, and `src/server::build_server` should stay callable from outside the CLI.
+- `src/output/mod.rs`, `src/error.rs`, and `src/paths.rs` should remain shared infrastructure, not be rehomed during this milestone.
+- The existing golden-path route seam in `src/app/golden_path.rs` should not be expanded into a generic second router for every new command. Use parity tests, not more env-flag routing, unless evidence forces a rollback seam.
 
-The user should not be able to tell which path executed except through improved internal maintainability.
+## Data Flow Changes Required By This Milestone
 
-## Onboarding/Reconciliation Slice
+### Watch Reliability
 
-The first migrated family should be **onboarding/reconciliation**, because current evidence shows `setup`, `add`, `status`, `sync`, `doctor`, and `watch` are tightly related but scattered across `main.rs`.
+**`sxmc watch`:**
+- Reuse the existing status/sync domain, do not build a second status engine.
+- Move the loop into `src/app/watch.rs`.
+- Replace blocking `std::thread::sleep` with `tokio::time::sleep`.
+- Run notify command execution and webhook delivery behind async adapters with explicit timeouts and isolated failures.
+- Keep rendering and exit policy in the app layer so public behavior stays stable.
 
-Recommended internal grouping:
+**`sxmc serve --watch`:**
+- Keep runtime ownership in `src/server/`.
+- Replace `summarize_inputs_with_manifests()` + second `build_server()` with a single rebuild result.
+- Fingerprint or enumerate the canonical recursive asset inventory, not just top-level `scripts/` and `references/`.
+- Treat notify-based and poll-based watch backends as interchangeable event sources feeding one reload coordinator.
 
-| App family | Commands | Shared core concepts |
-|------------|----------|----------------------|
-| `onboarding` | `add`, `setup` | CLI inspection, host selection, artifact plan, materialization |
-| `reconciliation` | `status`, `sync`, later `doctor` and `watch` | drift model, sync state, health evaluation, write plan |
+### Skill Install/Serve Hardening
 
-These two can live under one `app/onboarding/` family at first, then split later if needed.
+- Install and serve must share one allowlist policy.
+- `install_skill` should never copy the whole source tree blindly.
+- The install pipeline should be: resolve source -> materialize source tree -> parse/catalog -> scan/validate -> copy allowlisted assets into staging -> write managed metadata -> atomic replace -> cleanup.
+- `server/handler.rs` should read only assets that the policy marked servable. `get_skill_related_file()` should deny dotfiles, VCS directories, build outputs, unmanaged metadata, and anything not in the asset index.
+- Scanner coverage should run over the same asset index and emit findings for skipped files so "clean scan" actually means "fully evaluated managed surface."
 
-## Suggested Build Order
+### Command-Family Extraction
 
-This should be dependency-first, not user-marketing-order.
+- `watch` and `skills` should join the existing `src/app/` pattern before more logic is added.
+- `serve` only needs an app wrapper for CLI-only concerns. The transport/server runtime remains a library concern.
+- `command_handlers.rs` should become a shrinking adapter, not a new home for milestone work.
 
-1. **Foundation shell**
-   - Create `cli`, `app`, `core`, `runtime`, and `legacy` modules.
-   - Reduce `main.rs` to wiring and command dispatch only.
-   - Add presenter ownership for `status`, `sync`, `add`, `setup` without changing behavior.
+## Sensible Build Order
 
-2. **Read-only status slice**
-   - Migrate `status` first.
-   - It is mostly read/evaluate/render, so it is the cheapest way to prove the architecture.
-   - Introduce typed contracts, install-scope modeling, drift summary models, and parity tests.
+1. **Create command-family seams without behavior changes**
+   - Add `src/app/watch.rs` and `src/app/skills.rs`.
+   - Move `main.rs` branches for `watch` and `skills` into typed request/service calls.
+   - Keep `command_handlers.rs` as a temporary adapter for list/info/run.
+   - This lowers integration risk before changing deeper behavior.
 
-3. **Shared reconciliation core**
-   - Extract sync-state loading, drift comparison, health calculation, and recovery-plan logic into `core/onboarding/`.
-   - Keep file IO behind ports.
-   - This becomes the shared engine for `status`, `sync`, `watch`, and parts of `doctor`.
+2. **Extract shared reconciliation/status helpers out of `main.rs`**
+   - Move `status_value_with_health`, `render_status_output`, and related watch-status helpers behind a shared facade used by `status`, `sync`, and `watch`.
+   - This gives `sxmc watch` a stable dependency instead of depending on `main.rs` internals.
 
-4. **`sync` write path**
-   - Migrate `sync` after `status`.
-   - It reuses the same domain model but adds write planning and application.
-   - This is the first meaningful proof that the new app/core layer can mutate state safely.
+3. **Introduce the canonical skill asset model**
+   - Extend `src/skills/models.rs` and `parser.rs` so one catalog describes recursive scripts/references and managed metadata.
+   - Keep current public behavior but expose the new inventory internally.
+   - This is the core dependency for both reload reliability and serve/install hardening.
 
-5. **`add` onboarding path**
-   - Move `add` onto the new app layer using ports over `cli_surfaces` inspection/materialization.
-   - Preserve preview/apply semantics exactly.
+4. **Split server reload internals**
+   - Add `src/server/reload.rs` and `src/server/inventory.rs`.
+   - Remove the double-build reload path.
+   - Fix nested-asset polling by fingerprinting the canonical asset inventory.
+   - Verify `serve --watch` parity before touching install behavior.
 
-6. **`setup` composition**
-   - Rebuild `setup` as orchestration over the same `add`/inspection/materialization services.
-   - Avoid a second standalone implementation; `setup` should become "multi-tool onboarding orchestration", not its own world.
+5. **Refactor install/update onto source/policy/staging**
+   - Add `src/skills/source.rs`, `policy.rs`, and `staging.rs`.
+   - Fix git clone base-path handling and tempdir cleanup.
+   - Enforce allowlisted copy and scanner coverage before serving those installs.
 
-7. **`doctor` and `watch` convergence**
-   - Rehome them onto the same `status`/`sync` services.
-   - `watch` should use Tokio cancellation coordination and task ownership instead of blocking sleeps in the command path.
+6. **Harden serve/read paths**
+   - Update `src/server/handler.rs` to read only the indexed servable assets.
+   - Make `get_skill_related_file()` operate on asset lookup, not raw recursive filesystem access.
+   - This closes the install/serve security loop.
 
-8. **Apply the same pattern to the next families**
-   - `inspect/materialize`
-   - `skills/install/serve`
-   - `mcp client/server bridge`
-   - `discover/api/graphql/db/codebase/traffic`
+7. **Reduce transitional glue**
+   - Trim `command_handlers.rs`.
+   - Keep `main.rs` as composition only.
+   - Re-evaluate whether the golden-path rollback seam should stay isolated to the onboarding commands or be retired after soak evidence.
 
-## Anti-Patterns To Avoid
+## Anti-Patterns
 
-### Anti-pattern: Big-bang app-layer rewrite
-Build the seam first, then move one command family at a time. A second universe of rewritten code with no production traffic is the fastest way to stall.
+### Anti-Pattern 1: One "watch" abstraction for everything
 
-### Anti-pattern: Early workspace split
-Separate crates before the boundaries are proven and every move gets slower. Sumac needs migration speed more than package purity right now.
+**What people do:** Try to unify `sxmc watch` status polling and `sxmc serve --watch` server reload into one generic watcher module.
+**Why it's wrong:** They observe different things, have different outputs, and fail differently. One is CLI status monitoring; the other is hot-reload infrastructure.
+**Do this instead:** Share only low-level pieces like debounce utilities or notification adapters. Keep separate app/runtime owners.
 
-### Anti-pattern: `serde_json::Value` as the app contract
-`Value` is acceptable at the presenter boundary, not as the main orchestration model. Keep internal results typed.
+### Anti-Pattern 2: Separate allowlists for install, serve, and scan
 
-### Anti-pattern: New and old logic selected in `main.rs`
-`main.rs` should not become the permanent migration switchboard. Route through family adapters and app routers so the seam survives after migration.
+**What people do:** Fix install copying in one place, handler exposure in another, and scanner coverage in a third.
+**Why it's wrong:** The system drifts again and security guarantees remain impossible to reason about.
+**Do this instead:** Put the policy in `src/skills/policy.rs` and make install, serve, scan, and watch all consume it.
 
-### Anti-pattern: Duplicate implementations for `setup` and `add`
-`setup` should compose onboarding services; it should not re-encode its own inspection/materialization rules.
+### Anti-Pattern 3: More logic in `main.rs` during extraction
 
-## Runtime Considerations
+**What people do:** Add a few more helper functions in `main.rs` "just for now" while migrating.
+**Why it's wrong:** It extends the hotspot and makes later extraction harder.
+**Do this instead:** New milestone logic goes into `src/app/`, `src/server/`, or `src/skills/` even if the first version is only a thin wrapper.
 
-- Keep `main.rs` as the composition root only.
-- Centralize app dependency wiring in `runtime/app_runtime.rs`.
-- For long-running server/watch flows, use explicit cancellation coordination and wait-for-completion ownership rather than blocking loops. This matches current Tokio guidance for graceful shutdown and task tracking.
-- Keep MCP transport and session details in infrastructure. `rmcp` and `axum` already provide the transport/session primitives; the app layer should only express intent like "serve this tool surface" or "stop watching now".
+## Integration Points
 
-## Roadmap Implications
+### External Services
 
-- The first rewrite milestone should target **one family, one seam, one parity harness**: onboarding/reconciliation.
-- The first externally invisible deliverable is not "new architecture exists". It is "`status` runs through the new app/core boundary with unchanged output".
-- `sync` should follow immediately, because it forces the write path and validates that the new boundary can safely own side effects.
-- `add` and `setup` should land after the shared reconciliation/artifact-planning seams are stable, not before.
-- `doctor` and `watch` should be treated as downstream consumers of the same family, not separate architectures.
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| local filesystem | direct through `paths`, `skills`, and staging modules | All install/serve/watch correctness depends on one canonical view of managed files. |
+| git CLI | subprocess in `src/skills/source.rs` | Keep clone/materialization isolated so cleanup and subpath resolution are testable. |
+| notify crate | `src/server/reload.rs` backend | Use as an event source only; debounce and rebuild logic should be separate. |
+| HTTP/webhooks | async notifier adapter in `src/app/watch.rs` | Add timeouts and isolate failures from the main loop. |
+| MCP transports | remain in `src/server/mod.rs` | Do not move transport details into app services. |
 
-## Confidence Notes
+### Internal Boundaries
 
-- **HIGH:** Sumac should use a modular-monolith migration inside the current crate rather than an early workspace split. Repo evidence points to orchestration concentration, not package-boundary failure.
-- **HIGH:** Stable command contracts need a presenter boundary. Current `main.rs` mixes orchestration and contract rendering heavily, so output preservation needs an explicit owner.
-- **HIGH:** Onboarding/reconciliation is the right first family. Current `setup`, `add`, `status`, `sync`, `doctor`, and `watch` already share install-scope, host, artifact, and sync-state concerns.
-- **MEDIUM:** Exact module names and family partitioning may shift once more helpers are extracted from `main.rs`, but the seam pattern should remain the same.
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `main.rs` ↔ `app::watch` | typed request/result | New app seam for `sxmc watch`. |
+| `main.rs` ↔ `app::skills` | typed request/result | New app seam for skills family extraction. |
+| `app::watch` ↔ shared status facade | direct API | Watch should consume the same status data model as `status` and `sync`. |
+| `app::skills` ↔ `skills::install` | direct API | CLI service owns orchestration; install module owns pipeline details. |
+| `server::reload` ↔ `skills::parser/models` | direct API | Reload must use canonical inventory, not ad hoc directory hashing. |
+| `server::handler` ↔ `skills::policy` | direct API | Serve-time file access must follow the same policy as install-time copying. |
+| `security::skill_scanner` ↔ `skills::models` | direct API | Scanner coverage should be computed from the managed asset set. |
 
 ## Sources
 
-- Repo planning context: `/Users/hprincivil/Projects/sxmc/.planning/PROJECT.md`
-- Repo codebase architecture map: `/Users/hprincivil/Projects/sxmc/.planning/codebase/ARCHITECTURE.md`
-- Repo structure map: `/Users/hprincivil/Projects/sxmc/.planning/codebase/STRUCTURE.md`
-- Repo concern map: `/Users/hprincivil/Projects/sxmc/.planning/codebase/CONCERNS.md`
-- Current command surface and dependency context: `/Users/hprincivil/Projects/sxmc/src/cli_args.rs`, `/Users/hprincivil/Projects/sxmc/src/main.rs`, `/Users/hprincivil/Projects/sxmc/Cargo.toml`
-- `clap` derive docs on subcommand delegation and `flatten`: https://docs.rs/clap/latest/clap/_derive/ and https://docs.rs/clap/latest/clap/trait.Subcommand.html
-- Tokio graceful shutdown guidance: https://tokio.rs/tokio/topics/shutdown
-- Axum graceful shutdown surface: https://docs.rs/axum/latest/axum/serve/struct.WithGracefulShutdown.html
-- `rmcp` transport and session docs: https://docs.rs/rmcp/latest/rmcp/transport/index.html and https://docs.rs/rmcp/latest/rmcp/transport/streamable_http_server/session/index.html
+- `.planning/PROJECT.md`
+- `.planning/codebase/ARCHITECTURE.md`
+- `.planning/codebase/CONCERNS.md`
+- `.planning/codebase/STRUCTURE.md`
+- `src/main.rs`
+- `src/app/mod.rs`
+- `src/app/golden_path.rs`
+- `src/app/status.rs`
+- `src/app/sync.rs`
+- `src/command_handlers.rs`
+- `src/server/mod.rs`
+- `src/server/handler.rs`
+- `src/skills/install.rs`
+- `src/skills/parser.rs`
+- `src/skills/models.rs`
+- `src/security/skill_scanner.rs`
+- `tests/cli_integration.rs`
+
+---
+*Architecture research for: v1.1 Platform Hardening and Core Expansion*
+*Researched: 2026-04-04*

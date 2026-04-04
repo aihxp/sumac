@@ -1,136 +1,146 @@
 # Technology Stack
 
-**Project:** Sumac (`sxmc`)
-**Research scope:** Brownfield internal core/app rewrite for a mature Rust CLI/MCP product
+**Project:** Sumac v1.1 Platform Hardening and Core Expansion
 **Researched:** 2026-04-04
-**Overall confidence:** HIGH
-
-## Recommendation
-
-Sumac should keep its current Rust transport stack and introduce only narrow additions. The rewrite target is not a new platform; it is a cleaner internal boundary inside the existing product. Keep `clap`, `tokio`, `serde`, `reqwest`, `axum`, and `rmcp` as the external-facing stack. Add only the tooling needed to make the migration safe: structured tracing, golden contract tests, and a pinned Rust toolchain.
-
-The first rewrite slice should stay in a single crate. Introduce logical layers in code before introducing crate boundaries. Sumac already has a stable `1.x` CLI and JSON surface, and the main architectural risk is boundary churn, not missing framework capability. `src/main.rs` is over 11k lines and the codebase relies heavily on `serde_json::Value`; that argues for contract isolation and orchestration cleanup, not a workspace split.
+**Confidence:** HIGH
 
 ## Recommended Stack
 
-### Keep As-Is
+### Core Technologies
 
-| Technology | Version line | Purpose | Recommendation | Confidence |
-|------------|--------------|---------|----------------|------------|
-| Rust + Cargo | Stable toolchain, pinned in repo | Core language/runtime | Keep Rust as the only implementation language for the rewrite. Add `rust-toolchain.toml` to pin the toolchain for migration stability. Keep the initial migration compatible with the current edition; treat any edition bump as separate work. | HIGH |
-| `clap` | 4.x | Public CLI parsing and help surface | Keep. The rewrite must preserve CLI contracts, so changing the parser stack now would create needless help/UX drift. | HIGH |
-| `tokio` | 1.x | Async runtime | Keep. It already matches `reqwest`, `axum`, and `rmcp`, and there is no benefit in changing runtimes during an internal rewrite. | HIGH |
-| `serde` / `serde_json` / `serde_yaml` / `toml` | 1.x / current major lines | Config and contract serialization | Keep, but move stable external DTOs into explicit contract modules instead of using raw `Value` as the application lingua franca. | HIGH |
-| `reqwest` + `rustls` | 0.13.x | Outbound HTTP | Keep. Reuse pooled clients in adapters; do not let the new core/app layer construct HTTP clients directly. | HIGH |
-| `axum` + `tower` | 0.8.x / 0.5.x | Hosted HTTP/MCP serving | Keep. It is already aligned with Hyper 1-era Rust web stack and does not need replacement for this migration. | HIGH |
-| `rmcp` | 1.x | MCP client/server transport and protocol | Keep. Upgrade within the same major line when convenient, but do not make MCP SDK churn part of the boundary rewrite. | HIGH |
-| `thiserror` | 2.x | Typed internal errors | Keep and standardize on it for core/app/adapters. | HIGH |
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| Rust std `fs`/`path` + `std::process::Command` | stable std | Canonical path checks, allowlist installs, symlink rejection, lightweight git invocation | Sumac does not need a new systems abstraction layer for v1.1. The missing piece is disciplined use of `canonicalize`, `symlink_metadata`, and staged copy rules, not a new filesystem or Git stack. |
+| `tokio` | Keep current `1.x` | Non-blocking watch loop, subprocess execution, deadlines, bounded concurrency | The repo already ships Tokio. The watch path should move from blocking `std::thread::sleep` and blocking child execution to `tokio::time::sleep`, `tokio::time::timeout`, `tokio::process::Command`, `JoinSet`, and `Semaphore`. That fixes reliability without a runtime change. |
+| `notify` | Keep current `8.x` | Filesystem events plus poll-based fallback | Sumac already depends on `notify`, and `notify` already provides both `RecommendedWatcher` and `PollWatcher`. v1.1 should use those explicitly instead of maintaining a separate shallow fingerprint-only polling model. |
+| `reqwest` | Keep current `0.13.x` in repo | Webhook notifications and other outbound HTTP in watch flows | The current stack is sufficient. The change needed is to stop creating ad hoc clients and instead use a shared `ClientBuilder` with total, connect, and read timeouts so one slow webhook cannot stall the loop. |
+| `tempfile` | Keep current `3.x` | Clone/install staging and cleanup verification | `tempfile::TempDir` already gives Sumac the right install primitive. The bug is from persisting tempdirs with `keep()` in a transient path; v1.1 should keep clones scoped and call `close()` when cleanup success matters. |
 
-### Add Narrowly
+### Supporting Libraries
 
-| Addition | Version line | Purpose | Why it fits this rewrite | Confidence |
-|----------|--------------|---------|--------------------------|------------|
-| `tracing` | 0.1.x | Structured internal diagnostics | Add instrumentation at command-family, adapter, and rewrite seam boundaries. This helps compare legacy and rewritten flows without changing user-visible output. | HIGH |
-| `tracing-subscriber` | 0.3.x | Trace/log initialization and filtering | Add one subscriber setup in the binary boundary only. This replaces ad hoc internal diagnostics without forcing a product-wide UX change. | HIGH |
-| `insta` | 1.47.x | Golden snapshots for JSON outputs and generated files | Add for parity testing on `setup`, `add`, `status`, `sync`, and materialized artifacts. This is the most direct guardrail for a stable-contract rewrite. | HIGH |
-| `trycmd` | 1.2.x | End-to-end CLI contract tests | Add for help text, stdout/stderr, and exit-code cases that should remain stable through the migration. It complements existing `assert_cmd` coverage. | HIGH |
-| `rust-toolchain.toml` | current stable pin | Reproducible builds and CI/dev parity | Add at repo root. The rewrite should not depend on each contributor’s local default toolchain. | HIGH |
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `walkdir` | `2.x` optional add | One canonical recursive tree walker for install, scan, serve, and polling fingerprints | Add this only if v1.1 consolidates skill-tree traversal into a shared utility. It is the one new crate that materially reduces duplicated recursion bugs across `install`, `server`, and `scanner`. |
+| `regex::bytes` | Existing `regex` crate | Scan non-UTF-8 or binary-ish skill assets without silently skipping them | Use in `skill_scanner` when switching from `read_to_string` to raw-byte reads for scripts and references. No new dependency is required. |
+| `tokio-util::sync::CancellationToken` | Already present | Coordinated shutdown for watch tasks, child processes, and notification fan-out | Keep using it as the boundary between the long-running watch supervisor and spawned work. It already fits the repo. |
 
-## Internal Stack Boundaries
+### Development Tools
 
-The rewrite should introduce boundaries in this order, without changing the public surface:
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| Rust test harness + Tokio tests | End-to-end watch reliability and async timeout coverage | Add tests for slow webhooks, hanging notify commands, and cancellation. Use real async timing behavior instead of unit-only mocks. |
+| `assert_cmd` + `tempfile` + real `git` fixtures | CLI and skill install/update regression coverage | Build temp git repositories during tests to cover clone, repo-subpath resolution, cleanup, and allowlist behavior. No extra testing crate is required. |
 
-| Layer | Responsibility | Allowed dependencies | Must not depend on |
-|------|----------------|----------------------|--------------------|
-| CLI/transport shell | `clap` parsing, TTY decisions, stdout/stderr rendering, process exit codes, trace init | `clap`, output renderers, `tracing-subscriber` | Business rules, filesystem orchestration, direct HTTP/MCP logic |
-| App layer | Command-family orchestration for `setup`, `add`, `status`, `sync`; transaction-style use cases; parity cutover seam | `tokio`, typed request/response structs, `thiserror`, narrow internal ports | `clap`, `axum`, `rmcp`, `reqwest`, direct env/path lookups |
-| Core layer | Pure policies and models: host selection, reconciliation rules, write plans, diff logic, contract-neutral state transitions | std, small pure helpers, typed domain models | `tokio`, networking, filesystem, subprocesses, raw JSON transport values |
-| Adapters/infra | Filesystem, process, HTTP, MCP, cache, secrets, time, path resolution | `reqwest`, `axum`, `rmcp`, `tokio`, existing path/auth modules, `tracing` | `clap` and presentation formatting |
-| Contract modules | Stable JSON/file DTOs for CLI output and generated artifacts | `serde`, schema helpers if needed | Core policy logic and transport-specific code |
+## Installation
 
-## Prescriptive Implementation Choices
+```bash
+# No new runtime crates are required for v1.1 if Sumac keeps recursive traversal bespoke.
 
-### 1. Keep one crate first
+# Optional but recommended if v1.1 introduces one shared skill-tree walker:
+cargo add walkdir@2
+```
 
-Do not split Sumac into a multi-crate workspace in the first migration phases. Use internal modules such as `src/app/`, `src/core/`, `src/adapters/`, and `src/contracts/` first. A workspace split can come later if boundaries prove stable. For this rewrite, extra crates would mostly add movement cost.
+## Recommended Usage Changes
 
-### 2. Standardize error boundaries
+### 1. Watch Reliability
 
-Use `thiserror` for typed errors below the CLI shell. Keep error-to-exit-code and error-to-rendered-output mapping in the binary/app boundary. `anyhow` is currently declared but not used in the repo; do not expand its use during the rewrite.
+- Keep `notify` and replace the custom shallow polling fallback with `notify::PollWatcher`.
+- Use `notify::Config::with_poll_interval(...)` explicitly instead of relying on defaults.
+- For installed skill trees, configure watch traversal so symlinks are not followed.
+- Enable `with_compare_contents(true)` only for roots that are known to have unreliable mtimes or event delivery; it is more expensive and should not be the default for all roots.
+- Stop blocking the Tokio runtime in `Commands::Watch`: replace `std::thread::sleep` with `tokio::time::sleep`.
+- Run `notify_command` through `tokio::process::Command`, wrap it in `tokio::time::timeout`, and set `kill_on_drop(true)` so cancellation or timeout does not leak child processes.
+- Fan out webhook notifications concurrently with bounded concurrency (`JoinSet` + `Semaphore`) so one slow endpoint does not serialize the loop.
+- Reuse one `reqwest::Client` with configured timeouts instead of creating a new client per event.
 
-### 3. Stop spreading `serde_json::Value`
+### 2. Secure Skills Lifecycle Hardening
 
-The current codebase uses `Value` pervasively. The rewrite should not continue that pattern into the new app/core seam. Define typed request/response structs for the first migrated command family, then serialize at the contract boundary. Keep `Value` only where Sumac is genuinely proxying dynamic external payloads.
+- Keep using system `git`; do not switch to `git2` for this milestone.
+- Materialize remote skills into a scoped `TempDir`, resolve repo subpaths from the actual clone directory, then copy only an explicit allowlist into the final installed skill root.
+- The allowlist should be product-defined, not source-defined: `SKILL.md`, `scripts/`, `references/`, and any explicitly supported Sumac metadata file.
+- Reject symlinks during install and validate the staged tree before the final rename. Use `std::fs::symlink_metadata` so checks do not follow links.
+- Reuse the same canonical file model for install, MCP file exposure, recursive file listing, and polling fingerprints. Today those rules drift across modules.
+- Change the scanner to read raw bytes and report skipped/unreadable files as findings; do not silently continue on unreadable or non-UTF-8 script/reference content.
 
-### 4. Add tracing only at seams
+### 3. CLI Orchestration Refactor
 
-Instrument:
-- command entry/exit
-- adapter calls to filesystem, subprocess, HTTP, and MCP
-- legacy-vs-new cutover decisions
-- parity test diagnostics
+- Do not add a new framework. Keep the current `clap` + `src/app/*` request/service seam that v1.0 already established.
+- Move `watch` and `skills` onto the same pattern as `setup`/`status`: request structs, small services, and thin dispatch in `main.rs`.
+- Keep async only at IO boundaries. Parsing, policy validation, allowlist selection, and install planning should stay synchronous, testable functions.
+- Introduce small internal policy types instead of cross-cutting booleans: `WatchSupervisor`, `NotificationDispatcher`, `SkillSourceMaterializer`, `SkillFilePolicy`, and `SkillInstallPlanner`.
+- This is a boundary cleanup, not a rewrite. Existing crates are sufficient for the orchestration work.
 
-Do not replace user-facing `println!`/`eprintln!` output with trace output. Tracing is for internal observability, not a CLI UX rewrite.
+## Alternatives Considered
 
-### 5. Add parity-first tests before broad extraction
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| File watching | `notify` `8.x` with explicit `PollWatcher` fallback | `watchexec`, `notify-debouncer-*`, or a separate watcher stack | Sumac already has the correct primitive in-tree. Another watcher layer would add churn before the current `notify` usage is fixed. |
+| Git source materialization | System `git` + `tempfile` staging | `git2` / libgit2 | `git2` adds native dependency and behavior complexity without addressing the real bugs: wrong clone root handling, missing allowlist enforcement, and cleanup discipline. |
+| Recursive skill traversal | Shared `walkdir` utility or disciplined std recursion | Hand-rolled recursion per module | Current hand-rolled recursion is already inconsistent. If Sumac wants one additive crate, this is the right one. |
+| Command architecture | Existing `src/app/*` service pattern | DI framework / command bus / wholesale rewrite | v1.1 needs narrower seams, not another architecture layer. |
 
-Use:
-- `trycmd` for CLI behavior and help snapshots
-- `insta` for JSON outputs and generated files
-- existing `assert_cmd` integration tests where custom setup is already working
+## What NOT to Add
 
-This combination fits a brownfield rewrite better than inventing a new test harness.
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `git2` for v1.1 | It increases native and behavioral complexity while the current failures are lifecycle bugs around tempdirs, repo-root resolution, and copy policy | Keep system `git`, but stage in `TempDir`, validate, then atomically install |
+| `.gitignore`-style filtering as a security boundary | Ignore rules express developer convenience, not what Sumac is safe to expose over MCP | Enforce an explicit allowlist owned by Sumac |
+| A new async/runtime/web framework | Sumac already standardizes on Tokio, Axum, Reqwest, and Clap | Refactor into more `src/app/*` services and smaller domain modules |
+| `TempDir::keep()` for transient clone paths | It intentionally disables automatic cleanup and is the direct shape of the current tempdir leak | Keep clone dirs scoped, and use `close()` when cleanup success must be observed |
+| `notify` content hashing everywhere by default | It is materially more expensive and should be reserved for unreliable filesystems | Use normal event mode first, and targeted `compare_contents` only on fallback roots that need it |
 
-## What Not To Add
+## Stack Patterns by Variant
 
-| Do not add | Why not |
-|------------|---------|
-| Multi-crate workspace split as phase 1 | Too much movement for too little safety; it couples architecture cleanup to packaging churn. |
-| New async/runtime stack | `tokio` already matches the rest of the ecosystem; changing runtimes adds risk without payoff. |
-| DI container or service locator framework | The new app layer should use explicit constructors and narrow ports. Rust does not need a container here. |
-| Repo-wide `async-trait` abstraction layer | Modern Rust supports `async fn` in traits, but official guidance still warns about public trait limitations and object safety. Sumac’s rewrite should prefer concrete types or private/narrow traits instead of an abstraction spree. |
-| ORM/config framework restack | This rewrite is not schema-heavy application development; existing lightweight serde/path handling is sufficient. |
-| Public-contract changes hidden inside the rewrite | Stable JSON, files, and help text are the constraint. Treat contract changes as explicit product work, not refactor fallout. |
+**If the watched roots are normal local directories:**
+- Use `notify::RecommendedWatcher` for primary events.
+- Coalesce bursts with a short Tokio debounce window.
+- Rebuild once per burst and update the in-memory server from that single build result.
 
-## Suggested Version Posture
+**If the watched roots are unreliable, remote, or event delivery fails:**
+- Fall back to `notify::PollWatcher`.
+- Set an explicit poll interval.
+- Use `compare_contents` only when metadata-based polling is not trustworthy.
 
-| Area | Recommendation |
-|------|----------------|
-| Rust edition | Keep the first rewrite slice compatible with the repo’s current edition posture. Consider Edition 2024 only after the parity harness is in place and the first core/app slice lands cleanly. |
-| Dependency upgrades | Allow patch/minor updates inside existing major lines. Prefer `rmcp` 1.3.x when touched, but do not make version chasing a prerequisite for the rewrite. |
-| CI toolchain | Pin stable Rust in `rust-toolchain.toml` and use the same toolchain in CI. |
+**If the code path installs or updates a skill from git or a local source:**
+- Materialize into `TempDir`.
+- Enumerate a canonical allowlist.
+- Reject symlinks and hidden/VCS/build artifacts before copy.
+- Scan staged files before final `rename`.
 
-## Final Recommendation
+**If the code path is a new command-family migration:**
+- Parse args in `main.rs`.
+- Convert to a request struct.
+- Run a focused service under `src/app/`.
+- Keep rollback seams only where release-soak evidence still justifies them.
 
-For this milestone, Sumac should remain a single Rust CLI binary with the same transport stack and only four stack additions:
+## Version Compatibility
 
-1. `rust-toolchain.toml`
-2. `tracing`
-3. `tracing-subscriber`
-4. contract-focused test tooling: `insta` and `trycmd`
-
-Everything else should be boundary work, not stack churn. The rewrite should create a clean `core -> app -> adapters -> CLI/contracts` shape inside the existing repo, migrate the golden onboarding path first, and defer any edition flip, workspace split, or SDK restack until after parity is proven.
-
-## Confidence Assessment
-
-| Area | Confidence | Notes |
-|------|------------|-------|
-| Keep current Rust transport stack | HIGH | Strong fit with current codebase and mature 2026 ecosystem. |
-| Add tracing + tracing-subscriber | HIGH | Standard incremental observability addition with low migration risk. |
-| Add insta + trycmd for parity | HIGH | Strong match for stable CLI/JSON/file contract preservation. |
-| Delay workspace split / edition bump | HIGH | Best fit for brownfield rewrite risk profile; based on codebase shape and migration goal. |
+| Package A | Compatible With | Notes |
+|-----------|-----------------|-------|
+| `tokio 1.x` | `reqwest` current | `reqwest` timeouts rely on a Tokio runtime with timers enabled, which Sumac already has. |
+| `notify 8.x` | `tokio 1.x` | The watcher callback can bridge into Tokio channels; no runtime change is needed. |
+| `walkdir 2.x` | Current Rust CLI code | Pure traversal utility; if added, keep it behind one shared internal file-policy module rather than scattered direct use. |
+| `tempfile 3.x` | Current install pipeline | Safe fit for atomic staging as long as transient paths are not persisted with `keep()`. |
 
 ## Sources
 
-- Rust 2024 Edition Guide: https://doc.rust-lang.org/stable/edition-guide/rust-2024/index.html
-- Rust Blog, `async fn` and RPIT in traits guidance: https://blog.rust-lang.org/2023/12/21/async-fn-rpit-in-traits/
-- `rmcp` docs.rs, latest crate line and transport guidance: https://docs.rs/rmcp/latest/rmcp/
-- `reqwest` docs.rs, current crate line and client guidance: https://docs.rs/reqwest/latest/reqwest/
-- `insta` docs.rs, snapshot testing and JSON/YAML snapshot support: https://docs.rs/insta/latest/insta/
-- `trycmd` docs.rs, CLI snapshot testing harness: https://docs.rs/crate/trycmd/latest
+- Local codebase: `/Users/hprincivil/Projects/sxmc/.planning/PROJECT.md` — milestone scope and constraints
+- Local codebase: `/Users/hprincivil/Projects/sxmc/.planning/codebase/CONCERNS.md` — current bugs and risk surfaces
+- Local codebase: `/Users/hprincivil/Projects/sxmc/.planning/codebase/STACK.md` — existing runtime/dependency baseline
+- Local codebase: `/Users/hprincivil/Projects/sxmc/Cargo.toml` — current crate graph used by Sumac
+- Local codebase: `/Users/hprincivil/Projects/sxmc/src/skills/install.rs` — current git install/tempdir flow
+- Local codebase: `/Users/hprincivil/Projects/sxmc/src/server/mod.rs` — current watch/event/poll implementation
+- Local codebase: `/Users/hprincivil/Projects/sxmc/src/security/skill_scanner.rs` — current UTF-8-only scanner behavior
+- https://docs.rs/notify/latest/notify/struct.Config.html — verified `with_poll_interval`, `with_compare_contents`, and `with_follow_symlinks`
+- https://docs.rs/notify/latest/notify/poll/struct.PollWatcher.html — verified first-party polling watcher support
+- https://docs.rs/tokio/latest/tokio/process/struct.Command.html — verified async subprocess execution and `kill_on_drop`
+- https://docs.rs/tokio/latest/tokio/time/fn.timeout.html — verified cancellation/deadline behavior
+- https://docs.rs/tokio/latest/tokio/task/struct.JoinSet.html — verified task-set fan-out and abort-on-drop behavior
+- https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html — verified request/connect/read timeout support
+- https://docs.rs/tempfile/latest/tempfile/struct.TempDir.html — verified `TempDir` cleanup, `keep`, and `close`
+- https://doc.rust-lang.org/std/fs/fn.symlink_metadata.html — verified non-following symlink metadata checks
+- https://docs.rs/walkdir/latest/walkdir/struct.WalkDir.html — verified recursive traversal options for the optional shared walker
 
-## Evidence From Current Repo
-
-- `src/main.rs` is 11,209 lines on 2026-04-04, which makes boundary cleanup more urgent than stack replacement.
-- `anyhow` is declared in `Cargo.toml` but not used in `src/`, `tests/`, `packaging/`, or `.github/`.
-- `serde_json::Value` is pervasive across `src/main.rs`, `src/client/`, `src/server/`, and `src/output/`; the rewrite should explicitly contain that pattern rather than spread it into the new core.
+---
+*Stack research for: Sumac v1.1 Platform Hardening and Core Expansion*
+*Researched: 2026-04-04*
