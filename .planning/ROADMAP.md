@@ -133,7 +133,7 @@ explicit release-soak evidence rather than assumption.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 7. Canonical Asset Inventory & Watch Parity | 2/2 | Complete   | 2026-04-04 |
-| 8. Watch Runtime Hardening | 0/2 | Not started | - |
+| 8. Watch Runtime Hardening | 1/2 | In Progress|  |
 | 9. Secure Skill Materialization & Atomic Activation | 0/TBD | Not started | - |
 | 10. Unified Scan & Serve Enforcement | 0/TBD | Not started | - |
 | 11. Command-Family Extraction & Contract Gates | 0/TBD | Not started | - |
