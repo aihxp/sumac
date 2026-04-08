@@ -1,52 +1,58 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: platform hardening and core expansion
-status: Milestone complete
-stopped_at: "Phase 12 complete; milestone audit and archive are next"
-last_updated: "2026-04-04T23:35:34Z"
+milestone_name: Platform Hardening and Core Expansion
+status: Archived
+stopped_at: "v1.1 archived; next step is /gsd-new-milestone"
+last_updated: "2026-04-08T06:17:48Z"
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 12
   completed_plans: 12
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-04-04)
+See: `.planning/PROJECT.md` (updated 2026-04-08)
 
 **Core value:** Sumac must let AI systems understand and use real existing
 tools and interfaces without bespoke glue, while staying fast, local-first,
 and reliable.
-**Current focus:** Milestone completion — audit and archive v1.1
+**Current focus:** Planning the next milestone
 
 ## Current Position
 
-Phase: Complete
-Plan: Milestone closeout
+Phase: Milestone archived
+Plan: Next milestone definition
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 10
-- Total plans completed this milestone: 10
-- Average duration: - min
-- Total execution time: 0.0 hours
+- Total plans completed: 12
+- Total plans completed this milestone: 12
+- Average duration: Same-day phase execution within the milestone window
+- Total execution time: Multi-session milestone
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 7 | 2 | Complete | 1.0 phase slice |
+| 8 | 2 | Complete | 1.0 phase slice |
+| 9 | 2 | Complete | 1.0 phase slice |
+| 10 | 2 | Complete | 1.0 phase slice |
+| 11 | 2 | Complete | 1.0 phase slice |
+| 12 | 2 | Complete | 1.0 phase slice |
 
 **Recent Trend:**
 
-- Last 5 plans: None yet
-- Trend: Not enough data
+- Last 5 plans: All completed
+- Trend: Milestone closed cleanly with no open phase plans
 
 ## Accumulated Context
 
@@ -88,31 +94,23 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-Remaining after Phase 12:
+Remaining after the archive:
 
-- Audit milestone completion, archive v1.1 artifacts, and prepare the planning
-  space for the next milestone.
+- Define the next milestone with `$gsd-new-milestone`.
+- Revisit retirement of `SXMC_GOLDEN_PATH_ROUTE=legacy` only after a later
+  release-soak review.
 
 ### Blockers/Concerns
 
-- Golden-path parity must stay stable across CLI output, JSON, artifacts, and
-  release behavior during migration.
-
-- The command-family migration is complete, but the top-level rollback seam
-  remains intentionally available until the documented release-soak criterion
-  is met.
-
-- `watch` and `skills` still contain the most visible reliability and security
-  risks outside the completed golden path migration.
-
-- v1.1 phase plans are still TBD; parity coverage and soak evidence must be
-  preserved as hard gates during implementation.
-
-- The golden-path legacy seam is retained intentionally for now, so a later
-  release-soak review must still revisit retirement explicitly.
+- The live planning tree has no active requirements file until the next
+  milestone is started.
+- The older golden-path legacy seam is retained intentionally for now, so a
+  later release-soak review must still revisit retirement explicitly.
+- Future migration slices should keep using real-fixture contract coverage
+  before sole-route cutovers.
 
 ## Session Continuity
 
-Last session: 2026-04-04 13:19
-Stopped at: Phase 12 complete; milestone audit and archive are next
+Last session: 2026-04-08 02:12
+Stopped at: v1.1 archived and planning reset
 Resume file: None

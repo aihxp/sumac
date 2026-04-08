@@ -8,44 +8,43 @@ interfaces, turns them into structured profiles and artifacts, and uses those
 to generate host-facing docs, client config, MCP wrappers, and discovery
 outputs from one installable binary.
 
-This planning cycle is for a brownfield product-preserving rewrite. The product
-surface stays broad and stable, but the internals are being rebuilt so Sumac
-feels like a cleaner native system rather than an accumulated set of layers and
-special cases.
+The current product-preserving rewrite has now shipped two milestones. The
+external `1.x` surface stays broad and stable, while the internals keep moving
+toward clearer service seams, stronger policy enforcement, and more explicit
+operational evidence.
 
 ## Current State
 
-- milestone `v1.0` is complete and archived
-- the maintained golden path (`setup`, `add`, `status`, `sync`) now runs
-  through dedicated service modules under `src/app/`
-- `src/app/golden_path.rs` is now a thin dispatch seam
-- the rollback seam remains intentionally available through
-  `SXMC_GOLDEN_PATH_ROUTE=legacy` until the documented release-soak rule is met
-- `watch`, `skills`, and CLI-facing `serve` now run only through the migrated
-  route backed by explicit v1.1 verification and contract evidence
-- the next migration pressure is concentrated in `watch`, `skills`, and the
-  remaining top-level orchestration hotspots outside the golden path
+- milestones `v1.0` and `v1.1` are complete and archived
+- the maintained golden path (`setup`, `add`, `status`, `sync`) runs through
+  dedicated service modules under `src/app/`
+- `watch`, `skills`, and CLI-facing `serve` now also run through dedicated app
+  seams with real-fixture contract coverage
+- managed skill assets are now the canonical policy surface across install,
+  scan, serve, and watch invalidation flows
+- the remaining rollback seam is intentionally limited to the older
+  golden-path route via `SXMC_GOLDEN_PATH_ROUTE=legacy` pending a later
+  release-soak retirement decision
+- the live planning space is reset and ready for the next milestone definition
 
 See:
-- [`.planning/v1.0-MILESTONE-AUDIT.md`](/Users/hprincivil/Projects/sxmc/.planning/v1.0-MILESTONE-AUDIT.md)
 - [`.planning/milestones/v1.0-ROADMAP.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.0-ROADMAP.md)
 - [`.planning/milestones/v1.0-REQUIREMENTS.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.0-REQUIREMENTS.md)
+- [`.planning/v1.0-MILESTONE-AUDIT.md`](/Users/hprincivil/Projects/sxmc/.planning/v1.0-MILESTONE-AUDIT.md)
+- [`.planning/milestones/v1.1-ROADMAP.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.1-ROADMAP.md)
+- [`.planning/milestones/v1.1-REQUIREMENTS.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.1-REQUIREMENTS.md)
+- [`.planning/milestones/v1.1-MILESTONE-AUDIT.md`](/Users/hprincivil/Projects/sxmc/.planning/milestones/v1.1-MILESTONE-AUDIT.md)
 
-## Current Milestone: v1.1 Platform Hardening and Core Expansion
+## Next Milestone Goals
 
-**Goal:** Extend the greenfield-style internal rewrite beyond the golden path
-by hardening the next operational subsystems and moving them onto clearer
-boundaries without changing Sumac's product surface.
-
-**Target features:**
-- make `watch` reliable for long-running automation, notifications, and nested
-  skill changes
-- harden `skills` install/update/serve flows, especially git sources,
-  allowlisted file handling, and security scanning
-- reduce remaining `src/main.rs` and top-level dispatch hotspots by moving the
-  next command families onto scoped modules and seams
-- re-evaluate the top-level rollback seam after the stable release soak and
-  keep it only if the evidence still justifies it
+- add operator-facing diagnostics for watch backend health, degraded mode, and
+  last successful reload
+- expose provenance previews and resulting serve-surface summaries before
+  remote skill activation
+- enforce origin and pinning policy for remote skill installs
+- extend parity-diff and contract tooling beyond `watch` and `skills`
+- continue reducing remaining top-level orchestration hotspots without
+  breaking the stable `1.x` product surface
 
 ## Core Value
 
@@ -68,19 +67,28 @@ without bespoke glue, while staying fast, local-first, and reliable.
   surfaces — existing
 - ✓ Distribution and maintenance flows exist across crates.io, GitHub Releases,
   npm wrapper, Homebrew, and CI/release automation — existing
+- ✓ `watch` stays responsive and accurate under polling, notifications, and
+  long-running automation use — v1.1
+- ✓ git-backed and remote skill installs are reliable, constrained to safe
+  file sets, and cleaned up correctly — v1.1
+- ✓ served skill contents follow a predictable allowlist and scanner coverage
+  no longer silently skips risky files — v1.1
+- ✓ the next non-golden-path command families moved onto clearer module and
+  service boundaries without breaking `1.x` CLI behavior — v1.1
+- ✓ the rollback seam is now governed by explicit soak evidence rather than
+  assumption, and is retained intentionally where retirement is not yet earned
+  — v1.1
 
 ### Active
 
-- [ ] `watch` stays responsive and accurate under polling, notifications, and
-  long-running automation use
-- [ ] git-backed and remote skill installs are reliable, constrained to safe
-  file sets, and cleaned up correctly
-- [ ] served skill contents follow a predictable allowlist and scanner coverage
-  does not silently skip risky files
-- [ ] the next non-golden-path command families move onto clearer
-  module/service boundaries without breaking `1.x` CLI behavior
-- [x] the rollback seam is kept or retired based on release-soak evidence, not
-  assumption
+- [ ] operators can inspect watch backend health, last successful reload, and
+  degraded-mode reasons without digging through ad hoc logs
+- [ ] remote skill installs can preview provenance and the resulting serve
+  surface before activation
+- [ ] remote skill installs can enforce origin and pinning policy
+- [ ] parity-diff and contract tooling extends beyond `watch` and `skills`
+- [ ] remaining orchestration-heavy command families keep moving out of
+  top-level dispatch hotspots via the same typed service pattern
 
 ### Out of Scope
 
@@ -111,12 +119,16 @@ rewrite slice will start with the stable onboarding/reconciliation loop because
 it is the maintained user path and touches the exact orchestration seams that
 currently need the most cleanup.
 
-With the golden path now migrated, the next milestone can widen that pattern
-to the operational surfaces that still carry the highest risk: `watch`
-reliability, skill lifecycle hardening, and the remaining orchestration-heavy
-command families that still concentrate complexity in top-level dispatch code.
-This keeps the rewrite moving forward without pretending the product is
-starting over.
+With v1.1 shipped, that pattern now covers the golden path plus the most
+operationally sensitive adjacent surfaces: `watch`, `skills`, and CLI-facing
+`serve`. The codebase now has a canonical managed asset model, staged skill
+activation, unified scan-and-serve policy, and clearer command-family seams
+backing those flows.
+
+The next milestone does not need to re-open the same migration questions. It
+can build on the shipped seams by improving operator visibility, tightening
+remote provenance policy, and extending parity tooling to the next slice of
+orchestration-heavy behavior.
 
 ## Constraints
 
@@ -143,7 +155,9 @@ starting over.
 | Start with `src/main.rs` and the golden onboarding path | This was the clearest orchestration hotspot and the maintained user workflow | Complete in v1.0 |
 | Build a cleaner internal core/app layer inside the current repo | Enabled greenfield internals without a product reset or long-lived fork | Complete in v1.0 |
 | Keep releases and `1.x` contracts stable during migration | Prevented the rewrite from becoming a trust-breaking freeze or compatibility reset | Complete in v1.0 |
-| Use v1.1 to harden `watch`, `skills`, and top-level orchestration together | These are now the clearest remaining risk surfaces and they overlap in reliability, security, and dispatch complexity | — Pending |
+| Use v1.1 to harden `watch`, `skills`, and top-level orchestration together | These were the clearest remaining risk surfaces and they overlapped in reliability, security, and dispatch complexity | Complete in v1.1 |
+| Use the canonical managed asset inventory as the shared policy contract | Watch invalidation, staged install, scan coverage, and serving all needed one authoritative asset surface | Complete in v1.1 |
+| Enforce skill activation through scoped staging and allowlisted payloads | Remote convenience could not justify partial activation or silent policy widening | Complete in v1.1 |
 | Keep migrated `watch` / `skills` as the sole route, but retain `SXMC_GOLDEN_PATH_ROUTE=legacy` intentionally until later release soak | Local verification and contract evidence are strong for the migrated route, but same-session validation is not the same as post-release soak for final seam retirement | Complete in v1.1 Phase 12 |
 
 ## Evolution
@@ -164,4 +178,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after v1.1 rollback decision*
+*Last updated: 2026-04-08 after v1.1 milestone archive*
